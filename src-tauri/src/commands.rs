@@ -1,8 +1,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db::Db;
-use crate::models::{AppStats, Category, ClipboardItem, Note, Tag};
+use crate::models::{AppStats, Category, ClipboardItem, Note, Tag, TaskItem};
 
 fn with_conn<T>(state: &State<Db>, f: impl FnOnce(&mut Connection) -> Result<T, String>) -> Result<T, String> {
     let mut guard = state.0.lock().map_err(|_| "db lock poisoned".to_string())?;
@@ -716,4 +716,101 @@ pub fn app_stats(state: State<Db>) -> Result<AppStats, String> {
                 .map_err(|e| e.to_string())?,
         })
     })
+}
+
+// ---------- tasks ----------
+
+fn parse_task_line(line: &str) -> Option<(bool, String)> {
+    let trimmed = line.trim_start();
+    for marker in ["- [ ] ", "* [ ] ", "- [x] ", "* [x] ", "- [X] ", "* [X] "] {
+        if let Some(rest) = trimmed.strip_prefix(marker) {
+            let done = marker.contains('x') || marker.contains('X');
+            return Some((done, rest.to_string()));
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub fn list_tasks(state: State<Db>) -> Result<Vec<TaskItem>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, content FROM notes
+                 WHERE trashed = 0 AND archived = 0
+                 ORDER BY updated_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows: Vec<(i64, String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        let mut tasks = Vec::new();
+        for (id, title, content) in rows {
+            for (i, line) in content.split('\n').enumerate() {
+                if let Some((done, text)) = parse_task_line(line) {
+                    tasks.push(TaskItem {
+                        note_id: id,
+                        note_title: if title.is_empty() { "Untitled".to_string() } else { title.clone() },
+                        line_index: i as i64,
+                        text,
+                        done,
+                    });
+                }
+            }
+        }
+        // open tasks first, then by note recency (rows already sorted)
+        tasks.sort_by_key(|t| t.done);
+        Ok(tasks)
+    })
+}
+
+// ---------- attachments ----------
+
+#[tauri::command]
+pub fn save_attachment(app: AppHandle, data: Vec<u8>, ext: String) -> Result<String, String> {
+    use std::io::Write;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("attachments");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let safe_ext: String = ext
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(5)
+        .collect();
+    let file_name = format!("img-{nanos}.{safe_ext}");
+    let path = dir.join(&file_name);
+    let mut f = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    f.write_all(&data).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+// ---------- maintenance ----------
+
+#[tauri::command]
+pub fn purge_old_trash(app: AppHandle, state: State<Db>) -> Result<i64, String> {
+    let purged = with_conn(&state, |conn| {
+        let n = conn
+            .execute(
+                "DELETE FROM notes WHERE trashed = 1
+                 AND trashed_at IS NOT NULL
+                 AND trashed_at < datetime('now', '-30 days')",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(n as i64)
+    })?;
+    if purged > 0 {
+        emit_notes_changed(&app);
+    }
+    Ok(purged)
 }

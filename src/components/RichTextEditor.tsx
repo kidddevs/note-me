@@ -10,9 +10,10 @@ export interface RichEditorHandle {
 interface Props {
   value: string;
   onChange: (md: string) => void;
+  spellcheck?: boolean;
 }
 
-export const RichTextEditor = forwardRef<RichEditorHandle, Props>(({ value, onChange }, ref) => {
+export const RichTextEditor = forwardRef<RichEditorHandle, Props>(({ value, onChange, spellcheck }, ref) => {
   const elRef = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -59,7 +60,7 @@ export const RichTextEditor = forwardRef<RichEditorHandle, Props>(({ value, onCh
       contentEditable
       suppressContentEditableWarning
       data-placeholder="Start writing…"
-      spellCheck={false}
+      spellCheck={!!spellcheck}
       onInput={sync}
       onBlur={sync}
       onPaste={(e) => {

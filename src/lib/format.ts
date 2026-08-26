@@ -13,6 +13,32 @@ export function formatRelative(iso: string): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+export function formatCardDate(iso: string): string {
+  const date = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z");
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  const timeStr = date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  if (isToday) {
+    return `Today, ${timeStr}`;
+  }
+  if (isYesterday) {
+    return `Yesterday, ${timeStr}`;
+  }
+
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const year = String(date.getFullYear()).slice(-2);
+  return `${month}/${day}/${year}, ${timeStr}`;
+}
+
 export function formatFull(iso: string): string {
   const date = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z");
   return date.toLocaleString(undefined, {

@@ -51,12 +51,21 @@ export type EditorMode = "edit" | "split" | "preview";
 export type SidebarSelection =
   | { kind: "all" }
   | { kind: "favorites" }
+  | { kind: "tasks" }
   | { kind: "archived" }
   | { kind: "trash" }
   | { kind: "category"; id: number }
   | { kind: "tag"; id: number };
 
-export type ViewKind = "all" | "favorites" | "archived" | "trash" | "category" | "tag" | "search";
+export type ViewKind = "all" | "favorites" | "tasks" | "archived" | "trash" | "category" | "tag" | "search";
+
+export interface TaskItem {
+  note_id: number;
+  note_title: string;
+  line_index: number;
+  text: string;
+  done: boolean;
+}
 
 export interface Tab {
   id: string;

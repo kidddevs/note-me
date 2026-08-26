@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Clipboard, FilePlus2, StickyNote } from "lucide-react";
 import { TitleBar, TabContextMenu } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
 import { Editor } from "./components/Editor";
 import { ViewTab } from "./components/ViewTab";
+import { HomeView } from "./components/HomeView";
 import { ClipboardPanel } from "./components/ClipboardPanel";
 import { QuickCapture } from "./components/QuickCapture";
 import { Palette } from "./components/Palette";
 import { Toasts } from "./components/Toasts";
 import { SettingsModal } from "./components/Modals";
+import { ShortcutsModal } from "./components/ShortcutsModal";
+import { AboutModal } from "./components/AboutModal";
 import { useNotes, openNoteInTab } from "./store/notes";
 import { useTabs } from "./store/tabs";
 import { useTheme } from "./store/theme";
 import { notify } from "./store/toast";
+import { importFilesAsNotes } from "./lib/actions";
 
 async function exportAllNotes() {
   try {
@@ -25,7 +28,9 @@ async function exportAllNotes() {
     const all = [...s.notes, ...s.archived];
     let count = 0;
     for (const n of all) {
-      const name = (n.title || "Untitled").replace(/[\\/:*?"<>|]/g, "_").slice(0, 120);
+      const name = (n.title || "Untitled")
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .slice(0, 120);
       try {
         const md = `# ${n.title || "Untitled"}\n\n${n.content}\n\n---\n_Created ${n.created_at} · Updated ${n.updated_at}_`;
         await writeTextFile(`${dir}/${name}.md`, md);
@@ -40,26 +45,6 @@ async function exportAllNotes() {
   }
 }
 
-function EmptyWorkspace() {
-  const createNote = useNotes((s) => s.createNote);
-  const openHome = useTabs((s) => s.openHome);
-  return (
-    <div className="empty-state" style={{ flex: 1 }}>
-      <div className="empty-icon"><StickyNote size={24} /></div>
-      <h3>Welcome to NoteMe</h3>
-      <p>Open a note from the sidebar, or start fresh with a new tab.</p>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn primary" onClick={() => createNote().then((n) => n && openNoteInTab(n))}>
-          <FilePlus2 size={14} /> New Note
-        </button>
-        <button className="btn" onClick={openHome}>
-          <Clipboard size={14} /> Browse All Notes
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const loaded = useNotes((s) => s.loaded);
   const sidebarCollapsed = useTheme((s) => s.sidebarCollapsed);
@@ -70,6 +55,9 @@ export default function App() {
   const activeId = useTabs((s) => s.activeId);
   const activeTab = tabs.find((t) => t.id === activeId);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [updatesRequested, setUpdatesRequested] = useState(0);
   const clipboardWatch = useRef<number | null>(null);
   const lastClip = useRef("");
 
@@ -103,6 +91,16 @@ export default function App() {
         case "settings":
           setSettingsOpen(true);
           break;
+        case "shortcuts":
+          setShortcutsOpen(true);
+          break;
+        case "about":
+          setAboutOpen(true);
+          break;
+        case "check-updates":
+          setAboutOpen(true);
+          setUpdatesRequested((count) => count + 1);
+          break;
         case "toggle-theme":
           useTheme.getState().cycleTheme();
           break;
@@ -118,6 +116,12 @@ export default function App() {
         case "export-all":
           exportAllNotes();
           break;
+        case "print-note":
+          window.print();
+          break;
+        case "import-files":
+          importFilesAsNotes();
+          break;
       }
     }).then((u) => unlisteners.push(u));
     return () => unlisteners.forEach((u) => u());
@@ -127,7 +131,9 @@ export default function App() {
   useEffect(() => {
     clipboardWatch.current = window.setInterval(async () => {
       try {
-        const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+        const { readText } = await import(
+          "@tauri-apps/plugin-clipboard-manager"
+        );
         const text = await readText();
         if (text && text.trim() && text !== lastClip.current) {
           lastClip.current = text;
@@ -144,13 +150,51 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === ",") {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
         e.preventDefault();
         setSettingsOpen(true);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "/") {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
       }
     };
+    const onOpenSettings = () => setSettingsOpen(true);
+    const onOpenShortcuts = () => setShortcutsOpen(true);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("open-settings", onOpenSettings);
+    window.addEventListener("open-shortcuts", onOpenShortcuts);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("open-settings", onOpenSettings);
+      window.removeEventListener("open-shortcuts", onOpenShortcuts);
+    };
+  }, []);
+
+  // drag & drop import of .md/.txt files anywhere in the app
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      const files = [...(e.dataTransfer?.files ?? [])];
+      const textFiles = files.filter((f) => /\.(md|markdown|txt)$/i.test(f.name));
+      if (textFiles.length === 0) return;
+      e.preventDefault();
+      const paths = textFiles
+        .map((f) => (f as File & { path?: string }).path)
+        .filter((p): p is string => !!p);
+      if (paths.length === 0) {
+        notify("info", "Drop images onto the editor to attach them");
+        return;
+      }
+      importFilesAsNotes(paths);
+    };
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+    };
   }, []);
 
   return (
@@ -158,7 +202,15 @@ export default function App() {
       <TitleBar />
       <div className="app-body">
         <Sidebar collapsed={sidebarCollapsed} />
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            background: "var(--bg)",
+          }}
+        >
           {!loaded ? (
             <div className="empty-state" style={{ flex: 1 }}>
               <div className="spinner" />
@@ -166,11 +218,13 @@ export default function App() {
           ) : activeTab ? (
             activeTab.kind === "note" ? (
               <Editor noteId={activeTab.noteId!} tabId={activeTab.id} />
+            ) : activeTab.view?.kind === "all" ? (
+              <HomeView />
             ) : (
               <ViewTab view={activeTab.view!} title={activeTab.title} />
             )
           ) : (
-            <EmptyWorkspace />
+            <HomeView />
           )}
         </div>
         {clipboardOpen && <ClipboardPanel />}
@@ -180,6 +234,13 @@ export default function App() {
       <Toasts />
       <TabContextMenu />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+      {aboutOpen && (
+        <AboutModal
+          onClose={() => setAboutOpen(false)}
+          autoCheckKey={updatesRequested}
+        />
+      )}
     </div>
   );
 }

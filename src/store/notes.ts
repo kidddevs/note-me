@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AppStats, Category, ClipboardItem, Note, SidebarSelection, Tag } from "../lib/types";
+import type { AppStats, Category, ClipboardItem, Note, SidebarSelection, Tag, TaskItem } from "../lib/types";
 import { api } from "../lib/api";
 import { notify } from "./toast";
 import { useTabs } from "./tabs";
@@ -11,6 +11,7 @@ interface NotesState {
   categories: Category[];
   tags: Tag[];
   clipboard: ClipboardItem[];
+  tasks: TaskItem[];
   stats: AppStats;
   selection: SidebarSelection;
   searchQuery: string;
@@ -35,9 +36,12 @@ interface NotesState {
   setCategory: (id: number, categoryId: number | null) => Promise<void>;
 
   addCategory: (name: string, color: string, icon: string) => Promise<void>;
+  updateCategory: (id: number, name: string, color: string, icon: string) => Promise<void>;
+  removeCategory: (id: number) => Promise<void>;
   addTag: (name: string, color: string) => Promise<void>;
   removeTag: (id: number) => Promise<void>;
 
+  toggleTask: (noteId: number, lineIndex: number) => Promise<void>;
   captureClipboard: () => Promise<void>;
   clearClipboardHistory: () => Promise<void>;
   removeClipboardItem: (id: number) => Promise<void>;
@@ -50,6 +54,7 @@ export const useNotes = create<NotesState>((set, get) => ({
   categories: [],
   tags: [],
   clipboard: [],
+  tasks: [],
   stats: { total_notes: 0, favorites: 0, trashed: 0 },
   selection: { kind: "all" },
   searchQuery: "",
@@ -65,16 +70,17 @@ export const useNotes = create<NotesState>((set, get) => ({
   refresh: async () => {
     set({ loading: true });
     try {
-      const [notes, archived, trashed, categories, tags, clipboard, stats] = await Promise.all([
+      const [notes, archived, trashed, categories, tags, clipboard, tasks, stats] = await Promise.all([
         api.listNotes(),
         api.listArchived(),
         api.listTrashed(),
         api.listCategories(),
         api.listTags(),
         api.listClipboard(),
+        api.listTasks(),
         api.stats(),
       ]);
-      set({ notes, archived, trashed, categories, tags, clipboard, stats, loading: false });
+      set({ notes, archived, trashed, categories, tags, clipboard, tasks, stats, loading: false });
     } catch (e) {
       set({ loading: false });
       notify("error", "Failed to load notes", String(e));
@@ -147,6 +153,18 @@ export const useNotes = create<NotesState>((set, get) => ({
     notify("success", "Category created", name);
   },
 
+  updateCategory: async (id, name, color, icon) => {
+    await api.updateCategory(id, name, color, icon);
+    await get().refresh();
+    notify("success", "Category updated", name);
+  },
+
+  removeCategory: async (id) => {
+    await api.deleteCategory(id);
+    await get().refresh();
+    notify("info", "Category deleted");
+  },
+
   addTag: async (name, color) => {
     await api.createTag(name, color);
     await get().refresh();
@@ -155,6 +173,24 @@ export const useNotes = create<NotesState>((set, get) => ({
   removeTag: async (id) => {
     await api.deleteTag(id);
     await get().refresh();
+  },
+
+  toggleTask: async (noteId, lineIndex) => {
+    const all = [...get().notes, ...get().archived];
+    const note = all.find((n) => n.id === noteId);
+    if (!note) return;
+    const lines = note.content.split("\n");
+    const line = lines[lineIndex];
+    if (line === undefined) return;
+    lines[lineIndex] = /\[ \]/.test(line)
+      ? line.replace("[ ]", "[x]")
+      : line.replace(/\[[xX]\]/, "[ ]");
+    try {
+      await api.updateNote(noteId, note.title, lines.join("\n"), note.category_id);
+      await get().refresh();
+    } catch (e) {
+      notify("error", "Could not update task", String(e));
+    }
   },
 
   captureClipboard: async () => {

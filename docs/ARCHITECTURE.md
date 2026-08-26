@@ -62,7 +62,15 @@ note_tags(note_id →notes, tag_id →tags, PK(note_id, tag_id))
 clipboard_items(id, kind, content, created_at)
 ```
 
-WAL mode, `foreign_keys = ON`. Trash is a soft delete (`trashed = 1`); `empty_trash` / `delete_note_forever` are the only hard deletes. Snippets are computed in Rust (`fill_tags` strips whitespace).
+WAL mode, `foreign_keys = ON`. Trash is a soft delete (`trashed = 1`); `empty_trash` / `delete_note_forever` are the only hard deletes. On startup `purge_old_trash` hard-deletes notes trashed more than 30 days ago. Snippets are computed in Rust (`fill_tags` strips whitespace).
+
+## Tasks aggregation
+
+`list_tasks` scans every non-trashed, non-archived note's content line-by-line for GFM task markers (`- [ ] ` / `- [x] `, `*` bullets too) and returns flat `TaskItem`s (`note_id`, `line_index`, `text`, `done`). The Tasks view groups them by note; toggling a checkbox splices the exact line in the source note's markdown and saves through the normal pipeline.
+
+## Attachments
+
+Pasting/dropping an image calls `save_attachment(data, ext)` which writes `app_data/attachments/img-<nanos>.<ext>` and returns the absolute path. The frontend wraps it with `convertFileSrc()` and inserts standard `![image](...)` markdown, so notes stay portable plain-text. Rendering uses Tauri's asset protocol, enabled with the `protocol-asset` feature and scoped to `$APPDATA/attachments/**` in `tauri.conf.json`.
 
 ## Clipboard capture
 

@@ -51,3 +51,12 @@ pub struct AppStats {
     pub favorites: i64,
     pub trashed: i64,
 }
+
+#[derive(Serialize, Clone)]
+pub struct TaskItem {
+    pub note_id: i64,
+    pub note_title: String,
+    pub line_index: i64,
+    pub text: String,
+    pub done: bool,
+}

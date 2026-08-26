@@ -7,6 +7,14 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
 use commands::*;
 
+fn maintenance(app: &AppHandle) {
+    match purge_old_trash(app.clone(), app.state::<db::Db>()) {
+        Ok(0) => {}
+        Ok(n) => println!("purged {n} old trashed notes"),
+        Err(e) => eprintln!("purge failed: {e}"),
+    }
+}
+
 fn setup_global_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let quick_capture: Shortcut = Shortcut::new(Some(Modifiers::SHIFT | Modifiers::SUPER), Code::KeyN);
     let toggle_clipboard: Shortcut = Shortcut::new(Some(Modifiers::SHIFT | Modifiers::SUPER), Code::KeyV);
@@ -35,13 +43,16 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
 
     let handle = app.handle();
     let sep = || PredefinedMenuItem::separator(handle);
+    let about = MenuItem::with_id(handle, "about", "About NoteMe", true, None::<&str>)?;
+    let check_updates = MenuItem::with_id(handle, "check-updates", "Check for Updates…", true, None::<&str>)?;
 
     let app_menu = Submenu::with_items(
         handle,
         "NoteMe",
         true,
         &[
-            &PredefinedMenuItem::about(handle, Some(Default::default()), None)?,
+            &about,
+            &check_updates,
             &sep()?,
             &PredefinedMenuItem::services(handle, None)?,
             &sep()?,
@@ -58,11 +69,24 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
     let close_tab = MenuItem::with_id(handle, "close-tab", "Close Tab", true, Some("Cmd+W"))?;
     let close_window = PredefinedMenuItem::close_window(handle, None)?;
     let export_all = MenuItem::with_id(handle, "export-all", "Export All Notes…", true, None::<&str>)?;
+    let import_files = MenuItem::with_id(handle, "import-files", "Import Files…", true, None::<&str>)?;
+    let print_note = MenuItem::with_id(handle, "print-note", "Print Note…", true, Some("Cmd+P"))?;
     let file_menu = Submenu::with_items(
         handle,
         "File",
         true,
-        &[&new_note, &new_tab, &sep()?, &close_tab, &close_window, &sep()?, &export_all],
+        &[
+            &new_note,
+            &new_tab,
+            &sep()?,
+            &import_files,
+            &export_all,
+            &sep()?,
+            &close_tab,
+            &close_window,
+            &sep()?,
+            &print_note,
+        ],
     )?;
 
     let edit_menu = Submenu::with_items(
@@ -113,7 +137,15 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
         &[&next_tab, &prev_tab, &sep()?, &minimize, &zoom],
     )?;
 
-    let menu = Menu::with_items(handle, &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu])?;
+    let shortcuts_item = MenuItem::with_id(handle, "shortcuts", "Keyboard Shortcuts", true, Some("Cmd+/"))?;
+    let help_menu = Submenu::with_items(
+        handle,
+        "Help",
+        true,
+        &[&shortcuts_item],
+    )?;
+
+    let menu = Menu::with_items(handle, &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu, &help_menu])?;
     app.set_menu(menu)?;
     Ok(())
 }
@@ -137,13 +169,14 @@ pub fn run() {
         .setup(|app| {
             db::init(app.handle())?;
             setup_global_shortcuts(app.handle())?;
+            maintenance(app.handle());
 
             #[cfg(target_os = "macos")]
             setup_macos_menu(app)?;
 
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("NoteMe")
-                .inner_size(420.0, 520.0)
+                .inner_size(980.0, 640.0)
                 .min_inner_size(360.0, 400.0)
                 .center();
 
@@ -152,7 +185,7 @@ pub fn run() {
                 .decorations(true)
                 .title_bar_style(TitleBarStyle::Overlay)
                 .hidden_title(true)
-                .traffic_light_position(tauri::LogicalPosition::new(16.0, 15.0))
+                .traffic_light_position(tauri::LogicalPosition::new(16.0, 24.0))
                 .shadow(true);
 
             #[cfg(not(target_os = "macos"))]
@@ -208,6 +241,9 @@ pub fn run() {
             get_setting,
             set_setting,
             app_stats,
+            list_tasks,
+            save_attachment,
+            purge_old_trash,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

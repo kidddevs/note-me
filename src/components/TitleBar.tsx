@@ -10,6 +10,7 @@ import {
   Pin,
   Plus,
   Search,
+  Settings,
   Square,
   StickyNote,
   Sun,
@@ -23,7 +24,9 @@ import { notify } from "../store/toast";
 import type { Tab } from "../lib/types";
 import { useEffect, useRef, useState } from "react";
 
-export const isMac = navigator.userAgent.includes("Macintosh") || navigator.platform?.toLowerCase().includes("mac");
+export const isMac =
+  navigator.userAgent.includes("Macintosh") ||
+  navigator.platform?.toLowerCase().includes("mac");
 
 interface MenuState {
   x: number;
@@ -94,22 +97,23 @@ function TabComponent({ tab }: { tab: Tab }) {
     >
       {tab.kind === "note" ? (
         tab.pinned ? (
-          <Pin size={12} color="var(--accent)" />
+          <Pin size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
         ) : (
-          <StickyNote size={12} />
+          <StickyNote size={12} style={{ flexShrink: 0, opacity: 0.75 }} />
         )
       ) : (
-        <Search size={12} />
+        <Search size={12} style={{ flexShrink: 0, opacity: 0.75 }} />
       )}
       <span className="tab-title">{tab.title}</span>
       <button
         className="tab-close"
+        title="Close tab (⌘W)"
         onClick={(e) => {
           e.stopPropagation();
           closeTab(tab.id);
         }}
       >
-        <X size={13} />
+        <X size={12} />
       </button>
     </div>
   );
@@ -128,14 +132,33 @@ export function TabContextMenu() {
       style={{ left: menu.x, top: menu.y }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <button className="menu-item" onClick={() => { closeTab(menu.tabId); setMenu(null); }}>
-        <X size={14} /> Close Tab
+      <button
+        className="menu-item"
+        onClick={() => {
+          closeTab(menu.tabId);
+          setMenu(null);
+        }}
+      >
+        <X size={13} /> Close Tab
       </button>
-      <button className="menu-item" onClick={() => { closeOtherTabs(menu.tabId); setMenu(null); }}>
-        <Check size={14} /> Close Other Tabs
+      <button
+        className="menu-item"
+        onClick={() => {
+          closeOtherTabs(menu.tabId);
+          setMenu(null);
+        }}
+      >
+        <Check size={13} /> Close Other Tabs
       </button>
-      <button className="menu-item" onClick={() => { closeAllTabs(); setMenu(null); }}>
-        <X size={14} /> Close All Tabs
+      <div className="menu-sep" />
+      <button
+        className="menu-item danger"
+        onClick={() => {
+          closeAllTabs();
+          setMenu(null);
+        }}
+      >
+        <X size={13} /> Close All Tabs
       </button>
     </div>
   );
@@ -166,7 +189,7 @@ export function TitleBar() {
     const note = await createNote();
     if (note) {
       useTabs.getState().openNote(note.id, note.title || "Untitled", false);
-      notify("success", "New note", "Tab opened in the editor");
+      notify("success", "New note created", note.title || "Untitled");
     }
   };
 
@@ -208,7 +231,8 @@ export function TitleBar() {
     for (const t of s.tabs) {
       if (t.kind === "note") {
         const n = notes.find((x) => x.id === t.noteId);
-        if (n && n.title !== t.title) s.renameTab(t.id, n.title || "Untitled", n.pinned);
+        if (n && n.title !== t.title)
+          s.renameTab(t.id, n.title || "Untitled", n.pinned);
       }
     }
   }, [notes]);
@@ -224,15 +248,23 @@ export function TitleBar() {
       }}
     >
       <div className="titlebar-left" data-tauri-drag-region>
-        <button className="icon-btn" title="Toggle sidebar" onClick={toggleSidebar}>
+        <button
+          className="icon-btn"
+          title="Toggle Sidebar (⌘⌃S)"
+          onClick={toggleSidebar}
+        >
           <PanelLeft size={15} />
         </button>
-        <button className="icon-btn" title="New note (⌘N)" onClick={newNote}>
+        <button
+          className="icon-btn"
+          title="New Note (⌘N)"
+          onClick={newNote}
+        >
           <FilePlus2 size={15} />
         </button>
         <button
           className="icon-btn"
-          title="Clipboard history (⌘⇧V)"
+          title="Clipboard History (⌘⇧V)"
           onClick={() => toggleClipboardPanel()}
         >
           <Clipboard size={15} />
@@ -252,29 +284,66 @@ export function TitleBar() {
         {tabs.map((t) => (
           <TabComponent key={t.id} tab={t} />
         ))}
-        <button className="tab-new" title="New tab (⌘T)" onClick={openHome}>
+        <button
+          className="tab-new"
+          title="New Tab (⌘T)"
+          onClick={openHome}
+        >
           <Plus size={14} />
         </button>
       </div>
 
-      <div className="win-controls" style={{ gap: 4 }}>
-        <button className="icon-btn" title="Toggle appearance" onClick={cycleTheme}>
-          {theme === "dark" ? <Moon size={14} /> : theme === "light" ? <Sun size={14} /> : <Monitor size={14} />}
+      <div className="win-controls" data-tauri-drag-region>
+        <button
+          className="icon-btn"
+          title={`Appearance: ${theme} (⌘⇧T)`}
+          onClick={cycleTheme}
+        >
+          {theme === "dark" ? (
+            <Moon size={14} />
+          ) : theme === "light" ? (
+            <Sun size={14} />
+          ) : (
+            <Monitor size={14} />
+          )}
         </button>
-        <button className="icon-btn" title="Search notes (⌘K)" onClick={() => window.dispatchEvent(new CustomEvent("open-palette"))}>
+        <button
+          className="icon-btn"
+          title="Command Palette (⌘K)"
+          onClick={() => window.dispatchEvent(new CustomEvent("open-palette"))}
+        >
           <Search size={14} />
+        </button>
+        <button
+          className="icon-btn"
+          title="Preferences (⌘,)"
+          onClick={() => window.dispatchEvent(new CustomEvent("open-settings"))}
+        >
+          <Settings size={14} />
         </button>
       </div>
 
       {!isMac && (
         <div className="win-controls">
-          <button className="win-btn" title="Minimize" onClick={() => win.minimize()}>
+          <button
+            className="win-btn"
+            title="Minimize"
+            onClick={() => win.minimize()}
+          >
             <Minus size={14} />
           </button>
-          <button className="win-btn" title={maximized ? "Restore" : "Maximize"} onClick={() => win.toggleMaximize()}>
+          <button
+            className="win-btn"
+            title={maximized ? "Restore" : "Maximize"}
+            onClick={() => win.toggleMaximize()}
+          >
             <Square size={12} />
           </button>
-          <button className="win-btn close" title="Close" onClick={() => win.close()}>
+          <button
+            className="win-btn close"
+            title="Close"
+            onClick={() => win.close()}
+          >
             <X size={14} />
           </button>
         </div>

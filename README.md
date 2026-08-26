@@ -1,82 +1,143 @@
 # NoteMe
 
-A local-first, cross-platform notes app for **macOS, Windows & Linux** — built to beat Apple Notes on UX and features, while keeping every byte of data on your device.
+> A fast, private notes workspace for people who want their thinking close at hand and their data under their control.
 
-**Stack:** Tauri 2 (Rust shell) · React 18 · Vite · TypeScript · SQLite (rusqlite, bundled) · zustand · lucide-react · react-markdown · turndown
+NoteMe is an open-source, local-first desktop notes app for macOS, Windows, and Linux. It combines a calm writing surface with browser-style tabs, Markdown and rich text, quick capture, task views, clipboard history, and a native desktop shell.
 
-> Everything runs locally. There is no cloud, no account, no telemetry. Your notes live in a SQLite database in your OS app-data folder.
+There is no account, cloud dependency, tracking, or required sync service. Notes are stored in a local SQLite database and stay on your machine.
 
-## Quick start
+## Why NoteMe
 
-```bash
-npm install
-npm run tauri dev     # development
-npm run tauri build   # release installers (src-tauri/target/release/bundle/)
-```
-
-## Native platform behavior
-
-- **macOS** — real native traffic lights (Overlay title bar), native menu bar (NoteMe / File / Edit / View / Window with correct roles), window-state persistence, single-instance (second launch focuses the running app), dock-click reopen, native fullscreen / minimize / zoom.
-- **Windows / Linux** — custom frameless titlebar with native-style min/max/close controls, double-click the titlebar to maximize.
-
-## Editing
-
-- **Markdown** — write / split / preview modes with a formatting toolbar and ⌘ shortcuts.
-- **Rich text** — WYSIWYG mode (`⌘`-free toolbar: headings, bold, italic, underline, strikethrough, lists, task lists, quotes, code blocks, links). Converts to and from Markdown losslessly via turndown, so you can switch modes per note.
-- Auto-save (debounced 700ms) with `Saving…` indicator, auto-title from the first line, word/char count, reading time.
+- **Private by default:** local storage, no telemetry, and no server account.
+- **Fast to open:** a focused note-taker window with a keyboard-first workflow.
+- **Built for depth:** Markdown, rich text, attachments, tasks, tags, categories, and search in one workspace.
+- **At home on your OS:** native macOS traffic lights and menus, persistent window state, global quick capture, and platform-aware window controls.
+- **Small surface area:** your notes remain usable as plain Markdown instead of being trapped in a proprietary format.
 
 ## Features
 
-| Feature | Details |
-| --- | --- |
-| **Browser-style tabs** | Open notes in multiple tabs, drag to reorder, middle-click to close, `⌘T` new tab, `⌘W` close, `⌘⇧]` / `⌘⇧[` next/prev, `⌘N` new note, ⌘/middle-click a card to force a new tab |
-| **Smart sidebar** | All Notes, Favorites, Archive, Trash, color-coded categories (custom icon + color) and tags, live counts, full-text search, collapsible (`⌘⌃S`) |
-| **Clipboard manager** | Background clipboard history, `⌘⇧V` toggles the panel globally, click to re-copy, one-click "new note from clipboard" |
-| **Quick capture** | Global `⌘⇧N` (works when NoteMe is unfocused), `⌘↵` to save |
-| **Command palette** | `⌘K` / `⌘⇧P` to search notes and jump anywhere |
-| **Themes** | System / Light / Dark, system default, persisted |
-| **Notifications** | In-app toast system: success / info / warning / error |
-| **Storage** | SQLite, WAL mode, at the OS app-data dir (`~/Library/Application Support/com.dakid.noteme/` on macOS) |
-| **More** | Pin, favorite, archive, trash with restore, tags per note, categories, duplicate note (`⌘⇧D`), export single note as `.md`, **Export All Notes** to a folder, focus mode, small default window (420×520) that behaves like a note taker and auto-hides the sidebar at narrow widths |
+### Writing
+
+- Markdown write, split, and preview modes.
+- Rich text editing with headings, emphasis, underline, lists, task lists, quotes, code blocks, and links.
+- Lossless Markdown conversion when switching between editing modes.
+- Debounced auto-save, automatic titles, word count, character count, and reading time.
+- Paste or drag images into notes; attachments are stored locally.
+
+### Organization
+
+- Browser-style tabs with drag-to-reorder, middle-click close, and relative tab navigation.
+- All Notes, Favorites, Tasks, Archive, and Trash views.
+- Color-coded categories and tags with live counts.
+- Full-text search and command palette navigation.
+- Pin, favorite, archive, restore, permanently delete, duplicate, and batch-manage notes.
+
+### Desktop workflow
+
+- Native macOS application menu with About NoteMe and release update checking.
+- Global Quick Capture with `Cmd+Shift+N` and `Cmd+Enter` to save.
+- Clipboard history with `Cmd+Shift+V` and one-click note creation.
+- Daily Note, Meeting, and Journal templates.
+- System, Light, and Dark themes with persisted preferences.
+- Import `.md`, `.markdown`, and `.txt` files by dropping them into the app.
+- Print and PDF export through the native print flow.
+
+## Install
+
+### macOS
+
+Download the latest Apple Silicon DMG from the [GitHub Releases](https://github.com/kidddevs/note-me/releases) page, open it, and drag NoteMe into Applications.
+
+The first public artifact is built for Apple Silicon as `NoteMe_0.1.0_aarch64.dmg`. Intel and other platform installers can be produced from source with the Tauri build command below.
+
+To check for a newer release inside the app, use **NoteMe > Check for Updates...**. NoteMe only shows a download action when the GitHub release is newer than the installed version.
+
+### Build from source
+
+Requirements:
+
+- Node.js 20 or newer
+- Rust stable and Cargo
+- Platform prerequisites listed in the [Tauri v2 prerequisites guide](https://v2.tauri.app/start/prerequisites/)
+
+```bash
+npm install
+npm run tauri dev
+```
+
+Create installers:
+
+```bash
+npm run build
+npm run tauri build
+```
+
+Installers are written to `src-tauri/target/release/bundle/`.
 
 ## Keyboard shortcuts
 
 | Shortcut | Action |
 | --- | --- |
-| `⌘N` | New note (opens in a tab) |
-| `⌘T` | New tab |
-| `⌘W` | Close tab |
-| `⌘⇧D` | Duplicate note |
-| `⌘K` / `⌘⇧P` | Command palette |
-| `⌘⇧N` | Quick capture (global) |
-| `⌘⇧V` | Toggle clipboard panel (global) |
-| `⌘,` | Settings |
-| `⌘⌃S` | Toggle sidebar |
-| `⌘⇧T` | Toggle appearance |
-| `⌘⇧]` / `⌘⇧[` | Next / previous tab |
-| `⌘B` / `⌘I` / `⌘U` | Bold / italic / underline (rich text) |
-| `⌘1` / `⌘2` | Heading 1 / 2 (markdown) |
+| `Cmd+N` | Create a note |
+| `Cmd+T` | Open a new tab / browse all notes |
+| `Cmd+W` | Close the active tab |
+| `Cmd+Shift+D` | Duplicate the active note |
+| `Cmd+K` / `Cmd+Shift+P` | Open the command palette |
+| `Cmd+Shift+N` | Open global Quick Capture |
+| `Cmd+Shift+V` | Toggle Clipboard History |
+| `Cmd+,` | Open Preferences |
+| `Cmd+Ctrl+S` | Toggle the sidebar |
+| `Cmd+Shift+T` | Toggle appearance |
+| `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous tab |
+| `Cmd+F` | Find and replace in Markdown mode |
+| `Cmd+P` | Print the current note |
+| `Cmd+B` / `Cmd+I` / `Cmd+U` | Bold / italic / underline in rich text |
+| `Cmd+1` / `Cmd+2` | Apply heading 1 / heading 2 in Markdown mode |
 
-## Project structure
+## Data and privacy
 
+NoteMe uses SQLite with WAL journaling. On macOS, the database lives at:
+
+```text
+~/Library/Application Support/com.dakid.noteme/
 ```
-src/                     React frontend
-  components/            TitleBar (tabs), Sidebar, Editor (+RichTextEditor),
-                         ViewTab, NoteList, ClipboardPanel, QuickCapture,
-                         Palette, Toasts, Modals, RichTextEditor
-  lib/                   api (Tauri invoke wrappers), types, format utils, richtext (MD<->HTML)
-  store/                 zustand: tabs, notes, theme (UI prefs), toast
-  styles.css             design tokens (flat, no gradients) + all styles
-src-tauri/               Rust backend
-  src/lib.rs             window creation (platform-aware), macOS menu, global shortcuts
-  src/commands.rs        ~40 Tauri commands (notes, categories, tags, clipboard, settings)
-  src/db.rs              SQLite schema + init
-  src/models.rs          serde models
+
+The app does not upload notes or attachments. The only network request made by the update checker is to the public GitHub Releases API when you explicitly choose **Check for Updates...**.
+
+## Technology
+
+- Tauri 2 and Rust for the desktop shell
+- React 18, TypeScript, and Vite for the interface
+- SQLite via `rusqlite` for durable local storage
+- Zustand for application state
+- `react-markdown`, `remark-gfm`, and `turndown` for Markdown and rich text
+
+The codebase is intentionally split between a small React UI layer and explicit Rust commands for persistence and OS integration. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data flow and command boundary.
+
+## Project map
+
+```text
+src/                     React application
+  components/            TitleBar, Sidebar, Editor, views, modals, panels
+  lib/                   Tauri API wrappers, actions, formatting, rich text
+  store/                 Notes, tabs, theme, and toast state
+  styles.css             Application design system and responsive layout
+src-tauri/               Rust desktop shell and persistence layer
+  src/lib.rs             Window creation, macOS menu, and global shortcuts
+  src/commands.rs        Note, category, tag, task, clipboard, and settings commands
+  src/db.rs              SQLite schema and initialization
   capabilities/          Tauri permissions
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for deeper details.
+## Contributing
 
-## Database
+1. Fork the repository and create a focused branch.
+2. Run `npm install` and `npm run tauri dev`.
+3. Keep data local and preserve the Markdown data model.
+4. Before opening a pull request, run `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml`.
 
-`notes`, `categories`, `tags`, `note_tags`, `clipboard_items`, `settings` — foreign keys on, WAL journaling. Notes are soft-deleted into Trash (`trashed` flag) before permanent deletion.
+Bug reports and focused pull requests are welcome. Please do not include local databases, build output, screenshots, or machine-specific configuration in commits.
+
+## License
+
+NoteMe is released under the [MIT License](LICENSE).

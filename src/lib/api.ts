@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppStats, Category, ClipboardItem, Note, Tag } from "./types";
+import type { AppStats, Category, ClipboardItem, Note, Tag, TaskItem } from "./types";
 
 export const api = {
   listNotes: () => invoke<Note[]>("list_notes"),
   listArchived: () => invoke<Note[]>("list_archived"),
   listTrashed: () => invoke<Note[]>("list_trashed"),
   listFavorites: () => invoke<Note[]>("list_favorites"),
+  listTasks: () => invoke<TaskItem[]>("list_tasks"),
   notesByCategory: (id: number) => invoke<Note[]>("notes_by_category", { categoryId: id }),
   notesByTag: (id: number) => invoke<Note[]>("notes_by_tag", { tagId: id }),
   search: (q: string) => invoke<Note[]>("search_notes", { query: q }),
@@ -45,4 +46,6 @@ export const api = {
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
   stats: () => invoke<AppStats>("app_stats"),
+  saveAttachment: (data: number[], ext: string) =>
+    invoke<string>("save_attachment", { data, ext }),
 };
