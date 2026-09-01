@@ -50,7 +50,7 @@ import {
   type RichAlign,
   type RichPresentation,
   type TableAlign,
-} from "./BooksStudio";
+} from "../lib/bookPublishing";
 
 function InspectorDisclosure({ icon, title, summary, children, defaultOpen = true }: { icon: ReactNode; title: string; summary?: string; children: ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -133,7 +133,8 @@ function ParagraphControls({ style, onChange }: { style: BookTextStyle; onChange
       <div className="books-paragraph-nested-fields">
         <label>Style<select value={style.nestedStyle} onChange={(event) => onChange({ nestedStyle: event.target.value as BookNestedStyle })}>{nestedOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         {style.nestedStyle !== "none" && <>
-          <div className="books-inspector-two-up"><label>Words<input type="number" min="1" max="12" step="1" value={style.nestedWords} onChange={(event) => onChange({ nestedWords: Math.min(12, Math.max(1, Number(event.target.value) || 1)) })} /></label><label>Nested font<select value={nestedFontPreset ? style.nestedFontFamily : "custom"} onChange={(event) => onChange({ nestedFontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font stack</option></select></label></div>
+          <label>Words<input type="number" min="1" max="12" step="1" value={style.nestedWords} onChange={(event) => onChange({ nestedWords: Math.min(12, Math.max(1, Number(event.target.value) || 1)) })} /></label>
+          <label>Nested font<select value={nestedFontPreset ? style.nestedFontFamily : "custom"} onChange={(event) => onChange({ nestedFontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font stack</option></select></label>
           {(!nestedFontPreset || style.nestedFontFamily === "") && <label>Custom nested stack<input value={style.nestedFontFamily} onChange={(event) => onChange({ nestedFontFamily: event.target.value })} placeholder="Baskerville, Georgia, serif" /></label>}
           <label className="books-color-field">Nested color<div><input className="books-color-input" type="color" value={style.nestedColor} onChange={(event) => onChange({ nestedColor: event.target.value })} /><code>{style.nestedColor}</code></div></label>
         </>}

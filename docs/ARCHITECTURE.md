@@ -95,6 +95,8 @@ Books use first-class `books` and `book_chapters` tables instead of serialized s
 
 Books Studio keeps its custom interaction surfaces keyboard-operable: tab groups implement roving focus and arrow navigation, command search exposes an active listbox option, popup menus support arrow/Home/End/Escape behavior, and destructive actions use focus-trapped `alertdialog` confirmations that restore focus to their trigger.
 
+The Books Studio React surface is split by responsibility across `BooksStudioEditor`, `BooksStudioInspector`, `BooksStudioOutline`, `BooksStudioSettings`, and `BooksStudioExport`. Shared Markdown/rendering, print, EPUB, DOCX, HTML, and plain-text builders live in `src/lib/bookPublishing.ts`, so the export screen and package-level contract tests exercise the same code path.
+
 Binary EPUB/DOCX export requires `fs:allow-write-file`; text formats use `fs:allow-write-text-file`. The save dialog grants the chosen path to the runtime filesystem scope, while the static capability remains limited to `$HOME/**` for non-dialog writes.
 
 ## Books Studio editor

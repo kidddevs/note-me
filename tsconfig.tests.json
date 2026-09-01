@@ -12,6 +12,7 @@
   },
   "include": [
     "src/lib/bookLayout.ts",
+    "src/lib/bookPublishing.ts",
     "src/lib/bookExport.ts",
     "src/lib/bookSession.ts",
     "src/lib/bookToc.ts",

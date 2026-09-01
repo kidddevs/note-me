@@ -3213,7 +3213,7 @@ textarea:focus-visible,
 .books-outline-story { padding-bottom: 0; }
 .books-matter-row { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 56px; padding: 8px 16px; border: 0; border-top: 1px solid var(--border-subtle); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .books-matter-row:hover { background: var(--surface-hover); }
-.books-matter-row > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.books-matter-row > span { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .books-matter-row strong { font-family: Georgia, serif; font-size: 13px; font-weight: 600; }
 .books-matter-row small { color: var(--text-3); font-size: 10px; }
 .books-matter-row > svg { margin-left: auto; color: var(--text-4); }
@@ -3850,9 +3850,15 @@ textarea:focus-visible,
 .books-inspector-disclosure-title small { overflow: hidden; color: var(--text-3); font-size: 9px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
 .books-inspector-disclosure-content { padding: 0 11px 13px; }
 .books-inspector-form { display: flex; flex-direction: column; gap: 10px; }
-.books-inspector-form label { display: flex; gap: 6px; color: var(--text-3); flex-direction: column; font-size: 10px; font-weight: 650; }
+.books-inspector-form label { display: flex; gap: 8px; color: var(--text-3); flex-direction: column; font-size: 10px; font-weight: 650; line-height: 1.25; }
 .books-inspector-form input:not([type="checkbox"]),
 .books-inspector-form select { width: 100%; min-width: 0; height: 31px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 6px; outline: 0; background: var(--bg); color: var(--text-2); font: inherit; font-size: 11px; font-weight: 400; }
+.books-inspector-form input[type="number"],
+.books-paragraph-controls input[type="number"] { -webkit-appearance: none; appearance: none; background-color: var(--bg); color: var(--text); color-scheme: inherit; -webkit-text-fill-color: var(--text); }
+.books-inspector-form input[type="number"]::-webkit-inner-spin-button,
+.books-inspector-form input[type="number"]::-webkit-outer-spin-button,
+.books-paragraph-controls input[type="number"]::-webkit-inner-spin-button,
+.books-paragraph-controls input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .books-inspector-form input:not([type="checkbox"]):focus,
 .books-inspector-form select:focus { border-color: var(--book-accent); box-shadow: 0 0 0 3px var(--book-accent-soft); }
 .books-inspector-two-up { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
@@ -3876,7 +3882,7 @@ textarea:focus-visible,
 .books-inspector-subheading small { color: var(--text-4); font-size: 9px; line-height: 1.35; }
 .books-paragraph-controls { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .books-paragraph-controls > .books-inspector-subheading small { color: var(--text-3); }
-.books-paragraph-controls label:not(.books-inspector-check):not(.books-color-field) { display: flex; min-width: 0; gap: 7px; color: var(--text-2); flex-direction: column; font-size: 9.5px; font-weight: 650; letter-spacing: .01em; line-height: 1.15; }
+.books-paragraph-controls label:not(.books-inspector-check):not(.books-color-field) { display: flex; min-width: 0; gap: 8px; color: var(--text-2); flex-direction: column; font-size: 9.5px; font-weight: 650; letter-spacing: .01em; line-height: 1.25; }
 .books-paragraph-controls input:not([type="checkbox"]),
 .books-paragraph-controls select { width: 100%; min-width: 0; height: 31px; padding: 0 7px; border: 1px solid var(--border-strong); border-radius: 6px; outline: 0; background: var(--bg); color: var(--text); font: inherit; font-size: 11px; }
 .books-paragraph-controls input:not([type="checkbox"]):hover,
@@ -3893,13 +3899,13 @@ textarea:focus-visible,
 .books-paragraph-construction .books-inspector-subheading small { color: var(--text-2); font-size: 9.5px; }
 .books-paragraph-construction-fields { display: flex; flex-direction: column; gap: 10px; padding: 11px 10px 12px; background: color-mix(in srgb, var(--surface-2) 56%, var(--surface)); }
 .books-paragraph-construction-fields .books-inspector-two-up { gap: 8px; }
-.books-paragraph-construction-fields label { display: flex; min-width: 0; gap: 7px; color: var(--text-2); flex-direction: column; font-size: 9.5px; font-weight: 650; letter-spacing: .01em; line-height: 1.15; }
+.books-paragraph-construction-fields label { display: flex; min-width: 0; gap: 8px; color: var(--text-2); flex-direction: column; font-size: 9.5px; font-weight: 650; letter-spacing: .01em; line-height: 1.25; }
 .books-paragraph-construction-fields > label { width: calc(50% - 4px); }
 .books-paragraph-construction-fields input { width: 100%; min-width: 0; height: 31px; padding: 0 7px; border: 1px solid var(--border-strong); border-radius: 6px; outline: 0; background: var(--bg); color: var(--text); font: inherit; font-size: 11px; font-variant-numeric: tabular-nums; transition: border-color .14s ease, box-shadow .14s ease, background .14s ease; }
 .books-paragraph-construction-fields input:hover { border-color: color-mix(in srgb, var(--book-accent) 36%, var(--border-strong)); }
 .books-paragraph-construction-fields input:focus { border-color: var(--book-accent); background: var(--surface); box-shadow: 0 0 0 3px var(--book-accent-soft); }
-[data-theme="dark"] .books-paragraph-construction-fields input { color-scheme: dark; }
-[data-theme="light"] .books-paragraph-construction-fields input { color-scheme: light; }
+[data-theme="dark"] .books-context-inspector { color-scheme: dark; }
+[data-theme="light"] .books-context-inspector { color-scheme: light; }
 .books-paragraph-controls .books-color-field > div { display: flex; align-items: center; gap: 8px; }
 .books-paragraph-controls .books-color-field code { color: var(--text-4); font-family: var(--mono); font-size: 9px; font-weight: 400; }
 .books-paragraph-dropcap { margin-top: 1px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--book-accent) 18%, var(--border-strong)); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow-xs); }
@@ -3915,15 +3921,20 @@ textarea:focus-visible,
 .books-paragraph-dropcap-fields .books-color-field > div { display: flex; align-items: center; gap: 7px; }
 .books-paragraph-dropcap-fields .books-color-input { width: 32px !important; height: 30px !important; padding: 3px !important; border-radius: 6px; }
 .books-paragraph-dropcap-fields .books-color-field code { color: var(--text-2); font-family: var(--mono); font-size: 9px; font-weight: 400; }
-.books-paragraph-nested-opening { margin-top: 1px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--book-accent) 18%, var(--border-strong)); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow-xs); }
-.books-paragraph-nested-opening .books-inspector-subheading { display: grid; grid-template-columns: 27px minmax(0, 1fr); align-items: center; gap: 9px; margin: 0; padding: 10px 10px 9px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--book-accent) 14%, var(--border)); background: color-mix(in srgb, var(--book-accent) 8%, var(--surface)); }
+.books-paragraph-nested-opening { margin-top: 1px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--book-accent) 27%, var(--border-strong)); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow-xs); }
+.books-paragraph-nested-opening .books-inspector-subheading { display: grid; grid-template-columns: 27px minmax(0, 1fr); align-items: center; gap: 9px; margin: 0; padding: 10px 10px 9px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--book-accent) 19%, var(--border)); background: color-mix(in srgb, var(--book-accent) 10%, var(--surface)); }
 .books-paragraph-nested-opening .books-inspector-subheading > div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .books-paragraph-nested-opening .books-inspector-subheading strong { color: var(--text); font-size: 11px; letter-spacing: -.01em; }
 .books-paragraph-nested-opening .books-inspector-subheading small { color: var(--text-2); font-size: 9.5px; }
-.books-paragraph-nested-mark { font-family: var(--font); font-size: 10px; font-weight: 750; letter-spacing: -.06em; }
-.books-paragraph-nested-fields { display: flex; flex-direction: column; gap: 10px; padding: 11px 10px 12px; background: color-mix(in srgb, var(--surface-2) 56%, var(--surface)); }
-.books-paragraph-nested-fields .books-inspector-two-up { gap: 8px; }
-.books-paragraph-nested-fields .books-inspector-two-up select { padding-right: 4px; font-size: 10px; }
+.books-paragraph-nested-mark { border-color: color-mix(in srgb, var(--book-accent) 38%, var(--border)); background: var(--book-accent-soft); color: var(--book-accent); font-family: var(--font); font-size: 10px; font-weight: 750; letter-spacing: -.06em; }
+.books-paragraph-nested-fields { display: flex; flex-direction: column; gap: 13px; padding: 13px 10px 14px; background: color-mix(in srgb, var(--surface-2) 64%, var(--surface)); }
+.books-paragraph-nested-fields label:not(.books-inspector-check):not(.books-color-field) { gap: 9px; color: var(--text-2); line-height: 1.3; }
+.books-paragraph-nested-fields > label:not(.books-inspector-check):not(.books-color-field) { gap: 9px; }
+.books-paragraph-nested-fields input:not([type="checkbox"]),
+.books-paragraph-nested-fields select { border-color: color-mix(in srgb, var(--book-accent) 16%, var(--border-strong)); background: color-mix(in srgb, var(--bg) 92%, var(--surface)); }
+.books-paragraph-nested-fields input:not([type="checkbox"]):hover,
+.books-paragraph-nested-fields select:hover { border-color: color-mix(in srgb, var(--book-accent) 42%, var(--border-strong)); }
+.books-paragraph-nested-fields input[type="number"] { font-variant-numeric: tabular-nums; }
 .books-paragraph-nested-fields .books-color-field { display: flex; align-items: center; justify-content: space-between; gap: 9px; color: var(--text-2); font-size: 9.5px; font-weight: 650; letter-spacing: .01em; }
 .books-paragraph-nested-fields .books-color-field > div { display: flex; align-items: center; gap: 7px; }
 .books-paragraph-nested-fields .books-color-input { width: 32px !important; height: 30px !important; padding: 3px !important; border-radius: 6px; }

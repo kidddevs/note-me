@@ -20,15 +20,19 @@ import { useBooks } from "../store/books";
 import { notify } from "../store/toast";
 import {
   CHAPTER_KIND_OPTIONS,
-  SECTION_GROUP_LABELS,
   chapterGroup,
   chapterKindLabel,
-  handleMenuKeyDown,
   tocTitle,
-  useConfirmationDialog,
   wordCount,
-} from "./BooksStudio";
+} from "../lib/bookPublishing";
+import { handleMenuKeyDown, useConfirmationDialog } from "./BooksStudio";
 import type { MatterFocus } from "./BooksStudio";
+
+const SECTION_GROUP_LABELS: Record<"front" | "story" | "back", string> = {
+  front: "Opening pages",
+  story: "Story",
+  back: "Closing pages",
+};
 
 export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter }: { chapters: Chapter[]; activeChapterId: number | null; onSelect: (id: number) => void; onNewChapter: (kind: ChapterKind) => void }) {
   const updateChapter = useBooks((state) => state.updateChapter);

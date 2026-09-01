@@ -44,22 +44,20 @@ import {
   DEFAULT_RICH_PRESENTATION,
   editorContextFor,
   findOccurrences,
-  handleTabListKeyDown,
   imageAltText,
   imageDataUri,
   imageFileToMarkdown,
   imageMimeType,
   imageMarkdown,
   markdownToHtml,
-  manuscriptStyle,
   bookInputFromBook,
   tableBlockText,
   tableDataFromValue,
-  useConfirmationDialog,
   wordCount,
   type CanvasBlock,
-  type EditorView,
-} from "./BooksStudio";
+} from "../lib/bookPublishing";
+import { handleTabListKeyDown, manuscriptStyle, useConfirmationDialog } from "./BooksStudio";
+import type { EditorView } from "./BooksStudio";
 
 
 function BooksAssetDrawer({ onClose, onInsert }: { onClose: () => void; onInsert: (markdown: string) => void }) {
