@@ -1,7 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { execFileSync } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { unzipSync, strFromU8 } = require("fflate");
 const {
+  bookExportPayload,
   bookDocx,
   bookEpub,
   bookHtml,
@@ -91,6 +96,30 @@ function visibleText(markup) {
   return markup.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 }
 
+function findCommand(candidates, args = ["--version"]) {
+  const commands = candidates.filter(Boolean);
+  return commands.find((candidate) => {
+    try {
+      execFileSync(candidate, args, { stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  }) ?? null;
+}
+
+function findSoffice() {
+  return findCommand([process.env.NOTEME_SOFFICE, "soffice", "libreoffice"]);
+}
+
+function findPdfinfo() {
+  return findCommand([process.env.NOTEME_PDFINFO, "pdfinfo"]);
+}
+
+function findPdftotext() {
+  return findCommand([process.env.NOTEME_PDFTOTEXT, "pdftotext"]);
+}
+
 test("Markdown export preserves portable metadata, anchors, and contents", () => {
   const output = bookMarkdown(book(), chapters());
   assert.match(output, /^---\ntitle: "The Shape of Morning"/);
@@ -162,4 +191,48 @@ test("DOCX export is a readable Word package with styles, chrome, and media", as
   assert.match(files["word/styles.xml"], /Heading1/);
   assert.match(files["word/footer1.xml"], /A\. Writer/);
   assert.match(files["word/_rels/document.xml.rels"], /relationships\/image/);
+});
+
+test("export dispatcher writes every file-level reader format", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "noteme-book-export-"));
+  const formats = [
+    ["markdown", ".md"],
+    ["html", ".html"],
+    ["txt", ".txt"],
+    ["epub", ".epub"],
+    ["docx", ".docx"],
+  ];
+  try {
+    for (const [format, extension] of formats) {
+      const payload = await bookExportPayload(book(), chapters(), format);
+      const outputPath = path.join(tempDir, `shape-of-morning${extension}`);
+      fs.writeFileSync(outputPath, payload);
+      const output = fs.readFileSync(outputPath);
+      assert.ok(output.length > 0, `${format} should produce a non-empty file`);
+      if (format === "markdown") assert.match(output.toString("utf8"), /^---\ntitle:/);
+      if (format === "html") assert.match(output.toString("utf8"), /^<!doctype html>/);
+      if (format === "txt") assert.match(output.toString("utf8"), /The Shape of Morning/);
+      if (format === "epub") assert.equal(strFromU8(unzipSync(output).mimetype), "application/epub+zip");
+      if (format === "docx") assert.ok(unzipSync(output)["word/document.xml"]);
+    }
+    const printPath = path.join(tempDir, "shape-of-morning-print.html");
+    fs.writeFileSync(printPath, bookPrintHtml(book(), chapters()), "utf8");
+    const printOutput = fs.readFileSync(printPath, "utf8");
+    assert.match(printOutput, /id="noteme-print-contract"/);
+    assert.match(printOutput, /@page \{ size: 6in 9in/);
+    const soffice = findSoffice();
+    if (soffice) {
+      execFileSync(soffice, ["--headless", "--convert-to", "pdf", "--outdir", tempDir, printPath], { stdio: "ignore" });
+      const pdfPath = path.join(tempDir, "shape-of-morning-print.pdf");
+      assert.match(fs.readFileSync(pdfPath).subarray(0, 5).toString(), /^%PDF-/);
+      const pdfinfo = findPdfinfo();
+      if (pdfinfo) assert.match(execFileSync(pdfinfo, [pdfPath], { encoding: "utf8" }), /Pages:\s+[1-9]/);
+      const pdftotext = findPdftotext();
+      if (pdftotext) assert.match(execFileSync(pdftotext, [pdfPath, "-"], { encoding: "utf8" }), /The first light found the room/);
+    } else {
+      assert.equal(process.env.NOTEME_REQUIRE_PDF, undefined, "LibreOffice is required for PDF output verification");
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });

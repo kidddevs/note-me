@@ -23,11 +23,7 @@ import {
 import {
   EXPORT_OPTIONS,
   bookChromeValues,
-  bookDocx,
-  bookEpub,
-  bookHtml,
-  bookMarkdown,
-  bookText,
+  bookExportPayload,
   chapterKindLabel,
   defaultChapterTitle,
   filenameFor,
@@ -35,7 +31,7 @@ import {
   fontCss,
 } from "../lib/bookPublishing";
 export * from "../lib/bookPublishing";
-import type { PageBand } from "../lib/bookPublishing";
+import type { BookExportFormat, PageBand } from "../lib/bookPublishing";
 import { useBooks } from "../store/books";
 import { useWorkspace } from "../store/workspace";
 import { notify } from "../store/toast";
@@ -46,7 +42,7 @@ import { SettingsScreen } from "./BooksStudioSettings";
 
 export type StudioScreen = "library" | "manuscript" | "outline" | "settings" | "export";
 export type EditorView = "write" | "preview";
-export type ExportFormat = "markdown" | "html" | "epub" | "docx" | "txt";
+export type ExportFormat = BookExportFormat;
 export type MatterFocus = "front" | "back";
 
 interface ConfirmationRequest {
@@ -184,11 +180,9 @@ export async function exportBook(book: Book, chapters: Chapter[], format: Export
     filters: [{ name: option.label, extensions: [option.extension.slice(1)] }],
   });
   if (!path) return;
-  if (format === "markdown") await writeTextFile(path, bookMarkdown(book, chapters));
-  if (format === "html") await writeTextFile(path, bookHtml(book, chapters));
-  if (format === "txt") await writeTextFile(path, bookText(book, chapters));
-  if (format === "epub") await writeFile(path, await bookEpub(book, chapters));
-  if (format === "docx") await writeFile(path, await bookDocx(book, chapters));
+  const payload = await bookExportPayload(book, chapters, format);
+  if (typeof payload === "string") await writeTextFile(path, payload);
+  else await writeFile(path, payload);
   notify("success", "Book exported", path);
 }
 

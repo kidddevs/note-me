@@ -1467,6 +1467,15 @@ export function filenameFor(book: Book, extension: string) {
   return `${title || "untitled-manuscript"}${extension}`;
 }
 
+export async function bookExportPayload(book: Book, chapters: Chapter[], format: BookExportFormat): Promise<string | Uint8Array> {
+  if (format === "markdown") return bookMarkdown(book, chapters);
+  if (format === "html") return bookHtml(book, chapters);
+  if (format === "txt") return bookText(book, chapters);
+  if (format === "epub") return bookEpub(book, chapters);
+  if (format === "docx") return bookDocx(book, chapters);
+  throw new Error(`Unsupported book export format: ${format}`);
+}
+
 export function typographyCss(layout: BookLayout) {
   const styleCss = (role: keyof BookLayout["typography"]) => {
     const style = layout.typography[role];
