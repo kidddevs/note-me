@@ -25,7 +25,7 @@ import { useNotes } from "../store/notes";
 import { notify } from "../store/toast";
 
 const COLORS = [
-  "#007aff", // System Blue
+  "#a56b3e", // Books Studio accent
   "#5856d6", // System Indigo
   "#af52de", // System Purple
   "#ff2d55", // System Pink
@@ -239,7 +239,6 @@ export function TagPickerModal({
               onChange={() => toggle(t.id)}
               style={{ accentColor: "var(--accent)" }}
             />
-            <span className="category-dot" style={{ background: t.color }} />
             <span style={{ fontWeight: selected.has(t.id) ? 550 : 450 }}>{t.name}</span>
           </label>
         ))}

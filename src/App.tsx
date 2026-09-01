@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { TitleBar, TabContextMenu } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
@@ -15,8 +15,11 @@ import { AboutModal } from "./components/AboutModal";
 import { useNotes, openNoteInTab } from "./store/notes";
 import { useTabs } from "./store/tabs";
 import { useTheme } from "./store/theme";
+import { useWorkspace } from "./store/workspace";
 import { notify } from "./store/toast";
 import { importFilesAsNotes } from "./lib/actions";
+
+const BooksStudio = lazy(() => import("./components/BooksStudio").then(({ BooksStudio: Studio }) => ({ default: Studio })));
 
 async function exportAllNotes() {
   try {
@@ -47,6 +50,7 @@ async function exportAllNotes() {
 
 export default function App() {
   const loaded = useNotes((s) => s.loaded);
+  const workspace = useWorkspace((s) => s.mode);
   const sidebarCollapsed = useTheme((s) => s.sidebarCollapsed);
   const clipboardOpen = useNotes((s) => s.clipboardOpen);
   const toggleClipboardPanel = useNotes((s) => s.toggleClipboardPanel);
@@ -60,8 +64,10 @@ export default function App() {
   const [updatesRequested, setUpdatesRequested] = useState(0);
   const clipboardWatch = useRef<number | null>(null);
   const lastClip = useRef("");
+  const pendingFileOpens = useRef<string[]>([]);
 
   useEffect(() => {
+    useWorkspace.getState().init();
     useTheme.getState().init().then(() => {
       useNotes.getState().init();
     });
@@ -74,13 +80,31 @@ export default function App() {
     listen("global-shortcut", (e) => {
       if (e.payload === "toggle-clipboard") toggleClipboardPanel();
     }).then((u) => unlisteners.push(u));
+    listen<string[]>("open-files", (e) => {
+      const paths = e.payload;
+      if (!Array.isArray(paths) || paths.length === 0) return;
+      if (!useNotes.getState().loaded) {
+        pendingFileOpens.current.push(...paths);
+        return;
+      }
+      useWorkspace.getState().setMode("notes");
+      void importFilesAsNotes(paths);
+    }).then((u) => unlisteners.push(u));
     listen<string>("menu", (e) => {
       switch (e.payload) {
         case "new-note":
+          useWorkspace.getState().setMode("notes");
           useNotes.getState().createNote().then((n) => n && openNoteInTab(n));
           break;
         case "new-tab":
+          useWorkspace.getState().setMode("notes");
           useTabs.getState().openHome();
+          break;
+        case "workspace-notes":
+          useWorkspace.getState().setMode("notes");
+          break;
+        case "workspace-books":
+          useWorkspace.getState().setMode("books");
           break;
         case "close-tab":
           useTabs.getState().closeTab(useTabs.getState().activeId ?? "");
@@ -126,6 +150,13 @@ export default function App() {
     }).then((u) => unlisteners.push(u));
     return () => unlisteners.forEach((u) => u());
   }, []);
+
+  useEffect(() => {
+    if (!loaded || pendingFileOpens.current.length === 0) return;
+    const paths = pendingFileOpens.current.splice(0);
+    useWorkspace.getState().setMode("notes");
+    void importFilesAsNotes(paths);
+  }, [loaded]);
 
   // poll clipboard for changes (cross-platform history capture)
   useEffect(() => {
@@ -201,36 +232,44 @@ export default function App() {
     <div className="app">
       <TitleBar />
       <div className="app-body">
-        <Sidebar collapsed={sidebarCollapsed} />
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            display: "flex",
-            flexDirection: "column",
-            background: "var(--bg)",
-          }}
-        >
-          {!loaded ? (
-            <div className="empty-state" style={{ flex: 1 }}>
-              <div className="spinner" />
+        {workspace === "books" ? (
+          <Suspense fallback={<div className="books-loading"><div className="spinner" /><span>Opening Books Studio...</span></div>}>
+            <BooksStudio />
+          </Suspense>
+        ) : (
+          <>
+            <Sidebar collapsed={sidebarCollapsed} />
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: "flex",
+                flexDirection: "column",
+                background: "var(--bg)",
+              }}
+            >
+              {!loaded ? (
+                <div className="empty-state" style={{ flex: 1 }}>
+                  <div className="spinner" />
+                </div>
+              ) : activeTab ? (
+                activeTab.kind === "note" ? (
+                  <Editor noteId={activeTab.noteId!} tabId={activeTab.id} />
+                ) : activeTab.view?.kind === "all" ? (
+                  <HomeView />
+                ) : (
+                  <ViewTab view={activeTab.view!} title={activeTab.title} />
+                )
+              ) : (
+                <HomeView />
+              )}
             </div>
-          ) : activeTab ? (
-            activeTab.kind === "note" ? (
-              <Editor noteId={activeTab.noteId!} tabId={activeTab.id} />
-            ) : activeTab.view?.kind === "all" ? (
-              <HomeView />
-            ) : (
-              <ViewTab view={activeTab.view!} title={activeTab.title} />
-            )
-          ) : (
-            <HomeView />
-          )}
-        </div>
-        {clipboardOpen && <ClipboardPanel />}
+            {clipboardOpen && <ClipboardPanel />}
+          </>
+        )}
       </div>
-      <QuickCapture />
-      <Palette />
+      {workspace === "notes" && <QuickCapture />}
+      {workspace === "notes" && <Palette />}
       <Toasts />
       <TabContextMenu />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}

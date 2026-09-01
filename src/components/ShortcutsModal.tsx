@@ -46,6 +46,20 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["Esc"], description: "Dismiss modal / palette" },
     ],
   },
+  {
+    category: "Books Studio",
+    shortcuts: [
+      { keys: ["⌘", "1"], description: "Open library" },
+      { keys: ["⌘", "2"], description: "Open manuscript" },
+      { keys: ["⌘", "3"], description: "Open outline" },
+      { keys: ["⌘", "4"], description: "Open book settings" },
+      { keys: ["⌘", "5"], description: "Open export studio" },
+      { keys: ["⌘", "K"], description: "Books command palette" },
+      { keys: ["⌘", "F"], description: "Find in current section" },
+      { keys: ["⌘", "⌥", "↑/↓"], description: "Previous / next section" },
+      { keys: ["↑", "↓"], description: "Move through section rail" },
+    ],
+  },
 ];
 
 export function ShortcutsModal({ onClose }: { onClose: () => void }) {

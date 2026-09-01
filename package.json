@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "tsc --noEmit && tsc -p tsconfig.tests.json && node --test tests/*.test.cjs && cargo test --manifest-path src-tauri/Cargo.toml",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
@@ -15,6 +16,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2",
+    "fflate": "^0.8.3",
     "lucide-react": "^1.31.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

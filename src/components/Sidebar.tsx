@@ -190,7 +190,6 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                   }
                 }}
               >
-                <span className="category-dot" style={{ background: c.color }} />
                 <span className="nav-label">{c.name}</span>
                 <span className="nav-count">{c.note_count}</span>
               </button>
@@ -208,7 +207,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
               title="New tag"
               onClick={() => {
                 const name = window.prompt("Tag name") ?? "";
-                if (name.trim()) addTag(name.trim(), "#0071e3");
+                 if (name.trim()) addTag(name.trim(), "#a56b3e");
               }}
             >
               <Plus size={13} />

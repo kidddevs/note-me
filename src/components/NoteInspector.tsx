@@ -100,7 +100,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif
 h1, h2, h3 { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif; }
 code { background: #f2f2f5; padding: 2px 5px; border-radius: 4px; font-family: ui-monospace, monospace; }
 pre { background: #f5f5f7; padding: 14px; border-radius: 8px; overflow-x: auto; }
-blockquote { border-left: 3px solid #007aff; margin: 0; padding-left: 14px; color: #555; }
+blockquote { border: 1px solid #a56b3e; margin: 0; padding: 8px 14px; color: #555; border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -299,10 +299,6 @@ blockquote { border-left: 3px solid #007aff; margin: 0; padding-left: 14px; colo
             {note.category_name && (
               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <span style={{ color: "var(--text-3)" }}>Category: </span>
-                <span
-                  className="category-dot"
-                  style={{ width: 7, height: 7, background: note.category_color ?? "#007aff" }}
-                />
                 <span style={{ fontWeight: 550, color: "var(--text)" }}>{note.category_name}</span>
               </div>
             )}

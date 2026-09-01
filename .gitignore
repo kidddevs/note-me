@@ -1,0 +1,9 @@
+node_modules/
+dist/
+tests/.compiled/
+src-tauri/target/
+src-tauri/gen/
+.DS_Store
+
+# Native visual-QA captures are local evidence, not application assets.
+books-studio-*.png

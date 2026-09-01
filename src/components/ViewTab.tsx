@@ -148,12 +148,7 @@ export function ViewTab({ view, title }: ViewTabProps) {
     ) : view.kind === "tag" ? (
       <Hash size={15} color="var(--accent)" />
     ) : view.kind === "category" ? (
-      <span
-        className="category-dot"
-        style={{
-          background: categories.find((c) => c.id === view.id)?.color,
-        }}
-      />
+      <Hash size={15} color="var(--accent)" />
     ) : (
       <Inbox size={15} color="var(--accent)" />
     );

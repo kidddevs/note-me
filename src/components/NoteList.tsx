@@ -149,14 +149,6 @@ function NoteCard({
       <div className="card-meta">
         {note.category_name && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <span
-              className="category-dot"
-              style={{
-                width: 7,
-                height: 7,
-                background: note.category_color ?? "var(--border-strong)",
-              }}
-            />
             {note.category_name}
           </span>
         )}
@@ -267,14 +259,6 @@ function NoteCompactRow({
       <div className="compact-meta">
         {note.category_name && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <span
-              className="category-dot"
-              style={{
-                width: 7,
-                height: 7,
-                background: note.category_color ?? "var(--border-strong)",
-              }}
-            />
             {note.category_name}
           </span>
         )}
@@ -538,7 +522,6 @@ export function NoteList({
                     className="menu-item"
                     onClick={() => batchSetCategory(c.id)}
                   >
-                    <span className="category-dot" style={{ background: c.color }} />
                     {c.name}
                   </button>
                 ))}

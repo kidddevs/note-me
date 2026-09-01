@@ -244,14 +244,6 @@ export function HomeView() {
                     <div className="home-card-footer">
                       {note.category_name && (
                         <span className="home-category-badge">
-                          <span
-                            className="category-dot"
-                            style={{
-                              width: 6,
-                              height: 6,
-                              background: note.category_color ?? "var(--accent)",
-                            }}
-                          />
                           {note.category_name}
                         </span>
                       )}

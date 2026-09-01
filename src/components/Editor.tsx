@@ -487,7 +487,7 @@ export function Editor({ noteId, tabId }: { noteId: number; tabId: string }) {
                     className="menu-item"
                     onClick={() => { setCategory(note.id, c.id); setCatMenu(false); notify("success", "Category updated", c.name); }}
                   >
-                    <span className="category-dot" style={{ background: c.color }} /> {c.name}
+                    {c.name}
                   </button>
                 ))}
               </div>
@@ -539,12 +539,11 @@ export function Editor({ noteId, tabId }: { noteId: number; tabId: string }) {
         <div className="editor-meta">
           <span>Edited {formatFull(note.updated_at)}</span>
           {stats.words >= 150 && <span>· {stats.readMin} min read</span>}
-          {note.category_name && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
-              <span className="category-dot" style={{ width: 7, height: 7, background: note.category_color ?? "var(--border-strong)" }} />
-              {note.category_name}
-            </span>
-          )}
+            {note.category_name && (
+              <span style={{ display: "inline-flex", alignItems: "center", marginLeft: 4 }}>
+                {note.category_name}
+              </span>
+            )}
           {note.tags.map((t) => (
             <span key={t.id} className="tag-chip" style={{ color: t.color, background: `${t.color}18` }}>
               {t.name}

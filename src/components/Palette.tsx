@@ -4,6 +4,7 @@ import {
   ClipboardPaste,
   Download,
   FilePlus2,
+  Hash,
   Inbox,
   NotebookPen,
   Printer,
@@ -156,7 +157,7 @@ export function Palette() {
           category: "Categories",
           label: c.name,
           sub: `${c.note_count} notes`,
-          icon: <span className="category-dot" style={{ background: c.color }} />,
+           icon: <Hash size={15} color="var(--accent)" />,
           action: () => openView({ kind: "category", id: c.id }, c.name),
         });
       }

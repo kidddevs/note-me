@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   Check,
   Clipboard,
+  BookOpen,
   FilePlus2,
   Minus,
   Monitor,
@@ -20,6 +21,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTabs } from "../store/tabs";
 import { useTheme } from "../store/theme";
 import { useNotes } from "../store/notes";
+import { useWorkspace } from "../store/workspace";
 import { notify } from "../store/toast";
 import type { Tab } from "../lib/types";
 import { useEffect, useRef, useState } from "react";
@@ -173,6 +175,10 @@ export function TitleBar() {
   const toggleClipboardPanel = useNotes((s) => s.toggleClipboardPanel);
   const createNote = useNotes((s) => s.createNote);
   const notes = useNotes((s) => s.notes);
+  const workspace = useWorkspace((s) => s.mode);
+  const toggleWorkspace = useWorkspace((s) => s.toggle);
+  const booksSidebarCollapsed = useWorkspace((s) => s.booksSidebarCollapsed);
+  const toggleBooksSidebar = useWorkspace((s) => s.toggleBooksSidebar);
   const [maximized, setMaximized] = useState(false);
   const first = useRef(true);
 
@@ -199,12 +205,15 @@ export function TitleBar() {
       if (!mod) return;
       const k = e.key.toLowerCase();
       if (k === "t") {
+        if (workspace !== "notes") return;
         e.preventDefault();
         openHome();
       } else if (k === "n") {
+        if (workspace !== "notes") return;
         e.preventDefault();
         newNote();
       } else if (k === "w" && tabs.length > 0) {
+        if (workspace !== "notes") return;
         e.preventDefault();
         useTabs.getState().closeTab(useTabs.getState().activeId ?? "");
       } else if (k === "tab") {
@@ -220,7 +229,7 @@ export function TitleBar() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tabs.length]);
+  }, [tabs.length, workspace]);
 
   useEffect(() => {
     if (first.current) {
@@ -249,8 +258,18 @@ export function TitleBar() {
     >
       <div className="titlebar-left" data-tauri-drag-region>
         <button
+          className="icon-btn workspace-switcher"
+          title={workspace === "notes" ? "Switch to Books Studio" : "Switch to Notes"}
+          aria-label={workspace === "notes" ? "Switch to Books Studio" : "Switch to Notes"}
+          onClick={toggleWorkspace}
+        >
+          {workspace === "notes" ? <BookOpen size={15} /> : <StickyNote size={15} />}
+        </button>
+        {workspace === "notes" && <>
+        <button
           className="icon-btn"
           title="Toggle Sidebar (⌘⌃S)"
+          aria-label="Toggle sidebar"
           onClick={toggleSidebar}
         >
           <PanelLeft size={15} />
@@ -258,6 +277,7 @@ export function TitleBar() {
         <button
           className="icon-btn"
           title="New Note (⌘N)"
+          aria-label="New note"
           onClick={newNote}
         >
           <FilePlus2 size={15} />
@@ -265,38 +285,47 @@ export function TitleBar() {
         <button
           className="icon-btn"
           title="Clipboard History (⌘⇧V)"
+          aria-label="Clipboard history"
           onClick={() => toggleClipboardPanel()}
         >
           <Clipboard size={15} />
         </button>
+        </>}
       </div>
 
       <div
         className="tab-strip"
         data-tauri-drag-region
         onMouseDown={(e) => {
+          if (workspace !== "notes") return;
           if (e.button === 1 && e.target === e.currentTarget) {
             e.preventDefault();
             openHome();
           }
         }}
       >
-        {tabs.map((t) => (
-          <TabComponent key={t.id} tab={t} />
-        ))}
-        <button
-          className="tab-new"
-          title="New Tab (⌘T)"
-          onClick={openHome}
-        >
-          <Plus size={14} />
-        </button>
+        {workspace === "notes" ? <>
+          {tabs.map((t) => (
+            <TabComponent key={t.id} tab={t} />
+          ))}
+          <button
+            className="tab-new"
+            title="New Tab (⌘T)"
+            aria-label="New tab"
+            onClick={openHome}
+          >
+            <Plus size={14} />
+          </button>
+        </> : (
+          <div className="titlebar-workspace-name"><BookOpen size={13} /> <strong>Books Studio</strong><span>Long-form writing</span></div>
+        )}
       </div>
 
       <div className="win-controls" data-tauri-drag-region>
         <button
           className="icon-btn"
           title={`Appearance: ${theme} (⌘⇧T)`}
+          aria-label={`Change appearance. Current theme: ${theme}`}
           onClick={cycleTheme}
         >
           {theme === "dark" ? (
@@ -307,20 +336,44 @@ export function TitleBar() {
             <Monitor size={14} />
           )}
         </button>
-        <button
-          className="icon-btn"
-          title="Command Palette (⌘K)"
-          onClick={() => window.dispatchEvent(new CustomEvent("open-palette"))}
-        >
-          <Search size={14} />
-        </button>
+        {workspace === "notes" && (
+          <button
+            className="icon-btn"
+            title="Command Palette (⌘K)"
+            aria-label="Open command palette"
+            onClick={() => window.dispatchEvent(new CustomEvent("open-palette"))}
+          >
+            <Search size={14} />
+          </button>
+        )}
+        {workspace === "books" && (
+          <button
+            className="icon-btn"
+            title="Books command palette (⌘K)"
+            aria-label="Open Books Studio command palette"
+            onClick={() => window.dispatchEvent(new CustomEvent("open-books-palette"))}
+          >
+            <Search size={14} />
+          </button>
+        )}
         <button
           className="icon-btn"
           title="Preferences (⌘,)"
+          aria-label="Open preferences"
           onClick={() => window.dispatchEvent(new CustomEvent("open-settings"))}
         >
           <Settings size={14} />
         </button>
+        {workspace === "books" && (
+          <button
+            className="icon-btn"
+            title={booksSidebarCollapsed ? "Show Books sidebar" : "Hide Books sidebar"}
+            aria-label={booksSidebarCollapsed ? "Show Books sidebar" : "Hide Books sidebar"}
+            onClick={toggleBooksSidebar}
+          >
+            <PanelLeft size={14} />
+          </button>
+        )}
       </div>
 
       {!isMac && (

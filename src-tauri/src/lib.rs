@@ -2,6 +2,8 @@ mod commands;
 mod db;
 mod models;
 
+use std::path::Path;
+
 use tauri::{AppHandle, Emitter, Manager, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
@@ -15,9 +17,31 @@ fn maintenance(app: &AppHandle) {
     }
 }
 
+fn is_supported_text_file(path: &str) -> bool {
+    let Some(extension) = Path::new(path).extension().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "md" | "markdown" | "txt"
+    )
+}
+
+fn emit_open_files(app: &AppHandle, paths: Vec<String>) {
+    let paths: Vec<String> = paths
+        .into_iter()
+        .filter(|path| is_supported_text_file(path))
+        .collect();
+    if !paths.is_empty() {
+        let _ = app.emit("open-files", paths);
+    }
+}
+
 fn setup_global_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let quick_capture: Shortcut = Shortcut::new(Some(Modifiers::SHIFT | Modifiers::SUPER), Code::KeyN);
-    let toggle_clipboard: Shortcut = Shortcut::new(Some(Modifiers::SHIFT | Modifiers::SUPER), Code::KeyV);
+    let quick_capture: Shortcut =
+        Shortcut::new(Some(Modifiers::SHIFT | Modifiers::SUPER), Code::KeyN);
+    let toggle_clipboard: Shortcut =
+        Shortcut::new(Some(Modifiers::SHIFT | Modifiers::SUPER), Code::KeyV);
 
     let plugin = tauri_plugin_global_shortcut::Builder::new()
         .with_shortcuts([quick_capture.clone(), toggle_clipboard.clone()])?
@@ -44,7 +68,13 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
     let handle = app.handle();
     let sep = || PredefinedMenuItem::separator(handle);
     let about = MenuItem::with_id(handle, "about", "About NoteMe", true, None::<&str>)?;
-    let check_updates = MenuItem::with_id(handle, "check-updates", "Check for Updates…", true, None::<&str>)?;
+    let check_updates = MenuItem::with_id(
+        handle,
+        "check-updates",
+        "Check for Updates…",
+        true,
+        None::<&str>,
+    )?;
 
     let app_menu = Submenu::with_items(
         handle,
@@ -68,8 +98,15 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
     let new_tab = MenuItem::with_id(handle, "new-tab", "New Tab", true, Some("Cmd+T"))?;
     let close_tab = MenuItem::with_id(handle, "close-tab", "Close Tab", true, Some("Cmd+W"))?;
     let close_window = PredefinedMenuItem::close_window(handle, None)?;
-    let export_all = MenuItem::with_id(handle, "export-all", "Export All Notes…", true, None::<&str>)?;
-    let import_files = MenuItem::with_id(handle, "import-files", "Import Files…", true, None::<&str>)?;
+    let export_all = MenuItem::with_id(
+        handle,
+        "export-all",
+        "Export All Notes…",
+        true,
+        None::<&str>,
+    )?;
+    let import_files =
+        MenuItem::with_id(handle, "import-files", "Import Files…", true, None::<&str>)?;
     let print_note = MenuItem::with_id(handle, "print-note", "Print Note…", true, Some("Cmd+P"))?;
     let file_menu = Submenu::with_items(
         handle,
@@ -104,11 +141,50 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
         ],
     )?;
 
-    let palette = MenuItem::with_id(handle, "palette", "Command Palette…", true, Some("Cmd+Shift+P"))?;
-    let quick_capture = MenuItem::with_id(handle, "quick-capture", "Quick Capture", true, Some("Cmd+Shift+N"))?;
-    let clipboard = MenuItem::with_id(handle, "toggle-clipboard", "Clipboard History", true, Some("Cmd+Shift+V"))?;
-    let toggle_sidebar = MenuItem::with_id(handle, "toggle-sidebar", "Toggle Sidebar", true, Some("Cmd+Ctrl+S"))?;
-    let toggle_theme = MenuItem::with_id(handle, "toggle-theme", "Toggle Appearance", true, Some("Cmd+Shift+T"))?;
+    let palette = MenuItem::with_id(
+        handle,
+        "palette",
+        "Command Palette…",
+        true,
+        Some("Cmd+Shift+P"),
+    )?;
+    let quick_capture = MenuItem::with_id(
+        handle,
+        "quick-capture",
+        "Quick Capture",
+        true,
+        Some("Cmd+Shift+N"),
+    )?;
+    let clipboard = MenuItem::with_id(
+        handle,
+        "toggle-clipboard",
+        "Clipboard History",
+        true,
+        Some("Cmd+Shift+V"),
+    )?;
+    let toggle_sidebar = MenuItem::with_id(
+        handle,
+        "toggle-sidebar",
+        "Toggle Sidebar",
+        true,
+        Some("Cmd+Ctrl+S"),
+    )?;
+    let toggle_theme = MenuItem::with_id(
+        handle,
+        "toggle-theme",
+        "Toggle Appearance",
+        true,
+        Some("Cmd+Shift+T"),
+    )?;
+    let workspace_notes =
+        MenuItem::with_id(handle, "workspace-notes", "Notes", true, None::<&str>)?;
+    let workspace_books = MenuItem::with_id(
+        handle,
+        "workspace-books",
+        "Books Studio",
+        true,
+        None::<&str>,
+    )?;
     let enter_fullscreen = PredefinedMenuItem::fullscreen(handle, None)?;
     let view_menu = Submenu::with_items(
         handle,
@@ -122,12 +198,21 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
             &toggle_sidebar,
             &toggle_theme,
             &sep()?,
+            &workspace_notes,
+            &workspace_books,
+            &sep()?,
             &enter_fullscreen,
         ],
     )?;
 
     let next_tab = MenuItem::with_id(handle, "next-tab", "Next Tab", true, Some("Cmd+Shift+}"))?;
-    let prev_tab = MenuItem::with_id(handle, "prev-tab", "Previous Tab", true, Some("Cmd+Shift+{"))?;
+    let prev_tab = MenuItem::with_id(
+        handle,
+        "prev-tab",
+        "Previous Tab",
+        true,
+        Some("Cmd+Shift+{"),
+    )?;
     let minimize = PredefinedMenuItem::minimize(handle, None)?;
     let zoom = PredefinedMenuItem::maximize(handle, Some("Zoom"))?;
     let window_menu = Submenu::with_items(
@@ -137,15 +222,26 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
         &[&next_tab, &prev_tab, &sep()?, &minimize, &zoom],
     )?;
 
-    let shortcuts_item = MenuItem::with_id(handle, "shortcuts", "Keyboard Shortcuts", true, Some("Cmd+/"))?;
-    let help_menu = Submenu::with_items(
+    let shortcuts_item = MenuItem::with_id(
         handle,
-        "Help",
+        "shortcuts",
+        "Keyboard Shortcuts",
         true,
-        &[&shortcuts_item],
+        Some("Cmd+/"),
     )?;
+    let help_menu = Submenu::with_items(handle, "Help", true, &[&shortcuts_item])?;
 
-    let menu = Menu::with_items(handle, &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu, &help_menu])?;
+    let menu = Menu::with_items(
+        handle,
+        &[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &window_menu,
+            &help_menu,
+        ],
+    )?;
     app.set_menu(menu)?;
     Ok(())
 }
@@ -153,12 +249,13 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
+            emit_open_files(app, args.into_iter().skip(1).collect());
         }))
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
@@ -194,17 +291,15 @@ pub fn run() {
             window.build()?;
             Ok(())
         })
-        .on_menu_event(|app, event| {
-            match event.id().as_ref() {
-                "quick-capture" => {
-                    let _ = app.emit("global-shortcut", "quick-capture");
-                }
-                "toggle-clipboard" => {
-                    let _ = app.emit("global-shortcut", "toggle-clipboard");
-                }
-                id => {
-                    let _ = app.emit("menu", id);
-                }
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "quick-capture" => {
+                let _ = app.emit("global-shortcut", "quick-capture");
+            }
+            "toggle-clipboard" => {
+                let _ = app.emit("global-shortcut", "toggle-clipboard");
+            }
+            id => {
+                let _ = app.emit("menu", id);
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -244,6 +339,16 @@ pub fn run() {
             list_tasks,
             save_attachment,
             purge_old_trash,
+            list_books,
+            get_book,
+            create_book,
+            update_book,
+            delete_book,
+            list_chapters,
+            create_chapter,
+            update_chapter,
+            delete_chapter,
+            reorder_chapters,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -255,6 +360,17 @@ pub fn run() {
                     let _ = w.unminimize();
                     let _ = w.set_focus();
                 }
+            }
+
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = event {
+                emit_open_files(
+                    app_handle,
+                    urls.into_iter()
+                        .filter_map(|url| url.to_file_path().ok())
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .collect(),
+                );
             }
         });
 }

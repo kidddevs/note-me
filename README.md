@@ -42,6 +42,29 @@ There is no account, cloud dependency, tracking, or required sync service. Notes
 - Import `.md`, `.markdown`, and `.txt` files by dropping them into the app.
 - Print and PDF export through the native print flow.
 
+### Books Studio
+
+Books Studio is a second workspace in the same app, switched from the titlebar book icon or **View > Books Studio**. Notes remains the default workspace; switching does not mix manuscript data with note tabs or note navigation.
+
+- Dedicated manuscript library, shelf, section rail, outline, settings, and export screens.
+- Restores the last open manuscript and Books sidebar state after relaunch; each manuscript remembers its own last active section when you switch between books.
+- First-class books and chapters stored in SQLite, separate from the notes tables.
+- Distraction-reduced writing surface with H1-H6 Markdown formatting, preview mode, focus mode, section statistics, keyboard save, list continuation, and local auto-save.
+- Auto-saved reader metadata for title, subtitle, author, genre, description, draft status, cover color, and a configurable word goal.
+- Structured manuscript sections with typed title pages, prologues, chapters, interludes, appendices, front matter, and back matter. Add and classify sections from the left rail or their trackpad context menu.
+- Optional dedication, epigraph, copyright, and acknowledgements pages are editable from the outline and included in exports.
+- Custom trim sizes: 5 x 8, 5.25 x 8, 6 x 9, A5, A4, and US Letter.
+- Custom role typography for titles, H1-H6 headings, paragraphs, and quotes, including font stacks, size, weight, italic, alignment, line height, and letter spacing. Page-level font size, line height, paragraph spacing, and margins remain available in Book settings.
+- Artwork drawer for local images plus categorized, searchable, recolorable built-in SVG ornaments, dividers, botanical marks, symbols, geometric devices, borders, frames, lines, shapes, and arrows. Line, solid, frame, dotted, and dashed variants can be filtered before insertion. Images can also be pasted or dropped directly into the manuscript; inserted artwork is embedded in the manuscript Markdown for portable exports.
+- Canvas writing mode renders images and rich blocks as selectable visual elements instead of showing their source syntax. Text, images, tables, charts, and callouts can be resized from edge handles; visual elements can be reordered by dragging, and selected blocks can be moved or deleted from the contextual inspector. Text-box placement and width metadata uses hidden Markdown comments so Preview and exports remain clean; Source mode remains available for direct Markdown editing.
+- Portable rich data blocks for GFM tables, configurable tables, bar / line / area / donut / stat charts, callouts, and graph fences. The contextual inspector exposes only the controls for the selected title, text, image, table, chart, or callout.
+- Running headers and footers with left, center, and right slots. Use `{{title}}`, `{{author}}`, `{{section}}`, and `{{page}}` tokens.
+- Flexible page numbering with automatic sequences or manual section range starts, Arabic or Roman styles, custom formats, configurable placement and starting section, plus per-section style overrides.
+- Generated contents with configurable title, H1-H6 depth, legacy matter inclusion, per-section visibility, and individual heading visibility controls.
+- Export to EPUB 3, DOCX, styled HTML, Markdown, and plain text. Print / Save as PDF uses the selected trim size and page styling.
+- Export preview includes separate cover and interior views plus an actionable preflight for reader metadata, empty sections, contents, repeated titles, page numbering, and embedded artwork.
+- Keyboard-complete tabs, command search, section menus, and accessible in-app confirmation dialogs keep manuscript navigation and destructive actions inside the Studio workflow.
+
 ## Install
 
 ### macOS
@@ -118,13 +141,13 @@ The codebase is intentionally split between a small React UI layer and explicit 
 
 ```text
 src/                     React application
-  components/            TitleBar, Sidebar, Editor, views, modals, panels
+  components/            TitleBar, Sidebar, Editor, Books Studio, views, panels
   lib/                   Tauri API wrappers, actions, formatting, rich text
-  store/                 Notes, tabs, theme, and toast state
+  store/                 Notes, books, tabs, workspace, theme, and toast state
   styles.css             Application design system and responsive layout
 src-tauri/               Rust desktop shell and persistence layer
   src/lib.rs             Window creation, macOS menu, and global shortcuts
-  src/commands.rs        Note, category, tag, task, clipboard, and settings commands
+  src/commands.rs        Note, book, chapter, category, tag, task, clipboard, and settings commands
   src/db.rs              SQLite schema and initialization
   capabilities/          Tauri permissions
 ```
@@ -134,7 +157,7 @@ src-tauri/               Rust desktop shell and persistence layer
 1. Fork the repository and create a focused branch.
 2. Run `npm install` and `npm run tauri dev`.
 3. Keep data local and preserve the Markdown data model.
-4. Before opening a pull request, run `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml`.
+4. Before opening a pull request, run `npm test` and `npm run build`. `npm test` covers TypeScript, publishing utilities, SQLite migrations, and Rust command validation.
 
 Bug reports and focused pull requests are welcome. Please do not include local databases, build output, screenshots, or machine-specific configuration in commits.
 

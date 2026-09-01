@@ -22,6 +22,97 @@ export interface Note {
   snippet: string;
 }
 
+export interface Book {
+  id: number;
+  title: string;
+  subtitle: string;
+  author: string;
+  description: string;
+  genre: string;
+  status: string;
+  trim_size: string;
+  font_family: string;
+  font_size: number;
+  line_height: number;
+  paragraph_spacing: number;
+  margin: number;
+  word_goal: number;
+  cover_color: string;
+  dedication: string;
+  epigraph: string;
+  copyright_text: string;
+  acknowledgements: string;
+  toc_enabled: boolean;
+  toc_title: string;
+  toc_depth: number;
+  toc_include_front_matter: boolean;
+  toc_include_back_matter: boolean;
+  layout_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BookInput {
+  title: string;
+  subtitle: string;
+  author: string;
+  description: string;
+  genre: string;
+  status: string;
+  trimSize: string;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  paragraphSpacing: number;
+  margin: number;
+  wordGoal?: number;
+  coverColor?: string;
+  dedication?: string;
+  epigraph?: string;
+  copyrightText?: string;
+  acknowledgements?: string;
+  tocEnabled?: boolean;
+  tocTitle?: string;
+  tocDepth?: number;
+  tocIncludeFrontMatter?: boolean;
+  tocIncludeBackMatter?: boolean;
+  layoutJson?: string;
+}
+
+export type ChapterKind =
+  | "title_page"
+  | "dedication"
+  | "epigraph"
+  | "copyright"
+  | "prologue"
+  | "chapter"
+  | "interlude"
+  | "appendix"
+  | "acknowledgements"
+  | "about_author";
+
+export interface Chapter {
+  id: number;
+  book_id: number;
+  chapter_kind: ChapterKind;
+  title: string;
+  content: string;
+  position: number;
+  toc_include: boolean;
+  toc_heading_exclusions: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChapterInput {
+  title: string;
+  content: string;
+  chapterKind?: ChapterKind;
+  position?: number;
+  tocInclude?: boolean;
+  tocHeadingExclusions?: string[];
+}
+
 export interface Category {
   id: number;
   name: string;
