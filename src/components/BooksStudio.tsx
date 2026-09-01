@@ -1,58 +1,29 @@
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  AlignCenter,
-  AlignJustify,
-  AlignLeft,
-  AlignRight,
   AlertTriangle,
-  ArrowDown,
   ArrowLeft,
-  ArrowUp,
-  BarChart3,
   BookOpen,
   Check,
-  Code2,
   ChevronRight,
-  Columns3,
   Download,
-  Eye,
-  EyeOff,
   FileCode2,
   FileText,
-  GripVertical,
-  ImagePlus,
   Info,
   LayoutList,
-  Link2,
   Library,
-  List,
-  ListOrdered,
-  Minus,
   MoreHorizontal,
   NotebookPen,
-  PanelRightClose,
-  PanelRightOpen,
   Plus,
   Printer,
-  Quote,
-  Rows3,
   Search,
-  Save,
   Settings2,
-  SlidersHorizontal,
   Sparkles,
-  Table2,
   Trash2,
-  Type,
-  Upload,
-  WandSparkles,
-  X,
 } from "lucide-react";
 import type { Book, BookInput, Chapter, ChapterKind } from "../lib/types";
-import { BOOK_GRAPHICS, BOOK_GRAPHIC_CATEGORIES, graphicDataUri, type BookGraphic, type BookGraphicVariant } from "../lib/bookAssets";
 import { bookExportChecks } from "../lib/bookExport";
-import { DEFAULT_BOOK_TYPOGRAPHY, layoutForBook, layoutSectionKey, layoutTokenText, pageNumberForSection, pageRuleFor, serializeBookLayout, type BookLayout, type BookNestedStyle, type BookPageNumberStyle, type BookTextAlign, type BookTextRole, type BookTextStyle, type BookTypography } from "../lib/bookLayout";
+import { DEFAULT_BOOK_TYPOGRAPHY, layoutForBook, layoutSectionKey, layoutTokenText, pageNumberForSection, pageRuleFor, serializeBookLayout, type BookLayout, type BookPageNumberStyle, type BookTextRole, type BookTextStyle, type BookTypography } from "../lib/bookLayout";
 import {
   addMarkdownHeadingAnchors,
   backMatterSections,
@@ -67,11 +38,13 @@ import {
 import { useBooks } from "../store/books";
 import { useWorkspace } from "../store/workspace";
 import { notify } from "../store/toast";
+import { ManuscriptScreen } from "./BooksStudioEditor";
+import { OutlineScreen, SectionsRail } from "./BooksStudioOutline";
 
-type StudioScreen = "library" | "manuscript" | "outline" | "settings" | "export";
-type EditorView = "write" | "preview";
-type ExportFormat = "markdown" | "html" | "epub" | "docx" | "txt";
-type MatterFocus = "front" | "back";
+export type StudioScreen = "library" | "manuscript" | "outline" | "settings" | "export";
+export type EditorView = "write" | "preview";
+export type ExportFormat = "markdown" | "html" | "epub" | "docx" | "txt";
+export type MatterFocus = "front" | "back";
 
 interface ConfirmationRequest {
   title: string;
@@ -80,7 +53,7 @@ interface ConfirmationRequest {
   onConfirm: () => void | Promise<void>;
 }
 
-function useConfirmationDialog() {
+export function useConfirmationDialog() {
   const [request, setRequest] = useState<ConfirmationRequest | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -163,7 +136,7 @@ function useConfirmationDialog() {
   return { ask, dialog };
 }
 
-function handleTabListKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+export function handleTabListKeyDown(event: React.KeyboardEvent<HTMLElement>) {
   if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
   const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='tab']:not([disabled])"));
   if (!tabs.length) return;
@@ -178,7 +151,7 @@ function handleTabListKeyDown(event: React.KeyboardEvent<HTMLElement>) {
   tabs[next].click();
 }
 
-function handleMenuKeyDown(event: React.KeyboardEvent<HTMLElement>, onClose: () => void) {
+export function handleMenuKeyDown(event: React.KeyboardEvent<HTMLElement>, onClose: () => void) {
   if (event.key === "Escape") {
     event.preventDefault();
     onClose();
@@ -206,7 +179,7 @@ const TRIM_SIZES = [
   { value: "8.5x11", label: "US Letter", description: "Manuscript / print" },
 ];
 
-const FONT_OPTIONS = [
+export const FONT_OPTIONS = [
   { value: "serif", label: "Editorial Serif", css: "Georgia, 'Times New Roman', serif" },
   { value: "humanist", label: "Humanist", css: "Palatino, 'Palatino Linotype', serif" },
   { value: "sans", label: "Modern Sans", css: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif" },
@@ -220,7 +193,7 @@ const STATUS_OPTIONS = [
   { value: "published", label: "Published" },
 ];
 
-const CHAPTER_KIND_OPTIONS: { value: ChapterKind; label: string; group: "front" | "story" | "back" }[] = [
+export const CHAPTER_KIND_OPTIONS: { value: ChapterKind; label: string; group: "front" | "story" | "back" }[] = [
   { value: "title_page", label: "Title page", group: "front" },
   { value: "dedication", label: "Dedication", group: "front" },
   { value: "epigraph", label: "Epigraph", group: "front" },
@@ -267,11 +240,11 @@ function fontCss(fontFamily: string) {
   return custom || FONT_OPTIONS[0].css;
 }
 
-function wordCount(text: string) {
+export function wordCount(text: string) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-function imageMimeType(path: string) {
+export function imageMimeType(path: string) {
   const extension = path.split(".").pop()?.toLocaleLowerCase();
   return ({
     png: "image/png",
@@ -292,18 +265,18 @@ function bytesToBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
-function imageAltText(path: string) {
+export function imageAltText(path: string) {
   return (path.split(/[\\/]/).pop() ?? "Image")
     .replace(/\.[^.]+$/, "")
     .replace(/[\[\]]/g, " ")
     .trim() || "Image";
 }
 
-function imageDataUri(mime: string, bytes: Uint8Array) {
+export function imageDataUri(mime: string, bytes: Uint8Array) {
   return `data:${mime};base64,${bytesToBase64(bytes)}`;
 }
 
-async function imageFileToMarkdown(file: File) {
+export async function imageFileToMarkdown(file: File) {
   const mime = file.type || imageMimeType(file.name);
   const supported = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"];
   if (!supported.includes(mime)) throw new Error("Choose a PNG, JPEG, GIF, WebP, or SVG image.");
@@ -332,7 +305,7 @@ function plainTextContent(value: string) {
     .replace(/\s*<!--\s*note-me:layout\s+width=\d{1,3}\s+align=(?:left|center|right)\s*-->/gi, "");
 }
 
-function findOccurrences(text: string, query: string) {
+export function findOccurrences(text: string, query: string) {
   const normalizedQuery = query.toLocaleLowerCase();
   if (!normalizedQuery) return [];
   const normalizedText = text.toLocaleLowerCase();
@@ -347,11 +320,11 @@ function findOccurrences(text: string, query: string) {
   return matches;
 }
 
-function chapterKindLabel(kind: string) {
+export function chapterKindLabel(kind: string) {
   return CHAPTER_KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Chapter";
 }
 
-function chapterGroup(kind: ChapterKind) {
+export function chapterGroup(kind: ChapterKind) {
   return CHAPTER_KIND_OPTIONS.find((option) => option.value === kind)?.group ?? "story";
 }
 
@@ -365,7 +338,7 @@ function chapterBandOrdinal(chapters: Chapter[], index: number) {
   return chapters.slice(0, index).filter((chapter) => chapterPageBand(chapter) === band).length;
 }
 
-function chapterDisplayLabel(chapter: Chapter, index: number, chapters?: Chapter[]) {
+export function chapterDisplayLabel(chapter: Chapter, index: number, chapters?: Chapter[]) {
   return chapter.chapter_kind === "chapter" ? `Chapter ${chapters ? chapterNumberFor(chapters, index) : index + 1}` : chapterKindLabel(chapter.chapter_kind);
 }
 
@@ -402,7 +375,7 @@ function formatUpdated(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
 }
 
-function bookInputFromBook(book: Book, layoutJson = book.layout_json): BookInput {
+export function bookInputFromBook(book: Book, layoutJson = book.layout_json): BookInput {
   return {
     title: book.title,
     subtitle: book.subtitle,
@@ -442,20 +415,20 @@ function escapeHtml(value: string) {
 
 type ImageRadius = "none" | "soft" | "round";
 type ImageAlign = "left" | "center" | "right";
-type RichAlign = "left" | "center" | "right";
+export type RichAlign = "left" | "center" | "right";
 
-interface ImagePresentation {
+export interface ImagePresentation {
   radius: ImageRadius;
   align: ImageAlign;
   width: number;
 }
 
-interface RichPresentation {
+export interface RichPresentation {
   width: number;
   align: RichAlign;
 }
 
-const DEFAULT_RICH_PRESENTATION: RichPresentation = { width: 100, align: "left" };
+export const DEFAULT_RICH_PRESENTATION: RichPresentation = { width: 100, align: "left" };
 
 const DEFAULT_IMAGE_PRESENTATION: ImagePresentation = { radius: "none", align: "center", width: 100 };
 
@@ -479,7 +452,7 @@ function imageAttributesText(presentation: ImagePresentation) {
   return attributes.length ? `{${attributes.join(" ")}}` : "";
 }
 
-function imageMarkdown(alt: string, source: string, presentation: ImagePresentation) {
+export function imageMarkdown(alt: string, source: string, presentation: ImagePresentation) {
   return `![${alt.replace(/[\[\]\r\n]/g, " ")}](${source})${imageAttributesText(presentation)}`;
 }
 
@@ -520,17 +493,17 @@ function paragraphInlineHtml(value: string, style: BookTextStyle) {
     .split(NESTED_CLOSE_MARKER).join("</span>");
 }
 
-type RichBlockKind = "table" | "chart" | "callout";
-type ChartKind = "bar" | "line" | "area" | "donut" | "stat";
-type ChartPalette = "earth" | "botanical" | "berry" | "ink" | "sunset";
-type TableAlign = "left" | "center" | "right";
+export type RichBlockKind = "table" | "chart" | "callout";
+export type ChartKind = "bar" | "line" | "area" | "donut" | "stat";
+export type ChartPalette = "earth" | "botanical" | "berry" | "ink" | "sunset";
+export type TableAlign = "left" | "center" | "right";
 
-interface ChartSeries {
+export interface ChartSeries {
   name: string;
   values: number[];
 }
 
-interface ChartData {
+export interface ChartData {
   type: ChartKind;
   title: string;
   subtitle: string;
@@ -543,7 +516,7 @@ interface ChartData {
   align: RichAlign;
 }
 
-interface TableData {
+export interface TableData {
   caption: string;
   align: TableAlign;
   striped: boolean;
@@ -560,13 +533,13 @@ const CHART_PALETTES: Record<ChartPalette, string[]> = {
 };
 
 const CHART_KINDS: ChartKind[] = ["bar", "line", "area", "donut", "stat"];
-const CHART_PALETTE_NAMES: ChartPalette[] = ["earth", "botanical", "berry", "ink", "sunset"];
+export const CHART_PALETTE_NAMES: ChartPalette[] = ["earth", "botanical", "berry", "ink", "sunset"];
 
-function objectValue(value: unknown): value is Record<string, unknown> {
+export function objectValue(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function richPresentationFromValue(value: unknown, fallback: RichPresentation = DEFAULT_RICH_PRESENTATION): RichPresentation {
+export function richPresentationFromValue(value: unknown, fallback: RichPresentation = DEFAULT_RICH_PRESENTATION): RichPresentation {
   if (!objectValue(value)) return { ...fallback };
   return {
     width: typeof value.width === "number" && Number.isFinite(value.width) ? Math.min(100, Math.max(20, value.width)) : fallback.width,
@@ -609,7 +582,7 @@ function chartDataFromJson(value: string) {
   }
 }
 
-function defaultChartData(): ChartData {
+export function defaultChartData(): ChartData {
   return {
     type: "bar",
     title: "A considered comparison",
@@ -624,7 +597,7 @@ function defaultChartData(): ChartData {
   };
 }
 
-function richJsonLine(value: string) {
+export function richJsonLine(value: string) {
   const index = value.split(/\r?\n/).findIndex((line) => line.trim());
   if (index === -1) return { value: null, index: -1 };
   const lines = value.split(/\r?\n/);
@@ -637,7 +610,7 @@ function richJsonLine(value: string) {
   }
 }
 
-function splitTableCells(line: string) {
+export function splitTableCells(line: string) {
   const source = line.trim().replace(/^\|/, "").replace(/\|$/, "");
   const cells: string[] = [];
   let cell = "";
@@ -660,7 +633,7 @@ function splitTableCells(line: string) {
   return cells;
 }
 
-function tableSeparator(line: string) {
+export function tableSeparator(line: string) {
   const cells = splitTableCells(line);
   return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
@@ -759,7 +732,7 @@ function renderCallout(body: string, typography: BookTypography = DEFAULT_BOOK_T
   return `<aside class="rich-callout ${tone} align-${presentation.align}" style="max-width:${presentation.width}%"><strong>${escapeHtml(title)}</strong><div>${markdownToHtml(contentLines.join("\n"), undefined, typography)}</div></aside>`;
 }
 
-function tableDataFromValue(value: unknown): TableData {
+export function tableDataFromValue(value: unknown): TableData {
   if (!objectValue(value)) return { caption: "", align: "left", striped: false, compact: false, width: 100 };
   return {
     caption: typeof value.caption === "string" ? value.caption.slice(0, 120) : "",
@@ -895,14 +868,14 @@ export function markdownToHtml(markdown: string, anchorPrefix?: string, typograp
   return html.join("\n");
 }
 
-interface RichBlockRange {
+export interface RichBlockRange {
   kind: RichBlockKind;
   start: number;
   end: number;
   body: string;
 }
 
-interface EditorContext {
+export interface EditorContext {
   kind: "none" | "title" | "heading" | "paragraph" | "quote" | "image" | RichBlockKind;
   role?: BookTextRole;
   label: string;
@@ -976,7 +949,7 @@ function tableAt(value: string, selectionStart: number, selectionEnd: number) {
   return { start, end, source: value.slice(start, end), lines: lines.slice(first, last + 1).map((line) => line.text), options: tableDataFromValue(null) };
 }
 
-function editorContextFor(value: string, selectionStart: number, selectionEnd: number, titleFocused = false): EditorContext {
+export function editorContextFor(value: string, selectionStart: number, selectionEnd: number, titleFocused = false): EditorContext {
   if (titleFocused) return { kind: "title", role: "title", label: "Section title", start: 0, end: value.length, source: value };
   const rich = richBlockAt(value, selectionStart, selectionEnd);
   if (rich) {
@@ -1003,15 +976,15 @@ function editorContextFor(value: string, selectionStart: number, selectionEnd: n
   return { kind: "none", label: "Nothing selected", start: selectionStart, end: selectionEnd, source: "" };
 }
 
-function tableBlockText(lines: string[], options: TableData) {
+export function tableBlockText(lines: string[], options: TableData) {
   return `:::table\n${JSON.stringify(options)}\n${lines.join("\n")}\n:::`;
 }
 
-function chartBlockText(data: ChartData) {
+export function chartBlockText(data: ChartData) {
   return `:::chart\n${JSON.stringify(data)}\n:::`;
 }
 
-function calloutBlockText(title: string, tone: string, content: string, presentation: RichPresentation = DEFAULT_RICH_PRESENTATION) {
+export function calloutBlockText(title: string, tone: string, content: string, presentation: RichPresentation = DEFAULT_RICH_PRESENTATION) {
   return `:::callout\n${JSON.stringify({ title, tone, ...presentation })}\n${content}\n:::`;
 }
 
@@ -1033,17 +1006,17 @@ function canvasLayoutComment(presentation: RichPresentation) {
   return presentation.width === 100 && presentation.align === DEFAULT_RICH_PRESENTATION.align ? "" : ` <!-- note-me:layout width=${presentation.width} align=${presentation.align} -->`;
 }
 
-function canvasTextSource(source: string, presentation: RichPresentation) {
+export function canvasTextSource(source: string, presentation: RichPresentation) {
   const clean = canvasLayoutFromSource(source).clean.replace(/\s+$/, "");
   return `${clean}${canvasLayoutComment(presentation)}`;
 }
 
-function addTableRow(lines: string[]) {
+export function addTableRow(lines: string[]) {
   const columnCount = splitTableCells(lines[0] ?? "").length;
   return [...lines, `| ${Array.from({ length: Math.max(1, columnCount) }, () => "").join(" | ")} |`];
 }
 
-function addTableColumn(lines: string[]) {
+export function addTableColumn(lines: string[]) {
   return lines.map((line, index) => {
     const cells = splitTableCells(line);
     cells.push(index === 1 ? "---" : "");
@@ -1051,11 +1024,11 @@ function addTableColumn(lines: string[]) {
   });
 }
 
-function removeTableRow(lines: string[]) {
+export function removeTableRow(lines: string[]) {
   return lines.length > 2 ? lines.slice(0, -1) : lines;
 }
 
-function removeTableColumn(lines: string[]) {
+export function removeTableColumn(lines: string[]) {
   if (splitTableCells(lines[0] ?? "").length <= 1) return lines;
   return lines.map((line) => `| ${splitTableCells(line).slice(0, -1).join(" | ")} |`);
 }
@@ -1064,7 +1037,7 @@ function tableCellText(value: string) {
   return value.replace(/[\r\n]+/g, " ").replace(/\|/g, "\\|");
 }
 
-function updateTableCell(lines: string[], rowIndex: number, columnIndex: number, value: string) {
+export function updateTableCell(lines: string[], rowIndex: number, columnIndex: number, value: string) {
   if (rowIndex === 1 || !lines[rowIndex]) return lines;
   const cells = splitTableCells(lines[rowIndex]);
   if (columnIndex >= cells.length) return lines;
@@ -1072,7 +1045,7 @@ function updateTableCell(lines: string[], rowIndex: number, columnIndex: number,
   return lines.map((line, index) => index === rowIndex ? `| ${cells.join(" | ")} |` : line);
 }
 
-interface CanvasBlock {
+export interface CanvasBlock {
   kind: "text" | "image" | RichBlockKind;
   start: number;
   end: number;
@@ -1103,7 +1076,7 @@ function canvasBlockSpecial(value: string) {
   );
 }
 
-function canvasBlocks(value: string): CanvasBlock[] {
+export function canvasBlocks(value: string): CanvasBlock[] {
   const lines = contentLines(value);
   const blocks: CanvasBlock[] = [];
   for (let index = 0; index < lines.length; index += 1) {
@@ -1183,7 +1156,7 @@ function canvasBlocks(value: string): CanvasBlock[] {
   return blocks;
 }
 
-function tocTitle(book: Book) {
+export function tocTitle(book: Book) {
   return book.toc_title.trim() || "Contents";
 }
 
@@ -1658,7 +1631,7 @@ async function exportBook(book: Book, chapters: Chapter[], format: ExportFormat)
   notify("success", "Book exported", path);
 }
 
-function manuscriptStyle(book: Book): CSSProperties {
+export function manuscriptStyle(book: Book): CSSProperties {
   const typography = layoutForBook(book).typography;
   const typographyVars = Object.fromEntries(Object.entries(typography).flatMap(([role, style]) => [
     [`--book-${role}-font`, fontCss(style.fontFamily)],
@@ -1838,308 +1811,6 @@ function BooksCommandPalette({ open, bookTitle, chapters, onClose, onNavigate, o
   );
 }
 
-function BooksAssetDrawer({ onClose, onInsert }: { onClose: () => void; onInsert: (markdown: string) => void }) {
-  const [category, setCategory] = useState(BOOK_GRAPHIC_CATEGORIES[0]);
-  const [variant, setVariant] = useState<BookGraphicVariant | "all">("all");
-  const [color, setColor] = useState("#a56b3e");
-  const [query, setQuery] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const graphics = BOOK_GRAPHICS.filter((item) => item.category === category && (variant === "all" || item.variant === variant) && (!query.trim() || item.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
-
-  const importImage = async () => {
-    setUploading(true);
-    try {
-      const [{ open }, { readFile }] = await Promise.all([
-        import("@tauri-apps/plugin-dialog"),
-        import("@tauri-apps/plugin-fs"),
-      ]);
-      const path = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
-      });
-      if (typeof path !== "string") return;
-      const data = await readFile(path);
-      if (data.byteLength > 12 * 1024 * 1024) {
-        notify("error", "Image is too large", "Choose an image smaller than 12 MB.");
-        return;
-      }
-      const alt = imageAltText(path);
-      onInsert(`![${alt}](${imageDataUri(imageMimeType(path), data)})\n`);
-    } catch (error) {
-      notify("error", "Image could not be added", String(error));
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  return (
-    <section className="books-assets-drawer" aria-label="Book assets">
-      <div className="books-assets-heading">
-        <div><span className="books-eyebrow"><ImagePlus size={13} /> Artwork</span><strong>Place an image or ornament</strong></div>
-        <button className="books-assets-close" onClick={onClose} aria-label="Close artwork drawer"><X size={14} /></button>
-      </div>
-      <div className="books-assets-tools">
-        <button className="books-asset-upload" onClick={() => void importImage()} disabled={uploading}><Upload size={13} /> {uploading ? "Reading image…" : "Add image from Mac"}</button>
-        <div className="books-asset-color-group"><label className="books-asset-color"><span>Graphic color</span><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /><code>{color}</code></label><div className="books-asset-swatches" aria-label="Graphic color presets">{["#a56b3e", "#29231e", "#6f7f6d", "#874e47", "#756e62"].map((preset) => <button key={preset} className={color === preset ? "active" : ""} style={{ background: preset }} onClick={() => setColor(preset)} aria-label={`Use ${preset}`} />)}</div></div>
-      </div>
-      <label className="books-asset-search"><Search size={12} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this collection" aria-label="Search artwork collection" />{query && <button onClick={() => setQuery("")} aria-label="Clear artwork search"><X size={12} /></button>}</label>
-       <div className="books-asset-categories" role="tablist" aria-label="Graphic categories" onKeyDown={handleTabListKeyDown}>
-         {BOOK_GRAPHIC_CATEGORIES.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)} role="tab" aria-selected={category === item} tabIndex={category === item ? 0 : -1}>{item}</button>)}
-       </div>
-        <div className="books-asset-variants" role="tablist" aria-label="Graphic variants" onKeyDown={handleTabListKeyDown}>{(["all", "line", "solid", "frame", "dotted", "dashed"] as const).map((item) => <button key={item} className={variant === item ? "active" : ""} onClick={() => setVariant(item)} role="tab" aria-selected={variant === item} tabIndex={variant === item ? 0 : -1}>{item === "all" ? "All variants" : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
-       <div className="books-asset-grid">
-         {graphics.map((item: BookGraphic) => <button key={item.id} className="books-asset-card" onClick={() => onInsert(`![${item.label}](${graphicDataUri(item.svg, color)})\n`)} title={`Insert ${item.label}`}><span className="books-asset-preview" dangerouslySetInnerHTML={{ __html: item.svg.replace(/currentColor/g, color) }} /><strong>{item.label}</strong><small>{item.variant}</small></button>)}
-        {graphics.length === 0 && <p className="books-assets-empty">No artwork matches “{query}”.</p>}
-      </div>
-      <p className="books-assets-note">Graphics are embedded as portable SVG data, so their color and shape travel with exported copies.</p>
-    </section>
-  );
-}
-
-function InspectorDisclosure({ icon, title, summary, children, defaultOpen = true }: { icon: React.ReactNode; title: string; summary?: string; children: React.ReactNode; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <section className={`books-inspector-disclosure ${open ? "open" : ""}`}>
-      <button className="books-inspector-disclosure-button" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        <span className="books-inspector-disclosure-icon">{icon}</span>
-        <span className="books-inspector-disclosure-title"><strong>{title}</strong>{summary && <small>{summary}</small>}</span>
-        <ChevronRight size={13} />
-      </button>
-      {open && <div className="books-inspector-disclosure-content">{children}</div>}
-    </section>
-  );
-}
-
-function typographyRoleLabel(role: BookTextRole) {
-  if (role === "title") return "Section title";
-  if (role === "paragraph") return "Paragraph";
-  if (role === "quote") return "Quote";
-  return `Heading ${role.replace("heading", "")}`;
-}
-
-function TypographyControls({ style, onChange }: { style: BookTextStyle; onChange: (patch: Partial<BookTextStyle>) => void }) {
-  const preset = FONT_OPTIONS.some((option) => option.value === style.fontFamily);
-  const alignments: { value: BookTextAlign; label: string; icon: React.ReactNode }[] = [
-    { value: "left", label: "Align left", icon: <AlignLeft size={13} /> },
-    { value: "center", label: "Align center", icon: <AlignCenter size={13} /> },
-    { value: "right", label: "Align right", icon: <AlignRight size={13} /> },
-    { value: "justify", label: "Justify", icon: <AlignJustify size={13} /> },
-  ];
-  return (
-    <div className="books-inspector-form">
-      <label>Font family<select value={preset ? style.fontFamily : "custom"} onChange={(event) => onChange({ fontFamily: event.target.value === "custom" ? (preset ? "" : style.fontFamily) : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font stack</option></select></label>
-      {(!preset || style.fontFamily === "") && <label>Custom stack<input value={style.fontFamily} onChange={(event) => onChange({ fontFamily: event.target.value })} placeholder="Baskerville, Georgia, serif" /></label>}
-      <div className="books-inspector-two-up"><label>Size<input type="number" min="6" max="96" step="0.5" value={style.fontSize} onChange={(event) => onChange({ fontSize: Math.min(96, Math.max(6, Number(event.target.value) || 6)) })} /></label><label>Weight<select value={style.fontWeight} onChange={(event) => onChange({ fontWeight: Number(event.target.value) })}><option value={300}>Light</option><option value={400}>Regular</option><option value={500}>Medium</option><option value={600}>Semibold</option><option value={700}>Bold</option><option value={800}>Heavy</option></select></label></div>
-      <div className="books-inspector-two-up"><label>Line height<input type="number" min="0.8" max="3" step="0.05" value={style.lineHeight} onChange={(event) => onChange({ lineHeight: Math.min(3, Math.max(0.8, Number(event.target.value) || 0.8)) })} /></label><label>Letter spacing<input type="number" min="-0.2" max="1" step="0.01" value={style.letterSpacing} onChange={(event) => onChange({ letterSpacing: Math.min(1, Math.max(-0.2, Number(event.target.value) || 0)) })} /></label></div>
-      <div className="books-inspector-label-row"><span>Alignment</span><div className="books-align-buttons">{alignments.map((alignment) => <button key={alignment.value} className={style.textAlign === alignment.value ? "active" : ""} onClick={() => onChange({ textAlign: alignment.value })} aria-label={alignment.label} title={alignment.label}>{alignment.icon}</button>)}</div></div>
-      <label className="books-inspector-check"><span>Italic style</span><input type="checkbox" checked={style.fontStyle === "italic"} onChange={(event) => onChange({ fontStyle: event.target.checked ? "italic" : "normal" })} /></label>
-    </div>
-  );
-}
-
-function TextPresentationControls({ presentation, onChange }: { presentation: RichPresentation; onChange: (patch: Partial<RichPresentation>) => void }) {
-  return <div className="books-inspector-form books-text-presentation-controls"><div className="books-inspector-label-row"><span>Text box placement</span><div className="books-align-buttons">{(["left", "center", "right"] as const).map((align) => <button key={align} className={presentation.align === align ? "active" : ""} onClick={() => onChange({ align })} aria-label={`Place text ${align}`}><span className="books-align-text">{align[0].toUpperCase()}</span></button>)}</div></div><label className="books-inspector-range">Text box width<strong>{presentation.width}%</strong><input type="range" min="20" max="100" step="5" value={presentation.width} onChange={(event) => onChange({ width: Number(event.target.value) })} /></label></div>;
-}
-
-function ParagraphControls({ style, onChange }: { style: BookTextStyle; onChange: (patch: Partial<BookTextStyle>) => void }) {
-  const dropCapPreset = FONT_OPTIONS.some((option) => option.value === style.dropCapFontFamily);
-  const nestedFontPreset = FONT_OPTIONS.some((option) => option.value === style.nestedFontFamily);
-  const nestedOptions: { value: BookNestedStyle; label: string }[] = [
-    { value: "none", label: "None" },
-    { value: "small-caps", label: "Small caps" },
-    { value: "bold", label: "Bold" },
-    { value: "italic", label: "Italic" },
-    { value: "accent", label: "Accent color" },
-  ];
-  return <div className="books-paragraph-controls">
-    <section className="books-paragraph-construction" aria-labelledby="books-paragraph-construction-title">
-      <div className="books-inspector-subheading"><span className="books-paragraph-section-mark" aria-hidden="true">¶</span><div><strong id="books-paragraph-construction-title">Paragraph construction</strong><small>Indent, rhythm, and opening treatment</small></div></div>
-      <div className="books-paragraph-construction-fields">
-        <div className="books-inspector-two-up"><label>First line (em)<input type="number" min="-2" max="8" step="0.1" value={style.firstLineIndent} onChange={(event) => onChange({ firstLineIndent: Math.min(8, Math.max(-2, Number(event.target.value) || 0)) })} /></label><label>Left indent (em)<input type="number" min="0" max="8" step="0.1" value={style.leftIndent} onChange={(event) => onChange({ leftIndent: Math.min(8, Math.max(0, Number(event.target.value) || 0)) })} /></label></div>
-        <div className="books-inspector-two-up"><label>Right indent (em)<input type="number" min="0" max="8" step="0.1" value={style.rightIndent} onChange={(event) => onChange({ rightIndent: Math.min(8, Math.max(0, Number(event.target.value) || 0)) })} /></label><label>Space before (em)<input type="number" min="0" max="4" step="0.05" value={style.spaceBefore} onChange={(event) => onChange({ spaceBefore: Math.min(4, Math.max(0, Number(event.target.value) || 0)) })} /></label></div>
-        <label>Space after (em)<input type="number" min="0" max="4" step="0.05" value={style.spaceAfter} onChange={(event) => onChange({ spaceAfter: Math.min(4, Math.max(0, Number(event.target.value) || 0)) })} /></label>
-      </div>
-    </section>
-    <section className="books-paragraph-dropcap" aria-labelledby="books-dropcap-title">
-      <div className="books-inspector-subheading"><span className="books-paragraph-section-mark books-paragraph-dropcap-mark" aria-hidden="true">A</span><div><strong id="books-dropcap-title">Drop cap</strong><small>Float the opening letter in Preview and exports</small></div></div>
-      <div className="books-paragraph-dropcap-fields">
-        <label className="books-inspector-check"><span>Use a drop cap</span><input type="checkbox" checked={style.dropCap} onChange={(event) => onChange({ dropCap: event.target.checked })} /></label>
-        {style.dropCap && <>
-          <div className="books-inspector-two-up"><label>Lines<input type="number" min="2" max="6" step="1" value={style.dropCapLines} onChange={(event) => onChange({ dropCapLines: Math.min(6, Math.max(2, Number(event.target.value) || 2)) })} /></label><label>Gap (em)<input type="number" min="0" max="1" step="0.05" value={style.dropCapGap} onChange={(event) => onChange({ dropCapGap: Math.min(1, Math.max(0, Number(event.target.value) || 0)) })} /></label></div>
-          <label>Drop-cap font<select value={dropCapPreset ? style.dropCapFontFamily : "custom"} onChange={(event) => onChange({ dropCapFontFamily: event.target.value === "custom" ? (dropCapPreset ? "" : style.dropCapFontFamily) : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font stack</option></select></label>
-          {(!dropCapPreset || style.dropCapFontFamily === "") && <label>Custom drop-cap stack<input value={style.dropCapFontFamily} onChange={(event) => onChange({ dropCapFontFamily: event.target.value })} placeholder="Baskerville, Georgia, serif" /></label>}
-          <label className="books-color-field">Drop-cap color<div><input className="books-color-input" type="color" value={style.dropCapColor} onChange={(event) => onChange({ dropCapColor: event.target.value })} /><code>{style.dropCapColor}</code></div></label>
-        </>}
-      </div>
-    </section>
-    <section className="books-paragraph-nested-opening" aria-labelledby="books-nested-opening-title">
-      <div className="books-inspector-subheading"><span className="books-paragraph-section-mark books-paragraph-nested-mark" aria-hidden="true">Aa</span><div><strong id="books-nested-opening-title">Nested opening style</strong><small>Apply a character treatment to the first words</small></div></div>
-      <div className="books-paragraph-nested-fields">
-        <label>Style<select value={style.nestedStyle} onChange={(event) => onChange({ nestedStyle: event.target.value as BookNestedStyle })}>{nestedOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-        {style.nestedStyle !== "none" && <>
-          <div className="books-inspector-two-up"><label>Words<input type="number" min="1" max="12" step="1" value={style.nestedWords} onChange={(event) => onChange({ nestedWords: Math.min(12, Math.max(1, Number(event.target.value) || 1)) })} /></label><label>Nested font<select value={nestedFontPreset ? style.nestedFontFamily : "custom"} onChange={(event) => onChange({ nestedFontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font stack</option></select></label></div>
-          {(!nestedFontPreset || style.nestedFontFamily === "") && <label>Custom nested stack<input value={style.nestedFontFamily} onChange={(event) => onChange({ nestedFontFamily: event.target.value })} placeholder="Baskerville, Georgia, serif" /></label>}
-          <label className="books-color-field">Nested color<div><input className="books-color-input" type="color" value={style.nestedColor} onChange={(event) => onChange({ nestedColor: event.target.value })} /><code>{style.nestedColor}</code></div></label>
-        </>}
-      </div>
-    </section>
-  </div>;
-}
-
-function ImageInspector({ context, onReplaceRange }: { context: EditorContext; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
-  const image = context.image;
-  if (!image) return null;
-  const update = (patch: Partial<ImagePresentation>) => onReplaceRange(context.start, context.end, `${image.indent}${imageMarkdown(image.alt, image.source, { ...image.presentation, ...patch })}`);
-  const updateAlt = (alt: string) => onReplaceRange(context.start, context.end, `${image.indent}${imageMarkdown(alt, image.source, image.presentation)}`);
-  return (
-    <div className="books-inspector-form">
-      <label>Alt text<input value={image.alt} onChange={(event) => updateAlt(event.target.value)} /></label>
-      <div className="books-inspector-label-row"><span>Corner treatment</span><div className="books-segmented-buttons">{(["none", "soft", "round"] as const).map((radius) => <button key={radius} className={image.presentation.radius === radius ? "active" : ""} onClick={() => update({ radius })}>{radius === "none" ? "Square" : radius === "soft" ? "Soft" : "Round"}</button>)}</div></div>
-      <div className="books-inspector-label-row"><span>Image alignment</span><div className="books-align-buttons">{(["left", "center", "right"] as const).map((align) => <button key={align} className={image.presentation.align === align ? "active" : ""} onClick={() => update({ align })} aria-label={`Align image ${align}`}><span className="books-align-text">{align[0].toUpperCase()}</span></button>)}</div></div>
-      <label className="books-inspector-range">Width<strong>{image.presentation.width}%</strong><input type="range" min="20" max="100" step="5" value={image.presentation.width} onChange={(event) => update({ width: Number(event.target.value) })} /></label>
-    </div>
-  );
-}
-
-function TableInspector({ context, onReplaceRange }: { context: EditorContext; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
-  const lines = context.tableLines ?? [];
-  const options = context.tableOptions ?? { caption: "", align: "left" as TableAlign, striped: false, compact: false, width: 100 };
-  const rewrite = (nextLines = lines, nextOptions = options) => onReplaceRange(context.start, context.end, tableBlockText(nextLines, nextOptions));
-  const columnCount = Math.max(1, splitTableCells(lines[0] ?? "").length);
-  const editableRows = lines.length >= 2 && tableSeparator(lines[1]) ? lines.map((line, rowIndex) => ({ line, rowIndex })).filter((row) => row.rowIndex !== 1) : [];
-  return (
-    <div className="books-inspector-form">
-      <label>Caption<input value={options.caption} onChange={(event) => rewrite(lines, { ...options, caption: event.target.value })} placeholder="Optional table caption" /></label>
-      <label>Table alignment<select value={options.align} onChange={(event) => rewrite(lines, { ...options, align: event.target.value as TableAlign })}><option value="left">Left</option><option value="center">Centered</option><option value="right">Right</option></select></label>
-      <label className="books-inspector-range">Width<strong>{options.width}%</strong><input type="range" min="20" max="100" step="5" value={options.width} onChange={(event) => rewrite(lines, { ...options, width: Number(event.target.value) })} /></label>
-      <label className="books-inspector-check"><span>Striped rows</span><input type="checkbox" checked={options.striped} onChange={(event) => rewrite(lines, { ...options, striped: event.target.checked })} /></label>
-      <label className="books-inspector-check"><span>Compact spacing</span><input type="checkbox" checked={options.compact} onChange={(event) => rewrite(lines, { ...options, compact: event.target.checked })} /></label>
-      {editableRows.length > 0 && <div className="books-table-editor-wrap"><div className="books-chart-data-heading"><span>Data grid</span><small>{editableRows.length - 1} data {editableRows.length - 1 === 1 ? "row" : "rows"}</small></div><div className="books-table-editor" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(80px, 1fr))` }} aria-label="Edit table cells">{editableRows.flatMap(({ line, rowIndex }) => splitTableCells(line).slice(0, columnCount).map((cell, columnIndex) => <input key={`${rowIndex}-${columnIndex}`} className={rowIndex === 0 ? "header" : ""} value={cell} onChange={(event) => rewrite(updateTableCell(lines, rowIndex, columnIndex, event.target.value))} aria-label={`${rowIndex === 0 ? "Header" : `Row ${rowIndex}`} column ${columnIndex + 1}`} />))}</div></div>}
-      <div className="books-inspector-button-grid"><button onClick={() => rewrite(addTableRow(lines))}><Rows3 size={13} /> Add row</button><button onClick={() => rewrite(addTableColumn(lines))}><Columns3 size={13} /> Add column</button><button onClick={() => rewrite(removeTableRow(lines))} disabled={lines.length <= 2}><Rows3 size={13} /> Remove row</button><button onClick={() => rewrite(removeTableColumn(lines))} disabled={splitTableCells(lines[0] ?? "").length <= 1}><Columns3 size={13} /> Remove column</button></div>
-      <p className="books-inspector-help">Use <code>|</code> in a cell for a line break in the source, or keep editing directly for full Markdown control.</p>
-    </div>
-  );
-}
-
-function ChartInspector({ context, onReplaceRange }: { context: EditorContext; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
-  const data = context.chart ?? defaultChartData();
-  const update = (patch: Partial<ChartData>) => onReplaceRange(context.start, context.end, chartBlockText({ ...data, ...patch }));
-  const updateSeries = (series: ChartSeries[]) => update({ series });
-  const addPoint = () => update({ labels: [...data.labels, `Item ${data.labels.length + 1}`], series: data.series.map((series) => ({ ...series, values: [...series.values, 0] })) });
-  const removePoint = () => data.labels.length > 1 && update({ labels: data.labels.slice(0, -1), series: data.series.map((series) => ({ ...series, values: series.values.slice(0, -1) })) });
-  const addSeries = () => update({ series: [...data.series, { name: `Series ${data.series.length + 1}`, values: data.labels.map(() => 0) }], showLegend: true });
-  const removeSeries = () => data.series.length > 1 && updateSeries(data.series.slice(0, -1));
-  return (
-    <div className="books-inspector-form">
-      <div className="books-inspector-two-up"><label>Chart type<select value={data.type} onChange={(event) => update({ type: event.target.value as ChartKind })}><option value="bar">Bar chart</option><option value="line">Line graph</option><option value="area">Area graph</option><option value="donut">Donut chart</option><option value="stat">Single stat</option></select></label><label>Palette<select value={data.palette} onChange={(event) => update({ palette: event.target.value as ChartPalette })}>{CHART_PALETTE_NAMES.map((palette) => <option key={palette} value={palette}>{palette[0].toUpperCase() + palette.slice(1)}</option>)}</select></label></div>
-      <label>Title<input value={data.title} onChange={(event) => update({ title: event.target.value })} placeholder="Chart title" /></label>
-      <label>Subtitle<input value={data.subtitle} onChange={(event) => update({ subtitle: event.target.value })} placeholder="A short explanation" /></label>
-      <div className="books-inspector-two-up"><label>Placement<select value={data.align} onChange={(event) => update({ align: event.target.value as RichAlign })}><option value="left">Left</option><option value="center">Centered</option><option value="right">Right</option></select></label><label className="books-inspector-range">Width<strong>{data.width}%</strong><input type="range" min="20" max="100" step="5" value={data.width} onChange={(event) => update({ width: Number(event.target.value) })} /></label></div>
-      <div className="books-inspector-two-up"><label className="books-inspector-check"><span>Legend</span><input type="checkbox" checked={data.showLegend} onChange={(event) => update({ showLegend: event.target.checked })} /></label><label className="books-inspector-check"><span>Grid lines</span><input type="checkbox" checked={data.showGrid} onChange={(event) => update({ showGrid: event.target.checked })} /></label></div>
-      <div className="books-chart-data-heading"><span>Data points</span><div><button onClick={addPoint}><Plus size={12} /> Point</button><button onClick={removePoint} disabled={data.labels.length <= 1}><Minus size={12} /> Point</button></div></div>
-      <div className="books-chart-data-grid" style={{ gridTemplateColumns: `minmax(80px, 1.1fr) repeat(${data.series.length}, minmax(52px, 1fr))` }}><strong>Label</strong>{data.series.map((series, index) => <input key={`name-${index}`} value={series.name} onChange={(event) => updateSeries(data.series.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} aria-label={`Series ${index + 1} name`} />)}{data.labels.map((label, labelIndex) => <Fragment key={`point-${labelIndex}`}><input value={label} onChange={(event) => update({ labels: data.labels.map((item, index) => index === labelIndex ? event.target.value : item) })} aria-label={`Point ${labelIndex + 1} label`} />{data.series.map((series, seriesIndex) => <input key={`${labelIndex}-${seriesIndex}`} type="number" value={series.values[labelIndex] ?? 0} onChange={(event) => updateSeries(data.series.map((item, index) => index === seriesIndex ? { ...item, values: item.values.map((value, pointIndex) => pointIndex === labelIndex ? Number(event.target.value) || 0 : value) } : item))} aria-label={`${series.name} value for ${label}`} />)}</Fragment>)}</div>
-      <div className="books-inspector-button-grid"><button onClick={addSeries}><Plus size={13} /> Add series</button><button onClick={removeSeries} disabled={data.series.length <= 1}><Trash2 size={13} /> Remove series</button></div>
-      {!context.chart && <p className="books-inspector-help">This chart block is not valid JSON yet. Resetting a control will normalize it to an editable chart.</p>}
-    </div>
-  );
-}
-
-function CalloutInspector({ context, onReplaceRange }: { context: EditorContext; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
-  const body = context.blockBody ?? "";
-  const parsed = richJsonLine(body);
-  const options = objectValue(parsed.value) ? parsed.value : {};
-  const title = typeof options.title === "string" ? options.title : "Note";
-  const tone = typeof options.tone === "string" ? options.tone : "note";
-  const presentation = context.calloutPresentation ?? richPresentationFromValue(options);
-  const content = body.split(/\r?\n/).filter((_line, index) => index !== parsed.index).join("\n");
-  const update = (nextTitle = title, nextTone = tone, nextContent = content, nextPresentation = presentation) => onReplaceRange(context.start, context.end, calloutBlockText(nextTitle, nextTone, nextContent, nextPresentation));
-  return <div className="books-inspector-form"><label>Label<input value={title} onChange={(event) => update(event.target.value)} /></label><label>Tone<select value={tone} onChange={(event) => update(title, event.target.value)}><option value="note">Note</option><option value="tip">Tip</option><option value="warning">Warning</option><option value="quote">Quote</option></select></label><div className="books-inspector-two-up"><label>Placement<select value={presentation.align} onChange={(event) => update(title, tone, content, { ...presentation, align: event.target.value as RichAlign })}><option value="left">Left</option><option value="center">Centered</option><option value="right">Right</option></select></label><label className="books-inspector-range">Width<strong>{presentation.width}%</strong><input type="range" min="20" max="100" step="5" value={presentation.width} onChange={(event) => update(title, tone, content, { ...presentation, width: Number(event.target.value) })} /></label></div><p className="books-inspector-help">Edit the callout copy directly in the manuscript. The tone and presentation stay portable in Markdown.</p></div>;
-}
-
-function BooksInspector({ context, layout, onLayoutChange, onReplaceRange, onMoveRange, onDeleteRange, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
-  const role = context.role;
-  const roleStyle = role ? layout.typography[role] : null;
-  const goalProgress = Math.min(100, Math.round((totalWords / Math.max(1, wordGoal)) * 100));
-  return (
-    <aside className="books-editor-inspector books-context-inspector">
-      <div className="books-inspector-header"><div><span className="books-inspector-overline"><SlidersHorizontal size={12} /> Contextual tools</span><strong>{context.kind === "none" ? "Select an element" : context.label}</strong></div></div>
-      {context.kind !== "none" && context.kind !== "title" && <div className="books-inspector-element-actions"><button onClick={() => onMoveRange(context.start, context.end, -1)} aria-label="Move element earlier" title="Move earlier"><ArrowUp size={13} /></button><button onClick={() => onMoveRange(context.start, context.end, 1)} aria-label="Move element later" title="Move later"><ArrowDown size={13} /></button><button className="delete" onClick={(event) => onDeleteRange(context.start, context.end, event.currentTarget)} aria-label="Delete selected element" title="Delete selected element"><Trash2 size={13} /></button></div>}
-       {context.kind === "none" ? <div className="books-inspector-empty"><Sparkles size={17} /><strong>Nothing selected</strong><span>Place the caret inside a heading, quote, image, table, chart, or paragraph to reveal its controls.</span></div> : role && roleStyle ? <InspectorDisclosure icon={<Type size={14} />} title={typographyRoleLabel(role)} summary="Font, rhythm, alignment" defaultOpen><TypographyControls style={roleStyle} onChange={(patch) => onLayoutChange((current) => ({ ...current, typography: { ...current.typography, [role]: { ...current.typography[role], ...patch } } }))} />{role !== "title" && <TextPresentationControls presentation={context.presentation ?? DEFAULT_RICH_PRESENTATION} onChange={(patch) => onReplaceRange(context.start, context.end, canvasTextSource(context.source, { ...(context.presentation ?? DEFAULT_RICH_PRESENTATION), ...patch }))} />}{role === "paragraph" && <ParagraphControls style={roleStyle} onChange={(patch) => onLayoutChange((current) => ({ ...current, typography: { ...current.typography, paragraph: { ...current.typography.paragraph, ...patch } } }))} />}</InspectorDisclosure> : context.kind === "image" ? <InspectorDisclosure icon={<ImagePlus size={14} />} title="Image" summary="Corners, size, alignment" defaultOpen><ImageInspector context={context} onReplaceRange={onReplaceRange} /></InspectorDisclosure> : context.kind === "table" ? <InspectorDisclosure icon={<Table2 size={14} />} title="Table" summary="Rows, columns, presentation" defaultOpen><TableInspector context={context} onReplaceRange={onReplaceRange} /></InspectorDisclosure> : context.kind === "chart" ? <InspectorDisclosure icon={<BarChart3 size={14} />} title="Chart / graph" summary="Data, palette, display" defaultOpen><ChartInspector context={context} onReplaceRange={onReplaceRange} /></InspectorDisclosure> : context.kind === "callout" ? <InspectorDisclosure icon={<Quote size={14} />} title="Callout" summary="Label and tone" defaultOpen><CalloutInspector context={context} onReplaceRange={onReplaceRange} /></InspectorDisclosure> : null}
-      <InspectorDisclosure icon={<BookOpen size={14} />} title="Chapter pulse" summary={`${chapterWords.toLocaleString()} words`} defaultOpen={context.kind === "none"}>
-        <div className="books-pulse-compact"><strong>{chapterWords.toLocaleString()}</strong><span>words in this section</span><div className="books-goal-track"><span style={{ width: `${goalProgress}%` }} /></div><div className="books-goal-meta"><span>{totalWords.toLocaleString()} total</span><span>{goalProgress}% of goal</span></div></div>
-      </InspectorDisclosure>
-      {context.kind !== "none" && <p className="books-inspector-source-hint">Changes apply to this role or selected block and remain portable in the manuscript source.</p>}
-    </aside>
-  );
-}
-
-function CanvasResizeHandles({ label, onResizeStart }: { label: string; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, direction: -1 | 1) => void }) {
-  return <><button className="books-canvas-resize-handle left" onPointerDown={(event) => onResizeStart(event, -1)} aria-label={`Resize ${label} from the left edge`} /><button className="books-canvas-resize-handle right" onPointerDown={(event) => onResizeStart(event, 1)} aria-label={`Resize ${label} from the right edge`} /></>;
-}
-
-function CanvasTextBlock({ block, index, width, selected, typography, onTextChange, onTextSelection, onEditorKeyDown, onResizeStart }: { block: CanvasBlock; index: number; width: number; selected: boolean; typography: BookTypography; onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void; onTextSelection: (block: CanvasBlock, event: React.SyntheticEvent<HTMLTextAreaElement>) => void; onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: -1 | 1) => void }) {
-  const [editing, setEditing] = useState(false);
-  const editor = useRef<HTMLTextAreaElement>(null);
-  const style = block.role ? typography[block.role] : typography.paragraph;
-  const className = block.role === "quote" ? "quote" : block.level ? `heading heading-${block.level}` : "paragraph";
-  const label = block.role === "quote" ? "quote" : block.level ? `heading ${block.level}` : "paragraph";
-  useEffect(() => {
-    if (!editing) return;
-    requestAnimationFrame(() => editor.current?.focus());
-  }, [editing]);
-  const beginEditing = () => setEditing(true);
-  return <div className={`books-canvas-text-block align-${block.presentation.align} ${selected ? "selected" : ""}`} style={{ width: `${width}%` }}>
-    {editing ? <textarea ref={editor} className={`books-canvas-text ${className}`} style={{ textIndent: `${style.firstLineIndent}em`, marginTop: `${style.spaceBefore}em`, marginBottom: `${style.spaceAfter}em`, paddingLeft: `${style.leftIndent}em`, paddingRight: `${style.rightIndent}em` }} value={block.display} rows={Math.max(1, block.display.split("\n").length)} onChange={(event) => onTextChange(block, event.target.value, event.target.selectionStart, event.target.selectionEnd)} onFocus={(event) => onTextSelection(block, event)} onSelect={(event) => onTextSelection(block, event)} onClick={(event) => onTextSelection(block, event)} onKeyUp={(event) => onTextSelection(block, event)} onBlur={() => setEditing(false)} onKeyDown={onEditorKeyDown} placeholder={index === 0 ? "Begin writing here…" : undefined} spellCheck aria-label={`${label} text`} /> : <div className={`books-canvas-text-preview ${block.display ? "" : "empty"}`} tabIndex={0} role="textbox" aria-label={`${label} text`} onClick={beginEditing} onKeyDown={(event) => { if (event.key === "Enter" || event.key === "F2") { event.preventDefault(); beginEditing(); } }} dangerouslySetInnerHTML={{ __html: block.display ? markdownToHtml(block.source, undefined, typography) : "Begin writing here…" }} />}
-    {selected && <CanvasResizeHandles label={label} onResizeStart={(event, direction) => onResizeStart(event, block, direction)} />}
-  </div>;
-}
-
-function ManuscriptCanvas({ content, selection, typography, onSelectVisual, onTextChange, onTextSelection, onEditorKeyDown, onEditorDragOver, onEditorDrop, onEditorPaste, onResizeStart, onEditSource, onDeleteBlock, onMoveBlock, resizing }: {
-  content: string;
-  selection: { start: number; end: number };
-  typography: BookTypography;
-  onSelectVisual: (block: CanvasBlock) => void;
-  onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void;
-  onTextSelection: (block: CanvasBlock, event: React.SyntheticEvent<HTMLTextAreaElement>) => void;
-  onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
-  onEditorDragOver: (event: React.DragEvent<HTMLElement>) => void;
-  onEditorDrop: (event: React.DragEvent<HTMLElement>) => void;
-  onEditorPaste: (event: React.ClipboardEvent<HTMLElement>) => void;
-  onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: -1 | 1) => void;
-  onEditSource: (block: CanvasBlock) => void;
-  onDeleteBlock: (block: CanvasBlock) => void;
-  onMoveBlock: (fromStart: number, targetStart: number) => void;
-  resizing: { start: number; width: number } | null;
-}) {
-  const parsedBlocks = canvasBlocks(content);
-  const blocks = parsedBlocks.length > 0 ? parsedBlocks : [{ kind: "text", start: 0, end: 0, source: "", display: "", editPrefix: "", editSuffix: "", role: "paragraph", presentation: { ...DEFAULT_RICH_PRESENTATION } } satisfies CanvasBlock];
-  const isSelected = (block: CanvasBlock) => selection.start <= block.end && selection.end >= block.start;
-  const renderVisual = (block: CanvasBlock) => {
-    if (block.kind === "image" && block.image) {
-      const safeSource = /^(?:https?:\/\/|data:image\/)/i.test(block.image.source);
-      return <div className="books-canvas-image-inner">{safeSource ? <img src={block.image.source} alt={block.image.alt || "Manuscript artwork"} draggable={false} /> : <span className="books-canvas-unsupported">This image source cannot be previewed.</span>}</div>;
-    }
-    return <div className="books-canvas-rich-inner" dangerouslySetInnerHTML={{ __html: markdownToHtml(block.source, undefined, typography) }} />;
-  };
-  return <div className="books-manuscript-canvas" onDragOver={onEditorDragOver} onDrop={onEditorDrop} onPaste={onEditorPaste} aria-label="Manuscript canvas">
-    {blocks.map((block, index) => {
-      if (block.kind === "text") {
-        const selected = isSelected(block);
-        const width = resizing?.start === block.start ? resizing.width : block.presentation.width;
-        return <CanvasTextBlock key={`${block.start}-${index}`} block={block} index={index} width={width} selected={selected} typography={typography} onTextChange={onTextChange} onTextSelection={onTextSelection} onEditorKeyDown={onEditorKeyDown} onResizeStart={onResizeStart} />;
-      }
-      const selected = isSelected(block);
-      const width = resizing?.start === block.start ? resizing.width : block.presentation.width;
-      return <div key={`${block.start}-${index}`} className={`books-canvas-visual ${selected ? "selected" : ""} align-${block.presentation.align}`} style={{ width: `${width}%` }} role="button" tabIndex={0} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/x-note-me-block", String(block.start)); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const fromStart = Number(event.dataTransfer.getData("application/x-note-me-block")); if (Number.isFinite(fromStart)) onMoveBlock(fromStart, block.start); }} onClick={() => onSelectVisual(block)} onDoubleClick={() => onEditSource(block)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectVisual(block); } else if ((event.key === "Backspace" || event.key === "Delete") && selected) { event.preventDefault(); onDeleteBlock(block); } }} aria-label={`Select ${block.kind === "image" ? "artwork" : block.kind}`}>
-        <span className="books-canvas-visual-label">{block.kind === "image" ? "Artwork" : block.kind === "table" ? "Data table" : block.kind === "chart" ? "Chart / graph" : "Callout"}</span>
-        {renderVisual(block)}
-        {selected && <><span className="books-canvas-edit-hint">Double-click to edit source</span><CanvasResizeHandles label={block.kind} onResizeStart={(event, direction) => onResizeStart(event, block, direction)} /></>}
-      </div>;
-    })}
-  </div>;
-}
-
 function LibraryScreen({ books, creating, deletingBookId, onNew, onOpen, onDelete }: { books: Book[]; creating: boolean; deletingBookId: number | null; onNew: () => void; onOpen: (id: number) => void; onDelete: (book: Book) => void }) {
   const [menuBookId, setMenuBookId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -2216,936 +1887,11 @@ function LibraryScreen({ books, creating, deletingBookId, onNew, onOpen, onDelet
   );
 }
 
-const SECTION_GROUP_LABELS: Record<"front" | "story" | "back", string> = {
+export const SECTION_GROUP_LABELS: Record<"front" | "story" | "back", string> = {
   front: "Opening pages",
   story: "Story",
   back: "Closing pages",
 };
-
-function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter }: { chapters: Chapter[]; activeChapterId: number | null; onSelect: (id: number) => void; onNewChapter: (kind: ChapterKind) => void }) {
-  const updateChapter = useBooks((state) => state.updateChapter);
-  const deleteChapter = useBooks((state) => state.deleteChapter);
-  const reorderChapters = useBooks((state) => state.reorderChapters);
-  const [addOpen, setAddOpen] = useState(false);
-  const [menuChapterId, setMenuChapterId] = useState<number | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dragChapterId, setDragChapterId] = useState<number | null>(null);
-  const [dragOverChapterId, setDragOverChapterId] = useState<number | null>(null);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<"front" | "story" | "back", boolean>>({ front: false, story: false, back: false });
-  const [addMenuStyle, setAddMenuStyle] = useState<CSSProperties | null>(null);
-  const [contextMenuStyle, setContextMenuStyle] = useState<CSSProperties | null>(null);
-  const railRef = useRef<HTMLElement>(null);
-  const addMenuRef = useRef<HTMLDivElement>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-  const menuTriggerRef = useRef<HTMLElement | null>(null);
-  const confirmation = useConfirmationDialog();
-
-  const restoreMenuFocus = () => requestAnimationFrame(() => {
-    if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus();
-  });
-
-  const closeAddMenu = (restoreFocus = false) => {
-    setAddOpen(false);
-    setAddMenuStyle(null);
-    if (restoreFocus) restoreMenuFocus();
-  };
-
-  const closeContextMenu = (restoreFocus = false) => {
-    setMenuChapterId(null);
-    setContextMenuStyle(null);
-    if (restoreFocus) restoreMenuFocus();
-  };
-
-  const popoverStyle = (anchor: HTMLElement, height: number): CSSProperties => {
-    const rail = railRef.current?.getBoundingClientRect();
-    if (!rail) return {};
-    const target = anchor.getBoundingClientRect();
-    const opensAbove = target.bottom + height > window.innerHeight - 12;
-    return {
-      top: opensAbove ? target.top - rail.top - 5 : target.bottom - rail.top + 5,
-      left: "auto",
-      right: 4,
-      transform: opensAbove ? "translateY(-100%)" : undefined,
-    };
-  };
-
-  const openContextMenu = (event: React.MouseEvent<HTMLElement>, chapterId: number) => {
-    event.preventDefault();
-    menuTriggerRef.current = event.currentTarget;
-    closeAddMenu();
-    setMenuChapterId(chapterId);
-    setContextMenuStyle(popoverStyle(event.currentTarget, 430));
-  };
-
-  useEffect(() => {
-    if (addOpen) requestAnimationFrame(() => addMenuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']:not([disabled])")?.focus());
-    if (menuChapterId !== null) requestAnimationFrame(() => contextMenuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']:not([disabled])")?.focus());
-  }, [addOpen, menuChapterId]);
-
-  useEffect(() => {
-    const closeMenus = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest(".books-sections-rail")) {
-        closeAddMenu();
-        closeContextMenu();
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (addOpen) closeAddMenu(true);
-        if (menuChapterId !== null) closeContextMenu(true);
-      }
-    };
-    window.addEventListener("pointerdown", closeMenus);
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      window.removeEventListener("pointerdown", closeMenus);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [addOpen, menuChapterId]);
-
-  const changeKind = async (chapter: Chapter, kind: ChapterKind) => {
-    try {
-      await updateChapter(chapter.id, chapter.title, chapter.content, kind, chapter.toc_include, chapter.toc_heading_exclusions);
-      closeContextMenu();
-    } catch (error) {
-      notify("error", "Section type could not be saved", String(error));
-    }
-  };
-
-  const toggleContents = async (chapter: Chapter) => {
-    try {
-      await updateChapter(chapter.id, chapter.title, chapter.content, chapter.chapter_kind, !chapter.toc_include, chapter.toc_heading_exclusions);
-    } catch (error) {
-      notify("error", "Contents setting could not be saved", String(error));
-    }
-  };
-
-  const move = async (index: number, direction: -1 | 1) => {
-    const orderedChapters = orderBookChapters(chapters);
-    const destination = index + direction;
-    if (destination < 0 || destination >= orderedChapters.length || chapterGroup(orderedChapters[index].chapter_kind) !== chapterGroup(orderedChapters[destination].chapter_kind)) return;
-    const next = [...orderedChapters];
-    [next[index], next[destination]] = [next[destination], next[index]];
-    try {
-      await reorderChapters(next.map((chapter) => chapter.id));
-      closeContextMenu();
-    } catch (error) {
-      notify("error", "Section order could not be saved", String(error));
-    }
-  };
-
-  const removeChapter = (chapter: Chapter, restoreFocus?: HTMLElement | null) => {
-    closeContextMenu();
-    confirmation.ask({
-      title: `Delete “${chapter.title || "Untitled section"}”?`,
-      description: "This section and its writing will be permanently removed from the manuscript. This cannot be undone.",
-      confirmLabel: "Delete section",
-      onConfirm: async () => {
-        await deleteChapter(chapter.id);
-        notify("success", "Section deleted", chapter.title || "Untitled section");
-      },
-    }, restoreFocus);
-  };
-
-  const dropChapter = async (targetId: number) => {
-    if (dragChapterId === null || dragChapterId === targetId) return;
-    const orderedChapters = orderBookChapters(chapters);
-    const from = orderedChapters.findIndex((chapter) => chapter.id === dragChapterId);
-    const to = orderedChapters.findIndex((chapter) => chapter.id === targetId);
-    if (from === -1 || to === -1) return;
-    if (chapterGroup(orderedChapters[from].chapter_kind) !== chapterGroup(orderedChapters[to].chapter_kind)) return;
-    const next = [...orderedChapters];
-    const [dragged] = next.splice(from, 1);
-    next.splice(to, 0, dragged);
-    try {
-      await reorderChapters(next.map((chapter) => chapter.id));
-    } catch (error) {
-      notify("error", "Section order could not be saved", String(error));
-    } finally {
-      setDragChapterId(null);
-      setDragOverChapterId(null);
-    }
-  };
-
-  const orderedChapters = orderBookChapters(chapters);
-  const filteredChapters = orderedChapters
-    .map((chapter, index) => ({ chapter, index }))
-    .filter(({ chapter }) => !searchQuery.trim() || `${chapter.title} ${chapterKindLabel(chapter.chapter_kind)}`.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase()));
-  const menuChapter = menuChapterId === null ? null : chapters.find((chapter) => chapter.id === menuChapterId) ?? null;
-  const menuChapterIndex = menuChapter ? orderedChapters.indexOf(menuChapter) : -1;
-  const canMoveMenuChapter = (direction: -1 | 1) => {
-    const destination = menuChapterIndex + direction;
-    return menuChapterIndex >= 0 && destination >= 0 && destination < orderedChapters.length && chapterGroup(orderedChapters[menuChapterIndex].chapter_kind) === chapterGroup(orderedChapters[destination].chapter_kind);
-  };
-
-  return (
-    <>
-    <section ref={railRef} className="books-sections-rail" aria-labelledby="books-sections-heading">
-      <div className="books-sections-heading">
-        <div>
-          <span id="books-sections-heading">Sections</span>
-          <small>{chapters.length} {chapters.length === 1 ? "section" : "sections"}</small>
-        </div>
-         <div className="books-sections-heading-actions">
-           {chapters.length > 4 && <button className="books-section-add-button" onClick={() => { setAddOpen(false); closeContextMenu(); setSearchOpen((open) => !open); }} aria-label="Search sections" aria-expanded={searchOpen} title="Search sections"><Search size={13} /></button>}
-           <button className="books-section-add-button" onClick={(event) => { menuTriggerRef.current = event.currentTarget; closeContextMenu(); setSearchOpen(false); if (addOpen) closeAddMenu(true); else { setAddOpen(true); setAddMenuStyle(popoverStyle(event.currentTarget, 430)); } }} aria-label="Add section" aria-expanded={addOpen} aria-haspopup="menu" title="Add section"><Plus size={14} /></button>
-         </div>
-       </div>
-       {searchOpen && <div className="books-section-search"><Search size={12} /><input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setSearchQuery(""); setSearchOpen(false); } }} placeholder="Filter sections" aria-label="Filter sections" />{searchQuery && <button onClick={() => setSearchQuery("")} aria-label="Clear section search"><X size={12} /></button>}</div>}
-       {addOpen && (
-         <div ref={addMenuRef} className="books-section-add-menu" role="menu" aria-label="Add section" style={addMenuStyle ?? undefined} onKeyDown={(event) => handleMenuKeyDown(event, () => closeAddMenu(true))}>
-          <span className="books-section-menu-kicker">Add to manuscript</span>
-          {(["front", "story", "back"] as const).map((group) => (
-            <div key={group} className="books-section-option-group">
-              <small>{SECTION_GROUP_LABELS[group]}</small>
-              {CHAPTER_KIND_OPTIONS.filter((option) => option.group === group).map((option) => (
-                <button key={option.value} role="menuitem" onClick={() => { setAddOpen(false); setAddMenuStyle(null); onNewChapter(option.value); }}>{option.label}</button>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-      {chapters.length === 0 ? (
-        <button className="books-sections-empty" onClick={(event) => { menuTriggerRef.current = event.currentTarget; setAddOpen(true); setAddMenuStyle(popoverStyle(event.currentTarget, 430)); }} aria-haspopup="menu" aria-expanded={addOpen}>
-          <Plus size={14} />
-          <span>Add the first section</span>
-        </button>
-      ) : filteredChapters.length === 0 ? (
-        <div className="books-sections-no-results"><Search size={13} /><span>No matching sections</span></div>
-      ) : (
-        <div className="books-section-list" role="list">
-          {filteredChapters.map(({ chapter, index }, visibleIndex) => {
-            const group = chapterGroup(chapter.chapter_kind);
-            const previousGroup = visibleIndex > 0 ? chapterGroup(filteredChapters[visibleIndex - 1].chapter.chapter_kind) : null;
-            const showGroup = previousGroup !== group;
-            const groupCount = chapters.filter((item) => chapterGroup(item.chapter_kind) === group).length;
-            return (
-              <Fragment key={chapter.id}>
-                {showGroup && <button className={`books-section-group ${collapsedGroups[group] ? "collapsed" : ""}`} onClick={() => setCollapsedGroups((current) => ({ ...current, [group]: !current[group] }))} aria-expanded={!collapsedGroups[group]}><span><strong>{SECTION_GROUP_LABELS[group]}</strong><small>{groupCount}</small></span><ChevronRight size={12} /></button>}
-                {!collapsedGroups[group] && <div
-                  role="listitem"
-                  draggable
-                  className={`books-section-row ${chapter.id === activeChapterId ? "active" : ""} ${dragChapterId === chapter.id ? "dragging" : ""} ${dragOverChapterId === chapter.id ? "drop-target" : ""}`}
-                  onContextMenu={(event) => openContextMenu(event, chapter.id)}
-                  onDragStart={(event) => { setDragChapterId(chapter.id); setDragOverChapterId(null); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(chapter.id)); }}
-                  onDragEnd={() => { setDragChapterId(null); setDragOverChapterId(null); }}
-                   onDragOver={(event) => { const draggedChapter = chapters.find((item) => item.id === dragChapterId); if (draggedChapter && dragChapterId !== chapter.id && chapterGroup(draggedChapter.chapter_kind) === group) { event.preventDefault(); setDragOverChapterId(chapter.id); } }}
-                  onDrop={(event) => { event.preventDefault(); void dropChapter(chapter.id); }}
-                >
-                  <button
-                    className="books-section-main"
-                    onClick={() => { closeContextMenu(); onSelect(chapter.id); }}
-                    onKeyDown={(event) => {
-                      if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
-                      event.preventDefault();
-                      const navigable = filteredChapters.filter(({ chapter: item }) => !collapsedGroups[chapterGroup(item.chapter_kind)]);
-                      const currentIndex = navigable.findIndex(({ chapter: item }) => item.id === chapter.id);
-                      const destination = event.key === "Home" ? 0 : event.key === "End" ? navigable.length - 1 : currentIndex + (event.key === "ArrowUp" ? -1 : 1);
-                      const next = navigable[destination]?.chapter;
-                      if (next) onSelect(next.id);
-                    }}
-                    aria-current={chapter.id === activeChapterId ? "page" : undefined}
-                  >
-                    <GripVertical className="books-section-grip" size={13} aria-hidden="true" />
-                    <span className="books-section-index">{String(index + 1).padStart(2, "0")}</span>
-                    <span className="books-section-name"><strong>{chapter.title || "Untitled section"}</strong><small>{chapterKindLabel(chapter.chapter_kind)} · {wordCount(chapter.content).toLocaleString()} words</small></span>
-                  </button>
-                  <button className={`books-section-toc-toggle ${chapter.toc_include ? "included" : "excluded"}`} onClick={() => void toggleContents(chapter)} title={chapter.toc_include ? "Included in contents" : "Excluded from contents"} aria-label={chapter.toc_include ? "Exclude section from contents" : "Include section in contents"}>
-                    {chapter.toc_include ? <Eye size={13} /> : <EyeOff size={13} />}
-                  </button>
-                  <button className="books-section-more" onClick={(event) => { if (menuChapterId === chapter.id) closeContextMenu(true); else openContextMenu(event, chapter.id); }} aria-label={`Options for ${chapter.title || "untitled section"}`} aria-expanded={menuChapterId === chapter.id} aria-haspopup="menu"><MoreHorizontal size={14} /></button>
-                </div>}
-              </Fragment>
-            );
-          })}
-        </div>
-      )}
-      {menuChapter && <div ref={contextMenuRef} className="books-section-context" role="menu" aria-label={`Options for ${menuChapter.title || "untitled section"}`} style={contextMenuStyle ?? undefined} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => handleMenuKeyDown(event, () => closeContextMenu(true))}>
-        <span className="books-section-menu-kicker">Section type</span>
-        {CHAPTER_KIND_OPTIONS.map((option) => (
-          <button key={option.value} role="menuitem" className={menuChapter.chapter_kind === option.value ? "selected" : ""} onClick={() => void changeKind(menuChapter, option.value)}>
-            <span>{option.label}</span>{menuChapter.chapter_kind === option.value && <Check size={12} />}
-          </button>
-        ))}
-        <div className="books-section-menu-divider" />
-        <button role="menuitem" onClick={() => void move(menuChapterIndex, -1)} disabled={!canMoveMenuChapter(-1)}><ArrowUp size={13} /> Move earlier</button>
-        <button role="menuitem" onClick={() => void move(menuChapterIndex, 1)} disabled={!canMoveMenuChapter(1)}><ArrowDown size={13} /> Move later</button>
-        <button role="menuitem" onClick={() => { closeContextMenu(); void toggleContents(menuChapter); }}>{menuChapter.toc_include ? <EyeOff size={13} /> : <Eye size={13} />}{menuChapter.toc_include ? "Hide from contents" : "Include in contents"}</button>
-        <button role="menuitem" className="danger" onClick={() => void removeChapter(menuChapter, menuTriggerRef.current)}><Trash2 size={13} /> Delete section</button>
-      </div>}
-       <p className="books-sections-hint">Right-click for options. Focus a section and use Up/Down to move through the rail.</p>
-    </section>
-    {confirmation.dialog}
-    </>
-  );
-}
-
-function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onFocusModeChange, onOpenOutline, onNewChapter, onNavigateSection }: { book: Book; chapters: Chapter[]; activeChapter: Chapter | null; focusMode: boolean; onFocusModeChange: (focused: boolean) => void; onOpenOutline: () => void; onNewChapter: () => void; onNavigateSection: (direction: -1 | 1) => void }) {
-  const updateChapter = useBooks((state) => state.updateChapter);
-  const updateBook = useBooks((state) => state.updateBook);
-  const [view, setView] = useState<EditorView>("write");
-  const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [findOpen, setFindOpen] = useState(false);
-  const [findQuery, setFindQuery] = useState("");
-  const [findIndex, setFindIndex] = useState(0);
-  const [assetOpen, setAssetOpen] = useState(false);
-  const [sourceMode, setSourceMode] = useState(false);
-  const confirmation = useConfirmationDialog();
-  const [canvasResize, setCanvasResize] = useState<{ start: number; width: number } | null>(null);
-  const [title, setTitle] = useState(activeChapter?.title ?? "");
-  const [content, setContent] = useState(activeChapter?.content ?? "");
-  const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving">("saved");
-  const [editorSelection, setEditorSelection] = useState({ start: 0, end: 0, titleFocused: false });
-  const [inspectorLayout, setInspectorLayout] = useState(() => layoutForBook(book));
-  const editorRef = useRef<HTMLTextAreaElement | null>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const activeEditorMapRef = useRef({ sourceStart: 0, prefixLength: 0 });
-  const findInputRef = useRef<HTMLInputElement>(null);
-  const saveTimerRef = useRef<number | null>(null);
-  const draftVersionRef = useRef(0);
-  const closingRef = useRef(false);
-  const inspectorLayoutRef = useRef(inspectorLayout);
-  const draftRef = useRef<{
-    id: number | null;
-    title: string;
-    content: string;
-    chapterKind: ChapterKind;
-    tocInclude: boolean;
-    tocHeadingExclusions: string[];
-    dirty: boolean;
-  }>({
-    id: activeChapter?.id ?? null,
-    title: activeChapter?.title ?? "",
-    content: activeChapter?.content ?? "",
-    chapterKind: activeChapter?.chapter_kind ?? "chapter",
-    tocInclude: activeChapter?.toc_include ?? true,
-    tocHeadingExclusions: activeChapter?.toc_heading_exclusions ?? [],
-    dirty: false,
-  });
-
-  useEffect(() => {
-    const previous = draftRef.current;
-    if (previous.id !== (activeChapter?.id ?? null) && previous.id !== null && previous.dirty) {
-      void updateChapter(previous.id, previous.title.trim() || "Untitled chapter", previous.content, previous.chapterKind, previous.tocInclude, previous.tocHeadingExclusions);
-    }
-    draftVersionRef.current += 1;
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-    setFindOpen(false);
-    setFindQuery("");
-    setFindIndex(0);
-    setAssetOpen(false);
-    setSourceMode(false);
-    setCanvasResize(null);
-    editorRef.current = null;
-    activeEditorMapRef.current = { sourceStart: 0, prefixLength: 0 };
-    setEditorSelection({ start: 0, end: 0, titleFocused: false });
-    setTitle(activeChapter?.title ?? "");
-    setContent(activeChapter?.content ?? "");
-    setSaveState("saved");
-    draftRef.current = {
-      id: activeChapter?.id ?? null,
-      title: activeChapter?.title ?? "",
-      content: activeChapter?.content ?? "",
-      chapterKind: activeChapter?.chapter_kind ?? "chapter",
-      tocInclude: activeChapter?.toc_include ?? true,
-      tocHeadingExclusions: activeChapter?.toc_heading_exclusions ?? [],
-      dirty: false,
-    };
-    return () => {
-      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-      const draft = draftRef.current;
-      if (draft.id !== null && draft.dirty && useBooks.getState().chapters.some((chapter) => chapter.id === draft.id)) {
-        void updateChapter(draft.id, draft.title.trim() || "Untitled chapter", draft.content, draft.chapterKind, draft.tocInclude, draft.tocHeadingExclusions);
-      }
-    };
-  }, [activeChapter?.id, updateChapter]);
-
-  useEffect(() => {
-    const nextLayout = layoutForBook(book);
-    inspectorLayoutRef.current = nextLayout;
-    setInspectorLayout(nextLayout);
-  }, [book.id, book.layout_json]);
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    void getCurrentWindow().onCloseRequested(async (event) => {
-      const draft = draftRef.current;
-      if (closingRef.current || draft.id === null || !draft.dirty) return;
-      event.preventDefault();
-      closingRef.current = true;
-      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-      try {
-        await updateChapter(draft.id, draft.title.trim() || "Untitled chapter", draft.content, draft.chapterKind, draft.tocInclude, draft.tocHeadingExclusions);
-        draftRef.current.dirty = false;
-        await getCurrentWindow().destroy();
-      } catch (error) {
-        closingRef.current = false;
-        setSaveState("dirty");
-        notify("error", "Close paused: chapter was not saved", String(error));
-      }
-    }).then((dispose) => {
-      if (cancelled) dispose();
-      else unlisten = dispose;
-    });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [updateChapter]);
-
-  useEffect(() => {
-    if (!activeChapter) return;
-    requestAnimationFrame(() => editorRef.current?.focus());
-  }, [activeChapter?.id]);
-
-  useEffect(() => {
-    if (!activeChapter || draftRef.current.id !== activeChapter.id) return;
-    draftRef.current = {
-      id: activeChapter.id,
-      title,
-      content,
-      chapterKind: activeChapter.chapter_kind,
-      tocInclude: activeChapter.toc_include,
-      tocHeadingExclusions: activeChapter.toc_heading_exclusions,
-      dirty: saveState !== "saved",
-    };
-  }, [activeChapter?.id, activeChapter?.chapter_kind, activeChapter?.toc_include, title, content, saveState]);
-
-  useEffect(() => {
-    if (!activeChapter || !draftRef.current.dirty) return;
-    const version = draftVersionRef.current;
-    saveTimerRef.current = window.setTimeout(async () => {
-      setSaveState("saving");
-      try {
-        await updateChapter(activeChapter.id, title.trim() || "Untitled chapter", content, activeChapter.chapter_kind, activeChapter.toc_include, activeChapter.toc_heading_exclusions);
-        if (draftVersionRef.current === version && draftRef.current.id === activeChapter.id) {
-          draftRef.current.dirty = false;
-          setSaveState("saved");
-        }
-      } catch (error) {
-        if (draftRef.current.id === activeChapter.id) setSaveState("dirty");
-        notify("error", "Chapter could not be saved", String(error));
-      }
-    }, 700);
-    return () => {
-      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-    };
-  }, [activeChapter?.id, activeChapter?.chapter_kind, activeChapter?.toc_include, activeChapter?.toc_heading_exclusions, title, content, updateChapter]);
-
-  const markDraft = (next: { title?: string; content?: string }) => {
-    draftVersionRef.current += 1;
-    draftRef.current = {
-      ...draftRef.current,
-      title: next.title ?? draftRef.current.title,
-      content: next.content ?? draftRef.current.content,
-      dirty: true,
-    };
-    setSaveState("dirty");
-  };
-
-  const syncEditorSelection = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    activeEditorMapRef.current = { sourceStart: 0, prefixLength: 0 };
-    setEditorSelection({ start: editor.selectionStart, end: editor.selectionEnd, titleFocused: false });
-  };
-
-  const syncCanvasSelection = (block: CanvasBlock, event: React.SyntheticEvent<HTMLTextAreaElement>) => {
-    const editor = event.currentTarget;
-    editorRef.current = editor;
-    activeEditorMapRef.current = { sourceStart: block.start, prefixLength: block.editPrefix.length };
-    setEditorSelection({ start: block.start + block.editPrefix.length + editor.selectionStart, end: block.start + block.editPrefix.length + editor.selectionEnd, titleFocused: false });
-  };
-
-  const changeLayout = (change: (layout: BookLayout) => BookLayout) => {
-    const nextLayout = change(inspectorLayoutRef.current);
-    inspectorLayoutRef.current = nextLayout;
-    setInspectorLayout(nextLayout);
-    const currentBook = useBooks.getState().books.find((item) => item.id === book.id) ?? book;
-    void updateBook(currentBook.id, bookInputFromBook(currentBook, serializeBookLayout(nextLayout))).catch((error) => {
-      inspectorLayoutRef.current = layoutForBook(currentBook);
-      setInspectorLayout(inspectorLayoutRef.current);
-      notify("error", "Typography could not be saved", String(error));
-    });
-  };
-
-  const replaceContentRange = (start: number, end: number, replacement: string, focusEditor = false) => {
-    const nextContent = content.slice(0, start) + replacement + content.slice(end);
-    setContent(nextContent);
-    markDraft({ content: nextContent });
-    const replacementEnd = start + replacement.length;
-    const cursor = start + Math.max(0, replacement.length - (replacement.startsWith(":::") ? 3 : 0));
-    setEditorSelection({ start, end: replacementEnd, titleFocused: false });
-    if (focusEditor) requestAnimationFrame(() => { editorRef.current?.focus(); editorRef.current?.setSelectionRange(cursor, cursor); });
-  };
-
-  const updateCanvasText = (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => {
-    const replacement = `${block.editPrefix}${value}${block.editSuffix}`;
-    const nextContent = content.slice(0, block.start) + replacement + content.slice(block.end);
-    setContent(nextContent);
-    markDraft({ content: nextContent });
-    const sourceStart = block.start + block.editPrefix.length + selectionStart;
-    const sourceEnd = block.start + block.editPrefix.length + selectionEnd;
-    setEditorSelection({ start: sourceStart, end: sourceEnd, titleFocused: false });
-  };
-
-  const resizeCanvasBlock = (block: CanvasBlock, width: number) => {
-    const safeWidth = Math.min(100, Math.max(20, Math.round(width)));
-    if (block.kind === "image" && block.image) {
-      replaceContentRange(block.start, block.end, `${block.image.indent}${imageMarkdown(block.image.alt, block.image.source, { ...block.image.presentation, width: safeWidth })}`);
-    } else if (block.kind === "table") {
-      replaceContentRange(block.start, block.end, tableBlockText(block.tableLines ?? [], { ...(block.tableOptions ?? tableDataFromValue(null)), width: safeWidth }));
-    } else if (block.kind === "chart" && block.chart) {
-      replaceContentRange(block.start, block.end, chartBlockText({ ...block.chart, width: safeWidth }));
-    } else if (block.kind === "callout") {
-      const presentation = { ...(block.calloutPresentation ?? DEFAULT_RICH_PRESENTATION), width: safeWidth };
-      replaceContentRange(block.start, block.end, calloutBlockText(block.calloutTitle ?? "Note", block.calloutTone ?? "note", block.source.split(/\r?\n/).slice(2, -1).join("\n"), presentation));
-    } else if (block.kind === "text") {
-      replaceContentRange(block.start, block.end, canvasTextSource(block.source, { ...block.presentation, width: safeWidth }));
-    }
-  };
-
-  const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: -1 | 1) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const canvas = canvasRef.current?.getBoundingClientRect();
-    if (!canvas) return;
-    const initialWidth = block.presentation.width;
-    let nextWidth = initialWidth;
-    const onMove = (moveEvent: PointerEvent) => {
-      const delta = ((moveEvent.clientX - event.clientX) / Math.max(1, canvas.width)) * 100 * direction;
-      nextWidth = Math.min(100, Math.max(20, initialWidth + delta));
-      setCanvasResize({ start: block.start, width: nextWidth });
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      setCanvasResize(null);
-      resizeCanvasBlock(block, nextWidth);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
-  };
-
-  const moveCanvasRange = (start: number, end: number, direction: -1 | 1) => {
-    const blocks = canvasBlocks(content);
-    const index = blocks.findIndex((block) => block.start === start && block.end === end);
-    const neighbor = index + direction;
-    if (index < 0 || neighbor < 0 || neighbor >= blocks.length) return;
-    const current = blocks[index];
-    const adjacent = blocks[neighbor];
-    const currentSource = content.slice(current.start, current.end);
-    const adjacentSource = content.slice(adjacent.start, adjacent.end);
-    const rangeStart = direction < 0 ? adjacent.start : current.start;
-    const rangeEnd = direction < 0 ? current.end : adjacent.end;
-    const gap = direction < 0 ? content.slice(adjacent.end, current.start) : content.slice(current.end, adjacent.start);
-    const replacement = direction < 0 ? `${currentSource}${gap}${adjacentSource}` : `${adjacentSource}${gap}${currentSource}`;
-    const nextContent = content.slice(0, rangeStart) + replacement + content.slice(rangeEnd);
-    const nextStart = direction < 0 ? rangeStart : rangeStart + adjacentSource.length + gap.length;
-    setContent(nextContent);
-    markDraft({ content: nextContent });
-    setEditorSelection({ start: nextStart, end: nextStart + currentSource.length, titleFocused: false });
-  };
-
-  const moveCanvasBlock = (fromStart: number, targetStart: number) => {
-    let workingContent = content;
-    let currentStart = fromStart;
-    let currentEnd = canvasBlocks(content).find((block) => block.start === fromStart)?.end ?? fromStart;
-    const initialBlocks = canvasBlocks(content);
-    const fromIndex = initialBlocks.findIndex((block) => block.start === fromStart);
-    const targetIndex = initialBlocks.findIndex((block) => block.start === targetStart);
-    if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return;
-    const direction = fromIndex < targetIndex ? 1 : -1;
-    for (let step = Math.abs(targetIndex - fromIndex); step > 0; step -= 1) {
-      const blocks = canvasBlocks(workingContent);
-      const index = blocks.findIndex((block) => block.start === currentStart && block.end === currentEnd);
-      const neighbor = index + direction;
-      if (index < 0 || neighbor < 0 || neighbor >= blocks.length) return;
-      const current = blocks[index];
-      const adjacent = blocks[neighbor];
-      const currentSource = workingContent.slice(current.start, current.end);
-      const adjacentSource = workingContent.slice(adjacent.start, adjacent.end);
-      const gap = direction < 0 ? workingContent.slice(adjacent.end, current.start) : workingContent.slice(current.end, adjacent.start);
-      const rangeStart = direction < 0 ? adjacent.start : current.start;
-      const rangeEnd = direction < 0 ? current.end : adjacent.end;
-      const replacement = direction < 0 ? `${currentSource}${gap}${adjacentSource}` : `${adjacentSource}${gap}${currentSource}`;
-      workingContent = workingContent.slice(0, rangeStart) + replacement + workingContent.slice(rangeEnd);
-      currentStart = direction < 0 ? rangeStart : rangeStart + adjacentSource.length + gap.length;
-      currentEnd = currentStart + currentSource.length;
-    }
-    setContent(workingContent);
-    markDraft({ content: workingContent });
-    setEditorSelection({ start: currentStart, end: currentEnd, titleFocused: false });
-  };
-
-  const deleteCanvasRange = (start: number, end: number) => {
-    const removeStart = start > 0 && content[start - 1] === "\n" ? start - 1 : start;
-    const removeEnd = end < content.length && content[end] === "\n" ? end + 1 : end;
-    const nextContent = content.slice(0, removeStart) + content.slice(removeEnd);
-    setContent(nextContent);
-    markDraft({ content: nextContent });
-    setEditorSelection({ start: removeStart, end: removeStart, titleFocused: false });
-  };
-
-  const confirmDeleteCanvasRange = (start: number, end: number, restoreFocus?: HTMLElement | null) => {
-    const selected = editorContextFor(content, start, end).label.toLocaleLowerCase();
-    confirmation.ask({
-      title: `Delete this ${selected}?`,
-      description: "The selected manuscript element will be removed from this section. This cannot be undone after the section is saved.",
-      confirmLabel: `Delete ${selected}`,
-      onConfirm: () => deleteCanvasRange(start, end),
-    }, restoreFocus);
-  };
-
-  const replaceSelection = (replacement: string, selectionStart = 0, selectionEnd = replacement.length) => {
-    const editor = editorRef.current;
-    const start = editorSelection.titleFocused ? content.length : editorSelection.start;
-    const end = editorSelection.titleFocused ? content.length : editorSelection.end;
-    const nextContent = content.slice(0, start) + replacement + content.slice(end);
-    setContent(nextContent);
-    markDraft({ content: nextContent });
-    setEditorSelection({ start: start + selectionStart, end: start + selectionEnd, titleFocused: false });
-    if (editor) requestAnimationFrame(() => {
-      editor.focus();
-      const localStart = Math.max(0, start + selectionStart - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      const localEnd = Math.max(0, start + selectionEnd - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      editor.setSelectionRange(localStart, localEnd);
-    });
-  };
-
-  const applyFormat = (prefix: string, suffix = "") => {
-    const editor = editorRef.current;
-    const start = editorSelection.titleFocused ? content.length : editorSelection.start;
-    const end = editorSelection.titleFocused ? content.length : editorSelection.end;
-    const selected = content.slice(start, end) || "your text";
-    const next = content.slice(0, start) + prefix + selected + suffix + content.slice(end);
-    setContent(next);
-    markDraft({ content: next });
-    setEditorSelection({ start: start + prefix.length, end: start + prefix.length + selected.length, titleFocused: false });
-    if (editor) requestAnimationFrame(() => {
-      editor.focus();
-      const localStart = Math.max(0, start + prefix.length - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      const localEnd = Math.max(0, start + prefix.length + selected.length - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      editor.setSelectionRange(localStart, localEnd);
-    });
-  };
-
-  const applyHeading = (level: number) => {
-    const editor = editorRef.current;
-    const start = content.lastIndexOf("\n", editorSelection.start - 1) + 1;
-    const endIndex = content.indexOf("\n", editorSelection.end);
-    const end = endIndex === -1 ? content.length : endIndex;
-    const selectedLines = content.slice(start, end).split("\n");
-    const prefix = level > 0 ? `${"#".repeat(level)} ` : "";
-    const nextLines = selectedLines.map((line) => `${prefix}${line.replace(/^\s*#{1,6}\s+/, "")}`);
-    const next = content.slice(0, start) + nextLines.join("\n") + content.slice(end);
-    setContent(next);
-    markDraft({ content: next });
-    setEditorSelection({ start, end: start + nextLines.join("\n").length, titleFocused: false });
-    if (editor) requestAnimationFrame(() => {
-      editor.focus();
-      const localStart = Math.max(0, start - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      const localEnd = Math.max(0, start + nextLines.join("\n").length - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      editor.setSelectionRange(localStart, localEnd);
-    });
-  };
-
-  const insertAsset = (markdown: string) => {
-    replaceSelection(markdown);
-    setAssetOpen(false);
-  };
-
-  const insertRichBlock = (block: string) => {
-    const value = `${block}\n`;
-    const cursor = Math.max(0, value.length - 4);
-    replaceSelection(value, cursor, cursor);
-  };
-
-  const insertTable = () => insertRichBlock(tableBlockText(["| Measure | Current | Target |", "| :--- | ---: | ---: |", "| Example | 42 | 60 |"], { caption: "A clear comparison", align: "left", striped: true, compact: false, width: 100 }));
-  const insertChart = () => insertRichBlock(chartBlockText(defaultChartData()));
-  const insertCallout = () => insertRichBlock(calloutBlockText("A note for the reader", "note", "Use this space for context, a caveat, or a memorable detail."));
-
-  const editorContext = useMemo(() => editorContextFor(content, editorSelection.start, editorSelection.end, editorSelection.titleFocused), [content, editorSelection]);
-
-  const insertImageFile = async (file: File) => {
-    try {
-      insertAsset(await imageFileToMarkdown(file));
-    } catch (error) {
-      notify("error", "Image could not be added", String(error));
-    }
-  };
-
-  const onEditorDragOver = (event: React.DragEvent<HTMLElement>) => {
-    if (Array.from(event.dataTransfer.files).some((file) => file.type.startsWith("image/"))) event.preventDefault();
-  };
-
-  const onEditorDrop = (event: React.DragEvent<HTMLElement>) => {
-    const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/"));
-    if (!file) return;
-    event.preventDefault();
-    void insertImageFile(file);
-  };
-
-  const onEditorPaste = (event: React.ClipboardEvent<HTMLElement>) => {
-    const file = Array.from(event.clipboardData.files).find((item) => item.type.startsWith("image/"));
-    if (!file) return;
-    event.preventDefault();
-    void insertImageFile(file);
-  };
-
-  const focusFindMatch = (query: string, index: number) => {
-    const match = findOccurrences(content, query)[index];
-    if (!match) return;
-    requestAnimationFrame(() => {
-      editorRef.current?.focus();
-      editorRef.current?.setSelectionRange(match.start, match.end);
-    });
-  };
-
-  const moveFindMatch = (direction: -1 | 1) => {
-    const matches = findOccurrences(content, findQuery);
-    if (matches.length === 0) return;
-    const nextIndex = (findIndex + direction + matches.length) % matches.length;
-    setFindIndex(nextIndex);
-    focusFindMatch(findQuery, nextIndex);
-  };
-
-  const closeFind = () => {
-    setFindOpen(false);
-    requestAnimationFrame(() => editorRef.current?.focus());
-  };
-
-  const openFind = () => {
-    setView("write");
-    setSourceMode(true);
-    setFindOpen(true);
-    requestAnimationFrame(() => requestAnimationFrame(() => findInputRef.current?.focus()));
-  };
-
-  useEffect(() => {
-    const onWindowKeyDown = (event: KeyboardEvent) => {
-      const modifier = event.metaKey || event.ctrlKey;
-      if (modifier && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        openFind();
-      } else if (event.key === "Escape" && findOpen) {
-        event.preventDefault();
-        closeFind();
-      }
-    };
-    window.addEventListener("keydown", onWindowKeyDown);
-    return () => window.removeEventListener("keydown", onWindowKeyDown);
-  }, [findOpen]);
-
-  const onEditorKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    const modifier = event.metaKey || event.ctrlKey;
-    if (modifier && event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-      event.preventDefault();
-      onNavigateSection(event.key === "ArrowUp" ? -1 : 1);
-      return;
-    }
-    if (modifier && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      void saveNow();
-      return;
-    }
-    if (modifier && event.key.toLowerCase() === "b") { event.preventDefault(); applyFormat("**", "**"); return; }
-    if (modifier && event.key.toLowerCase() === "i") { event.preventDefault(); applyFormat("*", "*"); return; }
-    const editor = editorRef.current;
-    if (event.key === "Enter" && editor && editorSelection.start === editorSelection.end) {
-      const cursor = editorSelection.start;
-      const lineStart = content.lastIndexOf("\n", cursor - 1) + 1;
-      const line = content.slice(lineStart, cursor);
-      const listMarker = /^(\s*(?:[-*+]\s+|\d+[.)]\s+))/.exec(line);
-      if (listMarker && line.slice(listMarker[0].length).trim()) {
-        event.preventDefault();
-        const marker = listMarker[1].replace(/\s+$/, " ");
-        replaceSelection(`\n${marker}`, `\n${marker}`.length, `\n${marker}`.length);
-        return;
-      }
-    }
-    if (event.key === "Tab") {
-      event.preventDefault();
-      replaceSelection("  ", 2, 2);
-    }
-  };
-
-  async function saveNow() {
-    if (!activeChapter || saveState === "saved") return;
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-    const version = draftVersionRef.current;
-    setSaveState("saving");
-    try {
-      await updateChapter(activeChapter.id, title.trim() || "Untitled chapter", content, activeChapter.chapter_kind, activeChapter.toc_include, activeChapter.toc_heading_exclusions);
-      if (draftVersionRef.current === version && draftRef.current.id === activeChapter.id) {
-        draftRef.current.dirty = false;
-        setSaveState("saved");
-      }
-    } catch (error) {
-      if (draftRef.current.id === activeChapter.id) setSaveState("dirty");
-      notify("error", "Chapter could not be saved", String(error));
-    }
-  }
-
-  if (!activeChapter) {
-    return (
-      <div className="books-empty-editor">
-        <BookOpen size={30} />
-        <h2>Your manuscript is ready.</h2>
-        <p>Create a chapter to begin the first page.</p>
-        <button className="books-primary-action" onClick={onNewChapter}><Plus size={15} /> Add chapter</button>
-      </div>
-    );
-  }
-
-  const chapterWords = wordCount(content);
-  const totalWords = chapters.reduce((total, chapter) => total + wordCount(chapter.content), 0);
-  const findMatches = findOccurrences(content, findQuery);
-  const wordGoal = Math.max(1, book.word_goal || 50000);
-  const manuscriptBody = sourceMode ? (
-    <textarea ref={editorRef} className="manuscript-editor" value={content} onChange={(event) => { const value = event.target.value; setContent(value); markDraft({ content: value }); requestAnimationFrame(syncEditorSelection); }} onSelect={syncEditorSelection} onClick={syncEditorSelection} onKeyUp={syncEditorSelection} onFocus={syncEditorSelection} onKeyDown={onEditorKeyDown} onDragOver={onEditorDragOver} onDrop={onEditorDrop} onPaste={onEditorPaste} spellCheck placeholder="Begin writing here…" aria-label="Manuscript source" />
-  ) : (
-    <div ref={canvasRef} className="books-canvas-host"><ManuscriptCanvas content={content} selection={editorSelection} typography={inspectorLayout.typography} onSelectVisual={(block) => { editorRef.current?.blur(); setEditorSelection({ start: block.start, end: block.end, titleFocused: false }); }} onTextChange={updateCanvasText} onTextSelection={syncCanvasSelection} onEditorKeyDown={onEditorKeyDown} onEditorDragOver={onEditorDragOver} onEditorDrop={onEditorDrop} onEditorPaste={onEditorPaste} onResizeStart={startCanvasResize} onEditSource={(block) => { setEditorSelection({ start: block.start, end: block.end, titleFocused: false }); setSourceMode(true); requestAnimationFrame(() => requestAnimationFrame(() => { editorRef.current?.focus(); editorRef.current?.setSelectionRange(block.start, block.end); })); }} onDeleteBlock={(block) => confirmDeleteCanvasRange(block.start, block.end)} onMoveBlock={moveCanvasBlock} resizing={canvasResize} /></div>
-  );
-  const activeChapterIndex = chapters.findIndex((chapter) => chapter.id === activeChapter.id);
-  return (
-    <>
-    <div className={`books-editor-screen ${focusMode ? "focus-mode" : ""}`} style={manuscriptStyle(book)}>
-      <div className="books-editor-toolbar">
-          <div className="books-editor-context"><span>{chapterDisplayLabel(activeChapter, chapters.findIndex((chapter) => chapter.id === activeChapter.id), chapters)}</span><ChevronRight size={13} /><strong>{title || "Untitled chapter"}</strong></div>
-        <div className="books-editor-actions">
-           <span className={`books-save-state ${saveState}`} aria-live="polite">{saveState === "saving" ? "Saving…" : saveState === "dirty" ? "Unsaved changes" : "Saved locally"}</span>
-            <button className="books-quiet-button" onClick={openFind} title="Find in section (Ctrl/Cmd+F)" aria-label="Find in section"><Search size={15} /></button>
-            <button className={`books-quiet-button ${inspectorOpen ? "active" : ""}`} onClick={() => setInspectorOpen((value) => !value)} title={inspectorOpen ? "Hide contextual tools" : "Show contextual tools"} aria-label={inspectorOpen ? "Hide contextual tools" : "Show contextual tools"} aria-pressed={inspectorOpen}>{inspectorOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>
-            <button className={`books-quiet-button ${focusMode ? "active" : ""}`} onClick={() => onFocusModeChange(!focusMode)} title={focusMode ? "Exit focus mode" : "Enter focus mode"} aria-label={focusMode ? "Exit focus mode" : "Enter focus mode"} aria-pressed={focusMode}><WandSparkles size={15} /></button>
-          <button className="books-outline-button" onClick={() => void saveNow()} disabled={saveState !== "dirty"} title="Save chapter (⌘S)"><Save size={13} /> Save</button>
-           <button className="books-outline-button" onClick={onOpenOutline}><LayoutList size={14} /> Outline</button>
-         </div>
-      </div>
-       <div className="books-editor-workspace">
-         <div className="books-writing-column">
-            <div className="books-writing-topline"><div className="books-section-stepper" aria-label="Section navigation"><button onClick={() => onNavigateSection(-1)} disabled={activeChapterIndex <= 0} aria-label="Previous section" title="Previous section (⌘⌥↑)"><ArrowLeft size={12} /> Previous</button><button onClick={() => onNavigateSection(1)} disabled={activeChapterIndex < 0 || activeChapterIndex >= chapters.length - 1} aria-label="Next section" title="Next section (⌘⌥↓)">Next <ChevronRight size={12} /></button></div><span>{chapterWords.toLocaleString()} words</span><span>{Math.max(1, Math.ceil(chapterWords / 250))} min read</span><div className="books-view-toggle" role="tablist" aria-label="Manuscript view" onKeyDown={handleTabListKeyDown}><button className={view === "write" && !sourceMode ? "active" : ""} onClick={() => { setView("write"); setSourceMode(false); }} role="tab" aria-selected={view === "write" && !sourceMode} tabIndex={view === "write" && !sourceMode ? 0 : -1}>Canvas</button><button className={view === "write" && sourceMode ? "active" : ""} onClick={() => { setView("write"); setSourceMode(true); }} role="tab" aria-selected={view === "write" && sourceMode} tabIndex={view === "write" && sourceMode ? 0 : -1}>Source</button><button className={view === "preview" ? "active" : ""} onClick={() => { setView("preview"); setFindOpen(false); setAssetOpen(false); }} role="tab" aria-selected={view === "preview"} tabIndex={view === "preview" ? 0 : -1}>Preview</button></div></div>
-            {findOpen && <div className="books-find-bar"><Search size={14} /><input ref={findInputRef} value={findQuery} onChange={(event) => { setFindQuery(event.target.value); setFindIndex(0); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveFindMatch(event.shiftKey ? -1 : 1); } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); } }} placeholder="Find in this section…" aria-label="Find in this section" /><span className="books-find-count" aria-live="polite">{findQuery ? (findMatches.length ? `${findIndex + 1} of ${findMatches.length}` : "No matches") : "Type to search"}</span><button onClick={() => moveFindMatch(-1)} disabled={!findMatches.length} title="Previous match" aria-label="Previous match"><ArrowUp size={13} /></button><button onClick={() => moveFindMatch(1)} disabled={!findMatches.length} title="Next match" aria-label="Next match"><ArrowDown size={13} /></button><button onClick={closeFind} title="Close find" aria-label="Close find"><X size={13} /></button></div>}
-              {view === "write" && <div className="books-format-toolbar" role="toolbar" aria-label="Formatting toolbar">
-             <label className="books-format-style"><Type size={14} aria-hidden="true" /><select value="" onChange={(event) => { if (event.target.value !== "") applyHeading(Number(event.target.value)); }} aria-label="Text style"><option value="" disabled>Text style</option><option value="0">Paragraph</option>{[1, 2, 3, 4, 5, 6].map((level) => <option key={level} value={level}>Heading {level}</option>)}</select></label>
-             <button onClick={() => applyFormat("**", "**")} title="Bold" aria-label="Bold"><strong>B</strong></button>
-             <button onClick={() => applyFormat("*", "*")} title="Italic" aria-label="Italic"><em>I</em></button>
-             <span />
-             <button onClick={() => applyFormat("[", "](url)")} title="Link" aria-label="Insert link"><Link2 size={14} /></button>
-             <button onClick={() => applyFormat("> ")} title="Block quote" aria-label="Block quote"><Quote size={14} /></button>
-             <button onClick={() => applyFormat("- ")} title="Bulleted list" aria-label="Bulleted list"><List size={14} /></button>
-             <button onClick={() => applyFormat("1. ")} title="Numbered list" aria-label="Numbered list"><ListOrdered size={14} /></button>
-              <button onClick={() => applyFormat("`", "`")} title="Inline code" aria-label="Inline code"><Code2 size={14} /></button>
-              <button onClick={() => applyFormat("\n---\n")} title="Scene break" aria-label="Insert scene break"><Minus size={14} /></button>
-              <span />
-               <button onClick={() => setAssetOpen((value) => !value)} title="Insert artwork" aria-label="Insert artwork" aria-expanded={assetOpen}><ImagePlus size={15} /></button>
-               <button onClick={insertTable} title="Insert table" aria-label="Insert table"><Table2 size={15} /></button>
-               <button onClick={insertChart} title="Insert chart or graph" aria-label="Insert chart or graph"><BarChart3 size={15} /></button>
-               <button onClick={insertCallout} title="Insert callout" aria-label="Insert callout"><Quote size={15} /></button>
-            </div>}
-            {assetOpen && <BooksAssetDrawer onClose={() => setAssetOpen(false)} onInsert={insertAsset} />}
-            {view === "write" ? (
-             <div className="books-page-editor">
-                  <div className="books-chapter-heading-row"><input className="books-chapter-title-input" value={title} onFocus={() => setEditorSelection({ start: 0, end: title.length, titleFocused: true })} onChange={(event) => { const value = event.target.value; setTitle(value); setEditorSelection({ start: 0, end: value.length, titleFocused: true }); markDraft({ title: value }); }} placeholder="Section title" aria-label="Section title" /></div>
-                  {manuscriptBody}
-             </div>
-          ) : (
-              <article className="books-manuscript-preview" dangerouslySetInnerHTML={{ __html: markdownToHtml(content, sectionAnchorId(activeChapter.id), inspectorLayout.typography) }} />
-          )}
-        </div>
-           {inspectorOpen && <BooksInspector context={editorContext} layout={inspectorLayout} onLayoutChange={changeLayout} onReplaceRange={replaceContentRange} onMoveRange={moveCanvasRange} onDeleteRange={confirmDeleteCanvasRange} chapterWords={chapterWords} totalWords={totalWords} wordGoal={wordGoal} />}
-      </div>
-    </div>
-    {confirmation.dialog}
-    </>
-  );
-}
-
-function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOpenChapter }: { book: Book; chapters: Chapter[]; onNewChapter: (kind?: ChapterKind) => void; onOpenMatter: (focus: MatterFocus) => void; onOpenChapter: (id: number) => void }) {
-  const reorderChapters = useBooks((state) => state.reorderChapters);
-  const deleteChapter = useBooks((state) => state.deleteChapter);
-  const updateChapter = useBooks((state) => state.updateChapter);
-  const orderedChapters = orderBookChapters(chapters);
-  const toc = useMemo(() => buildBookToc(book, chapters, { includeExcludedHeadings: true }), [book, chapters]);
-  const visibleTocCount = toc.filter((entry) => entry.included !== false).length;
-  const confirmation = useConfirmationDialog();
-  const move = async (index: number, direction: -1 | 1) => {
-    const next = [...orderedChapters];
-    const destination = index + direction;
-    if (destination < 0 || destination >= next.length) return;
-    [next[index], next[destination]] = [next[destination], next[index]];
-    try {
-     await reorderChapters(next.map((chapter) => chapter.id));
-    } catch (error) {
-      notify("error", "Section order could not be saved", String(error));
-    }
-  };
-  const removeChapter = (chapter: Chapter, restoreFocus?: HTMLElement | null) => {
-    confirmation.ask({
-      title: `Delete “${chapter.title || "Untitled section"}”?`,
-      description: "This section and its writing will be permanently removed from the manuscript. This cannot be undone.",
-      confirmLabel: "Delete section",
-      onConfirm: async () => {
-        await deleteChapter(chapter.id);
-        notify("success", "Section deleted", chapter.title || "Untitled section");
-      },
-    }, restoreFocus);
-  };
-  const toggleHeading = async (entry: TocEntry) => {
-    if (entry.chapterId === undefined || entry.headingKey === undefined) return;
-    const chapter = chapters.find((item) => item.id === entry.chapterId);
-    if (!chapter) return;
-    const exclusions = new Set(chapter.toc_heading_exclusions ?? []);
-    if (exclusions.has(entry.headingKey)) {
-      exclusions.delete(entry.headingKey);
-    } else {
-      exclusions.add(entry.headingKey);
-    }
-    try {
-      await updateChapter(chapter.id, chapter.title, chapter.content, chapter.chapter_kind, chapter.toc_include, Array.from(exclusions).sort());
-    } catch (error) {
-      notify("error", "Heading visibility could not be saved", String(error));
-    }
-  };
-  const frontMatter = [
-    { title: "Dedication", content: book.dedication },
-    { title: "Epigraph", content: book.epigraph },
-    { title: "Copyright", content: book.copyright_text },
-  ];
-  const backMatter = [{ title: "Acknowledgements", content: book.acknowledgements }];
-  const matterRow = (section: { title: string; content: string }, focus: MatterFocus) => (
-    <button className="books-matter-row" key={section.title} onClick={() => onOpenMatter(focus)}>
-      <span><strong>{section.title}</strong><small>{section.content.trim() ? `${wordCount(section.content).toLocaleString()} words` : "Not written yet"}</small></span><ChevronRight size={14} />
-    </button>
-  );
-  return (
-    <>
-    <div className="books-screen books-outline-screen">
-       <div className="books-screen-heading"><div><span className="books-eyebrow"><LayoutList size={13} /> Structure</span><h1>Outline</h1><p>Reorder the manuscript. Add and classify sections from the left rail.</p></div><div className="books-outline-actions"><button className="books-primary-action" onClick={() => onNewChapter("chapter")}><Plus size={15} /> Add chapter</button></div></div>
-      <div className="books-outline-list">
-        <div className="books-outline-group"><div className="books-outline-group-heading"><span>Front matter</span><small>Before the story</small></div>{frontMatter.map((section) => matterRow(section, "front"))}</div>
-        <div className="books-outline-group books-outline-story"><div className="books-outline-group-heading"><span>Story</span><small>{chapters.length} sections</small></div>
-        {chapters.length === 0 && <div className="books-outline-empty">No story sections yet. Add the first beat of your manuscript.</div>}
-         {orderedChapters.map((chapter, index) => (
-          <div className="books-outline-row" key={chapter.id}>
-             <button className="books-outline-main" onClick={() => onOpenChapter(chapter.id)}><span className="outline-index">{String(index + 1).padStart(2, "0")}</span><span><strong>{chapter.title || "Untitled section"}</strong><small>{chapterKindLabel(chapter.chapter_kind)} · {wordCount(chapter.content).toLocaleString()} words</small></span><ChevronRight size={15} /></button>
-              <div className="books-outline-controls"><span className="books-outline-kind">{chapterKindLabel(chapter.chapter_kind)}</span><button onClick={() => void move(index, -1)} disabled={index === 0 || chapterGroup(orderedChapters[index - 1].chapter_kind) !== chapterGroup(chapter.chapter_kind)} title="Move up" aria-label={`Move ${chapter.title || "untitled section"} up`}><ArrowUp size={14} /></button><button onClick={() => void move(index, 1)} disabled={index === orderedChapters.length - 1 || chapterGroup(orderedChapters[index + 1]?.chapter_kind ?? chapter.chapter_kind) !== chapterGroup(chapter.chapter_kind)} title="Move down" aria-label={`Move ${chapter.title || "untitled section"} down`}><ArrowDown size={14} /></button><button className="danger" onClick={(event) => void removeChapter(chapter, event.currentTarget)} title="Delete section" aria-label={`Delete ${chapter.title || "untitled section"}`}><Trash2 size={14} /></button></div>
-          </div>
-        ))}
-        </div>
-        <div className="books-outline-group"><div className="books-outline-group-heading"><span>Back matter</span><small>After the story</small></div>{backMatter.map((section) => matterRow(section, "back"))}</div>
-       </div>
-       <section className="books-generated-toc" aria-labelledby="generated-toc-heading">
-          <div className="books-generated-toc-heading"><div><span className="books-eyebrow"><LayoutList size={13} /> Generated contents</span><h2 id="generated-toc-heading">{tocTitle(book)}</h2></div><span>{visibleTocCount === toc.length ? `${toc.length} entries` : `${visibleTocCount} visible · ${toc.length - visibleTocCount} hidden`}</span></div>
-           {toc.length === 0 ? <p className="books-generated-toc-empty">Enable contents in Book settings, then add headings to a section to build this map.</p> : <div className="books-generated-toc-list">{toc.map((entry) => <div key={entry.id} className={`books-generated-toc-item ${entry.included === false ? "hidden" : ""}`} style={{ paddingLeft: `${Math.max(0, entry.level - 1) * 18}px` }}><button className={`books-generated-toc-entry ${entry.source === "heading" ? "heading" : "section"}`} onClick={() => entry.chapterId !== undefined && onOpenChapter(entry.chapterId)}><span>{entry.label}</span>{entry.source === "heading" && <small>H{entry.headingLevel}</small>}</button>{entry.source === "heading" && entry.chapterId !== undefined && <button className="books-generated-toc-toggle" onClick={(event) => { event.stopPropagation(); void toggleHeading(entry); }} aria-label={entry.included === false ? `Include ${entry.label} in contents` : `Hide ${entry.label} from contents`} aria-pressed={entry.included !== false} title={entry.included === false ? "Include heading in contents" : "Hide heading from contents"}>{entry.included === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>}</div>)}</div>}
-       </section>
-     </div>
-     {confirmation.dialog}
-     </>
-  );
-}
 
 function SettingsScreen({ book, chapters, focus }: { book: Book; chapters: Chapter[]; focus?: MatterFocus }) {
   const updateBook = useBooks((state) => state.updateBook);
