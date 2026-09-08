@@ -1,6 +1,6 @@
 [package]
 name = "note-me"
-version = "0.1.0"
+version = "0.1.1"
 description = "NoteMe - a local-first notes app for Mac, Windows and Linux"
 authors = ["dakid"]
 edition = "2021"

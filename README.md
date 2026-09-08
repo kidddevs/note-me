@@ -71,7 +71,7 @@ Books Studio is a second workspace in the same app, switched from the titlebar b
 
 Download the latest Apple Silicon DMG from the [GitHub Releases](https://github.com/kidddevs/note-me/releases) page, open it, and drag NoteMe into Applications.
 
-The first public artifact is built for Apple Silicon as `NoteMe_0.1.0_aarch64.dmg`. Intel and other platform installers can be produced from source with the Tauri build command below.
+The Apple Silicon release artifact is built as `NoteMe_0.1.1_aarch64.dmg`. Intel and other platform installers can be produced from source with the Tauri build command below.
 
 To check for a newer release inside the app, use **NoteMe > Check for Updates...**. NoteMe only shows a download action when the GitHub release is newer than the installed version.
 
