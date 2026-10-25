@@ -16,10 +16,15 @@ import {
   Minus,
   PanelRightClose,
   PanelRightOpen,
+  Pause,
+  Play,
   Plus,
   Quote,
+  Replace,
+  RotateCcw,
   Save,
   Search,
+  Timer,
   Table2,
   Type,
   Upload,
@@ -58,6 +63,13 @@ import {
 } from "../lib/bookPublishing";
 import { handleTabListKeyDown, manuscriptStyle, useConfirmationDialog } from "./BooksStudio";
 import type { EditorView } from "./BooksStudio";
+
+const SPRINT_PRESETS = [15, 25, 45] as const;
+
+function sprintClock(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
+}
 
 
 function BooksAssetDrawer({ onClose, onInsert }: { onClose: () => void; onInsert: (markdown: string) => void }) {
@@ -202,16 +214,27 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [title, setTitle] = useState(activeChapter?.title ?? "");
   const [content, setContent] = useState(activeChapter?.content ?? "");
   const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving">("saved");
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replaceQuery, setReplaceQuery] = useState("");
+  const [sprintOpen, setSprintOpen] = useState(false);
+  const [sprintMinutes, setSprintMinutes] = useState<number>(25);
+  const [sprintEndsAt, setSprintEndsAt] = useState<number | null>(null);
+  const [sprintRemaining, setSprintRemaining] = useState<number | null>(null);
+  const [sprintStartWords, setSprintStartWords] = useState(0);
+  const [sprintFinished, setSprintFinished] = useState(false);
   const [editorSelection, setEditorSelection] = useState({ start: 0, end: 0, titleFocused: false });
   const [inspectorLayout, setInspectorLayout] = useState(() => layoutForBook(book));
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const activeEditorMapRef = useRef({ sourceStart: 0, prefixLength: 0 });
   const findInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<number | null>(null);
   const draftVersionRef = useRef(0);
   const closingRef = useRef(false);
   const inspectorLayoutRef = useRef(inspectorLayout);
+  const sprintStartWordsRef = useRef(0);
+  const liveWordsRef = useRef(0);
   const draftRef = useRef<{
     id: number | null;
     title: string;
@@ -230,6 +253,15 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     dirty: false,
   });
 
+  const currentManuscriptWords = useMemo(
+    () => chapters.reduce((total, chapter) => total + (chapter.id === activeChapter?.id ? wordCount(content) : wordCount(chapter.content)), 0),
+    [chapters, activeChapter?.id, content]
+  );
+  const sprintWords = Math.max(0, currentManuscriptWords - sprintStartWords);
+  const sprintRunning = sprintEndsAt !== null;
+  const sprintPaused = !sprintRunning && !sprintFinished && sprintRemaining !== null && sprintRemaining > 0;
+  liveWordsRef.current = currentManuscriptWords;
+
   useEffect(() => {
     const previous = draftRef.current;
     if (previous.id !== (activeChapter?.id ?? null) && previous.id !== null && previous.dirty) {
@@ -240,6 +272,8 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setFindOpen(false);
     setFindQuery("");
     setFindIndex(0);
+    setReplaceOpen(false);
+    setReplaceQuery("");
     setAssetOpen(false);
     setSourceMode(false);
     setCanvasResize(null);
@@ -272,6 +306,40 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     inspectorLayoutRef.current = nextLayout;
     setInspectorLayout(nextLayout);
   }, [book.id, book.layout_json]);
+
+  useEffect(() => {
+    setSprintEndsAt(null);
+    setSprintRemaining(null);
+    setSprintStartWords(0);
+    setSprintFinished(false);
+    setSprintOpen(false);
+  }, [book.id]);
+
+  useEffect(() => {
+    if (sprintEndsAt === null) return;
+    const tick = () => {
+      const remaining = Math.max(0, sprintEndsAt - Date.now());
+      setSprintRemaining(remaining);
+      if (remaining <= 0) {
+        setSprintEndsAt(null);
+        setSprintFinished(true);
+        const written = Math.max(0, liveWordsRef.current - sprintStartWordsRef.current);
+        notify("success", "Writing sprint complete", `${written.toLocaleString()} words written in ${sprintMinutes} minutes`);
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [sprintEndsAt, sprintMinutes]);
+
+  useEffect(() => {
+    if (!sprintOpen) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".books-sprint-control")) setSprintOpen(false);
+    };
+    window.addEventListener("pointerdown", closeOnPointerDown);
+    return () => window.removeEventListener("pointerdown", closeOnPointerDown);
+  }, [sprintOpen]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -623,27 +691,98 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     requestAnimationFrame(() => editorRef.current?.focus());
   };
 
-  const openFind = () => {
+  const openFind = (withReplace = false) => {
     setView("write");
     setSourceMode(true);
     setFindOpen(true);
-    requestAnimationFrame(() => requestAnimationFrame(() => findInputRef.current?.focus()));
+    if (withReplace) setReplaceOpen(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => (withReplace ? replaceInputRef.current : findInputRef.current)?.focus()));
+  };
+
+  const toggleReplace = () => {
+    setReplaceOpen((value) => {
+      if (!value) requestAnimationFrame(() => replaceInputRef.current?.focus());
+      return !value;
+    });
+  };
+
+  const replaceCurrentMatch = () => {
+    const matches = findOccurrences(content, findQuery);
+    if (matches.length === 0) return;
+    const match = matches[Math.min(findIndex, matches.length - 1)];
+    const nextContent = content.slice(0, match.start) + replaceQuery + content.slice(match.end);
+    setContent(nextContent);
+    markDraft({ content: nextContent });
+    const remainingMatches = findOccurrences(nextContent, findQuery).length;
+    setFindIndex((value) => Math.min(value, Math.max(0, remainingMatches - 1)));
+    const cursor = match.start + replaceQuery.length;
+    setEditorSelection({ start: cursor, end: cursor, titleFocused: false });
+  };
+
+  const replaceAllMatches = () => {
+    const matches = findOccurrences(content, findQuery);
+    if (matches.length === 0) return;
+    let nextContent = content;
+    for (let index = matches.length - 1; index >= 0; index -= 1) {
+      const match = matches[index];
+      nextContent = nextContent.slice(0, match.start) + replaceQuery + nextContent.slice(match.end);
+    }
+    setContent(nextContent);
+    markDraft({ content: nextContent });
+    setFindIndex(0);
+    setEditorSelection({ start: 0, end: 0, titleFocused: false });
+  };
+
+  const startSprint = () => {
+    const remaining = sprintMinutes * 60000;
+    sprintStartWordsRef.current = currentManuscriptWords;
+    setSprintStartWords(currentManuscriptWords);
+    setSprintRemaining(remaining);
+    setSprintEndsAt(Date.now() + remaining);
+    setSprintFinished(false);
+    setSprintOpen(false);
+  };
+
+  const resumeSprint = () => {
+    const remaining = sprintRemaining && sprintRemaining > 0 ? sprintRemaining : sprintMinutes * 60000;
+    setSprintRemaining(remaining);
+    setSprintEndsAt(Date.now() + remaining);
+  };
+
+  const pauseSprint = () => {
+    if (sprintEndsAt === null) return;
+    setSprintRemaining(Math.max(0, sprintEndsAt - Date.now()));
+    setSprintEndsAt(null);
+  };
+
+  const resetSprint = () => {
+    setSprintEndsAt(null);
+    setSprintRemaining(null);
+    setSprintStartWords(currentManuscriptWords);
+    setSprintFinished(false);
   };
 
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
       const modifier = event.metaKey || event.ctrlKey;
-      if (modifier && event.key.toLowerCase() === "f") {
+      const findKey = event.code === "KeyF" || event.key.toLowerCase() === "f";
+      if (modifier && event.altKey && findKey) {
+        event.preventDefault();
+        openFind(true);
+      } else if (modifier && findKey) {
         event.preventDefault();
         openFind();
       } else if (event.key === "Escape" && findOpen) {
         event.preventDefault();
         closeFind();
+      } else if (event.key === "Escape" && sprintOpen) {
+        event.preventDefault();
+        setSprintOpen(false);
       }
     };
     window.addEventListener("keydown", onWindowKeyDown);
     return () => window.removeEventListener("keydown", onWindowKeyDown);
-  }, [findOpen]);
+  }, [findOpen, sprintOpen]);
 
   const onEditorKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     const modifier = event.metaKey || event.ctrlKey;
@@ -707,7 +846,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   }
 
   const chapterWords = wordCount(content);
-  const totalWords = chapters.reduce((total, chapter) => total + wordCount(chapter.content), 0);
+  const totalWords = currentManuscriptWords;
   const findMatches = findOccurrences(content, findQuery);
   const wordGoal = Math.max(1, book.word_goal || 50000);
   const manuscriptBody = sourceMode ? (
@@ -723,7 +862,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
           <div className="books-editor-context"><span>{chapterDisplayLabel(activeChapter, chapters.findIndex((chapter) => chapter.id === activeChapter.id), chapters)}</span><ChevronRight size={13} /><strong>{title || "Untitled chapter"}</strong></div>
         <div className="books-editor-actions">
            <span className={`books-save-state ${saveState}`} aria-live="polite">{saveState === "saving" ? "Saving…" : saveState === "dirty" ? "Unsaved changes" : "Saved locally"}</span>
-            <button className="books-quiet-button" onClick={openFind} title="Find in section (Ctrl/Cmd+F)" aria-label="Find in section"><Search size={15} /></button>
+            <button className="books-quiet-button" onClick={() => openFind()} title="Find in section (Ctrl/Cmd+F)" aria-label="Find in section"><Search size={15} /></button>
             <button className={`books-quiet-button ${inspectorOpen ? "active" : ""}`} onClick={() => setInspectorOpen((value) => !value)} title={inspectorOpen ? "Hide contextual tools" : "Show contextual tools"} aria-label={inspectorOpen ? "Hide contextual tools" : "Show contextual tools"} aria-pressed={inspectorOpen}>{inspectorOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>
             <button className={`books-quiet-button ${focusMode ? "active" : ""}`} onClick={() => onFocusModeChange(!focusMode)} title={focusMode ? "Exit focus mode" : "Enter focus mode"} aria-label={focusMode ? "Exit focus mode" : "Enter focus mode"} aria-pressed={focusMode}><WandSparkles size={15} /></button>
           <button className="books-outline-button" onClick={() => void saveNow()} disabled={saveState !== "dirty"} title="Save chapter (⌘S)"><Save size={13} /> Save</button>
@@ -732,8 +871,64 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       </div>
        <div className="books-editor-workspace">
          <div className="books-writing-column">
-            <div className="books-writing-topline"><div className="books-section-stepper" aria-label="Section navigation"><button onClick={() => onNavigateSection(-1)} disabled={activeChapterIndex <= 0} aria-label="Previous section" title="Previous section (⌘⌥↑)"><ArrowLeft size={12} /> Previous</button><button onClick={() => onNavigateSection(1)} disabled={activeChapterIndex < 0 || activeChapterIndex >= chapters.length - 1} aria-label="Next section" title="Next section (⌘⌥↓)">Next <ChevronRight size={12} /></button></div><span>{chapterWords.toLocaleString()} words</span><span>{Math.max(1, Math.ceil(chapterWords / 250))} min read</span><div className="books-view-toggle" role="tablist" aria-label="Manuscript view" onKeyDown={handleTabListKeyDown}><button className={view === "write" && !sourceMode ? "active" : ""} onClick={() => { setView("write"); setSourceMode(false); }} role="tab" aria-selected={view === "write" && !sourceMode} tabIndex={view === "write" && !sourceMode ? 0 : -1}>Canvas</button><button className={view === "write" && sourceMode ? "active" : ""} onClick={() => { setView("write"); setSourceMode(true); }} role="tab" aria-selected={view === "write" && sourceMode} tabIndex={view === "write" && sourceMode ? 0 : -1}>Source</button><button className={view === "preview" ? "active" : ""} onClick={() => { setView("preview"); setFindOpen(false); setAssetOpen(false); }} role="tab" aria-selected={view === "preview"} tabIndex={view === "preview" ? 0 : -1}>Preview</button></div></div>
-            {findOpen && <div className="books-find-bar"><Search size={14} /><input ref={findInputRef} value={findQuery} onChange={(event) => { setFindQuery(event.target.value); setFindIndex(0); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveFindMatch(event.shiftKey ? -1 : 1); } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); } }} placeholder="Find in this section…" aria-label="Find in this section" /><span className="books-find-count" aria-live="polite">{findQuery ? (findMatches.length ? `${findIndex + 1} of ${findMatches.length}` : "No matches") : "Type to search"}</span><button onClick={() => moveFindMatch(-1)} disabled={!findMatches.length} title="Previous match" aria-label="Previous match"><ArrowUp size={13} /></button><button onClick={() => moveFindMatch(1)} disabled={!findMatches.length} title="Next match" aria-label="Next match"><ArrowDown size={13} /></button><button onClick={closeFind} title="Close find" aria-label="Close find"><X size={13} /></button></div>}
+            <div className="books-writing-topline">
+              <div className="books-section-stepper" aria-label="Section navigation"><button onClick={() => onNavigateSection(-1)} disabled={activeChapterIndex <= 0} aria-label="Previous section" title="Previous section (⌘⌥↑)"><ArrowLeft size={12} /> Previous</button><button onClick={() => onNavigateSection(1)} disabled={activeChapterIndex < 0 || activeChapterIndex >= chapters.length - 1} aria-label="Next section" title="Next section (⌘⌥↓)">Next <ChevronRight size={12} /></button></div>
+              <span>{chapterWords.toLocaleString()} words</span>
+              <span>{Math.max(1, Math.ceil(chapterWords / 250))} min read</span>
+              <div className="books-sprint-control">
+                <button className={`books-sprint-chip ${sprintRunning ? "running" : sprintPaused ? "paused" : sprintFinished ? "finished" : ""}`} onClick={() => setSprintOpen((value) => !value)} title="Writing sprint timer" aria-label="Writing sprint timer" aria-expanded={sprintOpen}>
+                  <Timer size={12} />
+                  <span>{sprintRunning || sprintPaused ? sprintClock(sprintRemaining ?? 0) : sprintFinished ? "Sprint done" : "Sprint"}</span>
+                </button>
+                {sprintOpen && (
+                  <div className="books-sprint-popover" role="dialog" aria-label="Writing sprint">
+                    <div className="books-sprint-heading"><div><strong>Writing sprint</strong><span>Focused, timed writing</span></div><button onClick={() => setSprintOpen(false)} aria-label="Close writing sprint"><X size={13} /></button></div>
+                    {!(sprintRunning || sprintPaused) && (
+                      <div className="books-sprint-presets" role="group" aria-label="Sprint length">
+                        {SPRINT_PRESETS.map((minutes) => <button key={minutes} className={sprintMinutes === minutes ? "active" : ""} onClick={() => setSprintMinutes(minutes)}>{minutes} min</button>)}
+                      </div>
+                    )}
+                    {sprintRunning || sprintPaused ? (
+                      <div className="books-sprint-status">
+                        <strong>{sprintClock(sprintRemaining ?? 0)}</strong>
+                        <span>{sprintWords.toLocaleString()} words this sprint</span>
+                        <div className="books-sprint-actions">
+                          <button onClick={sprintRunning ? pauseSprint : resumeSprint}>{sprintRunning ? <Pause size={13} /> : <Play size={13} />} {sprintRunning ? "Pause" : "Resume"}</button>
+                          <button onClick={resetSprint}><RotateCcw size={13} /> Reset</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="books-sprint-status">
+                        {sprintFinished ? <><strong>Sprint complete</strong><span>{sprintWords.toLocaleString()} words written</span></> : <p>Choose a length and write without stopping. A gentle nudge will mark the finish.</p>}
+                        <button className="books-sprint-start" onClick={startSprint}><Play size={13} /> {sprintFinished ? "Start another sprint" : "Start sprint"}</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="books-view-toggle" role="tablist" aria-label="Manuscript view" onKeyDown={handleTabListKeyDown}><button className={view === "write" && !sourceMode ? "active" : ""} onClick={() => { setView("write"); setSourceMode(false); }} role="tab" aria-selected={view === "write" && !sourceMode} tabIndex={view === "write" && !sourceMode ? 0 : -1}>Canvas</button><button className={view === "write" && sourceMode ? "active" : ""} onClick={() => { setView("write"); setSourceMode(true); }} role="tab" aria-selected={view === "write" && sourceMode} tabIndex={view === "write" && sourceMode ? 0 : -1}>Source</button><button className={view === "preview" ? "active" : ""} onClick={() => { setView("preview"); setFindOpen(false); setAssetOpen(false); }} role="tab" aria-selected={view === "preview"} tabIndex={view === "preview" ? 0 : -1}>Preview</button></div>
+            </div>
+             {findOpen && (
+              <div className="books-find-bar">
+                <div className="books-find-row">
+                  <Search size={14} />
+                  <input ref={findInputRef} value={findQuery} onChange={(event) => { setFindQuery(event.target.value); setFindIndex(0); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveFindMatch(event.shiftKey ? -1 : 1); } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); } }} placeholder="Find in this section…" aria-label="Find in this section" />
+                  <span className="books-find-count" aria-live="polite">{findQuery ? (findMatches.length ? `${findIndex + 1} of ${findMatches.length}` : "No matches") : "Type to search"}</span>
+                  <button onClick={() => moveFindMatch(-1)} disabled={!findMatches.length} title="Previous match" aria-label="Previous match"><ArrowUp size={13} /></button>
+                  <button onClick={() => moveFindMatch(1)} disabled={!findMatches.length} title="Next match" aria-label="Next match"><ArrowDown size={13} /></button>
+                  <button className={replaceOpen ? "active" : ""} onClick={toggleReplace} title="Toggle replace" aria-label="Toggle replace" aria-expanded={replaceOpen}><Replace size={13} /></button>
+                  <button onClick={closeFind} title="Close find" aria-label="Close find"><X size={13} /></button>
+                </div>
+                {replaceOpen && (
+                  <div className="books-find-row replace">
+                    <Replace size={14} />
+                    <input ref={replaceInputRef} value={replaceQuery} onChange={(event) => setReplaceQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); replaceCurrentMatch(); } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); } }} placeholder="Replace with…" aria-label="Replace with" />
+                    <button className="books-find-text-button" onClick={replaceCurrentMatch} disabled={!findMatches.length} title="Replace current match">Replace</button>
+                    <button className="books-find-text-button" onClick={replaceAllMatches} disabled={!findMatches.length} title="Replace every match">All</button>
+                  </div>
+                )}
+              </div>
+            )}
               {view === "write" && <div className="books-format-toolbar" role="toolbar" aria-label="Formatting toolbar">
              <label className="books-format-style"><Type size={14} aria-hidden="true" /><select value="" onChange={(event) => { if (event.target.value !== "") applyHeading(Number(event.target.value)); }} aria-label="Text style"><option value="" disabled>Text style</option><option value="0">Paragraph</option>{[1, 2, 3, 4, 5, 6].map((level) => <option key={level} value={level}>Heading {level}</option>)}</select></label>
              <button onClick={() => applyFormat("**", "**")} title="Bold" aria-label="Bold"><strong>B</strong></button>

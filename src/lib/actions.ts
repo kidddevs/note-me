@@ -1,7 +1,18 @@
 import type { Note } from "./types";
 import { useNotes } from "../store/notes";
 import { useTabs } from "../store/tabs";
+import { useBooks } from "../store/books";
+import { useBookTabs } from "../store/bookTabs";
 import { notify } from "../store/toast";
+
+export async function createNewBook() {
+  const books = useBooks.getState();
+  const book = await books.createBook({ title: "Untitled manuscript" });
+  await books.createChapter(book.id, "Chapter 1", "chapter");
+  useBookTabs.getState().openBook(book.id, book.title || "Untitled manuscript");
+  notify("success", "New manuscript created", book.title || "Untitled manuscript");
+  return book;
+}
 
 export async function duplicateNote(note: Note) {
   const copy = await useNotes

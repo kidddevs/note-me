@@ -233,9 +233,12 @@ export default function App() {
       <TitleBar />
       <div className="app-body">
         {workspace === "books" ? (
-          <Suspense fallback={<div className="books-loading"><div className="spinner" /><span>Opening Books Studio...</span></div>}>
-            <BooksStudio />
-          </Suspense>
+          <>
+            <Suspense fallback={<div className="books-loading"><div className="spinner" /><span>Opening Books Studio...</span></div>}>
+              <BooksStudio />
+            </Suspense>
+            {clipboardOpen && <ClipboardPanel />}
+          </>
         ) : (
           <>
             <Sidebar collapsed={sidebarCollapsed} />

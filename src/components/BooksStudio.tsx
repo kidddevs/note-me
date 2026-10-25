@@ -33,8 +33,10 @@ import {
 export * from "../lib/bookPublishing";
 import type { BookExportFormat, PageBand } from "../lib/bookPublishing";
 import { useBooks } from "../store/books";
+import { useBookTabs } from "../store/bookTabs";
 import { useWorkspace } from "../store/workspace";
 import { notify } from "../store/toast";
+import { createNewBook } from "../lib/actions";
 import { ManuscriptScreen } from "./BooksStudioEditor";
 import { OutlineScreen, SectionsRail } from "./BooksStudioOutline";
 import { ExportScreen, PrintBook } from "./BooksStudioExport";
@@ -413,12 +415,13 @@ export function BooksStudio() {
   const loaded = useBooks((state) => state.loaded);
   const loadError = useBooks((state) => state.error);
   const init = useBooks((state) => state.init);
-  const createBook = useBooks((state) => state.createBook);
   const deleteBook = useBooks((state) => state.deleteBook);
   const createChapter = useBooks((state) => state.createChapter);
   const selectBook = useBooks((state) => state.selectBook);
   const selectChapter = useBooks((state) => state.selectChapter);
   const sidebarCollapsed = useWorkspace((state) => state.booksSidebarCollapsed);
+  const bookTabs = useBookTabs((state) => state.tabs);
+  const activeBookTabId = useBookTabs((state) => state.activeId);
   const [screen, setScreen] = useState<StudioScreen>("library");
   const [settingsFocus, setSettingsFocus] = useState<MatterFocus | undefined>();
   const [commandOpen, setCommandOpen] = useState(false);
@@ -430,15 +433,43 @@ export function BooksStudio() {
   const orderedChapters = useMemo(() => orderBookChapters(chapters), [chapters]);
   const activeChapter = chapters.find((chapter) => chapter.id === activeChapterId) ?? null;
   const selectedToc = useMemo(() => selectedBook ? buildBookToc(selectedBook, chapters) : [], [selectedBook, chapters]);
+  const activeBookTab = useMemo(
+    () => bookTabs.find((tab) => tab.id === activeBookTabId) ?? null,
+    [bookTabs, activeBookTabId]
+  );
 
   useEffect(() => { void init(); }, [init]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (!activeBookTab || activeBookTab.kind === "library") {
+      setEditorFocusMode(false);
+      setScreen("library");
+      return;
+    }
+    const nextScreen: StudioScreen = activeBookTab.screen === "library" ? "manuscript" : activeBookTab.screen;
+    setEditorFocusMode(false);
+    if (activeBookTab.bookId != null && activeBookTab.bookId !== useBooks.getState().selectedBookId) {
+      void selectBook(activeBookTab.bookId)
+        .then(() => setScreen(nextScreen))
+        .catch((error) => notify("error", "Manuscript could not be opened", String(error)));
+    } else {
+      setScreen(nextScreen);
+    }
+  }, [activeBookTabId, loaded, selectBook]);
+
+  useEffect(() => {
+    if (!loaded || screen === "library") return;
+    const state = useBookTabs.getState();
+    const tab = state.tabs.find((item) => item.id === state.activeId);
+    if (tab?.kind === "book" && tab.screen !== screen) state.setScreen(tab.id, screen);
+  }, [screen, loaded]);
 
   const newBook = async () => {
     if (creatingBook) return;
     setCreatingBook(true);
     try {
-      const book = await createBook({ title: "Untitled manuscript" });
-      await createChapter(book.id, "Chapter 1", "chapter");
+      await createNewBook();
       setScreen("manuscript");
     } catch (error) {
       notify("error", "Manuscript could not be created", String(error));
@@ -456,6 +487,7 @@ export function BooksStudio() {
         setDeletingBookId(book.id);
         try {
           await deleteBook(book.id);
+          useBookTabs.getState().closeBookTabs(book.id);
           setEditorFocusMode(false);
           setScreen("library");
           notify("success", "Manuscript deleted", book.title || "Untitled manuscript");
@@ -468,7 +500,9 @@ export function BooksStudio() {
   const openBook = async (id: number) => {
     try {
       await selectBook(id);
-      setScreen("manuscript");
+      const book = books.find((item) => item.id === id);
+      const tab = useBookTabs.getState().openBook(id, book?.title || "Untitled manuscript");
+      setScreen(tab.screen === "library" ? "manuscript" : tab.screen);
     } catch (error) {
       notify("error", "Manuscript could not be opened", String(error));
     }
@@ -478,21 +512,38 @@ export function BooksStudio() {
       try {
         const chapterNumber = chapters.filter((chapter) => chapter.chapter_kind === "chapter").length + 1;
         await createChapter(selectedBookId, defaultChapterTitle(kind, chapterNumber), kind);
-        setScreen("manuscript");
+        switchScreen("manuscript");
       } catch (error) {
         notify("error", "Section could not be created", String(error));
       }
     }
   };
-  const openMatter = (focus: MatterFocus) => { setSettingsFocus(focus); setScreen("settings"); };
-  const openChapter = (id: number) => { selectChapter(id); setCommandOpen(false); setSettingsFocus(undefined); setScreen("manuscript"); };
+  const openMatter = (focus: MatterFocus) => { setSettingsFocus(focus); switchScreen("settings"); };
+  const openChapter = (id: number) => { selectChapter(id); setCommandOpen(false); setSettingsFocus(undefined); switchScreen("manuscript"); };
   const navigateSection = (direction: -1 | 1) => {
     if (!activeChapter) return;
     const index = orderedChapters.findIndex((chapter) => chapter.id === activeChapter.id);
     const next = orderedChapters[index + direction];
     if (next) openChapter(next.id);
   };
-  const switchScreen = (next: StudioScreen) => { if (next === "manuscript" && !selectedBook) return; if (next !== "manuscript") setEditorFocusMode(false); setCommandOpen(false); setSettingsFocus(undefined); setScreen(next); };
+  const switchScreen = (next: StudioScreen) => {
+    if (next === "manuscript" && !selectedBook) return;
+    if (next !== "manuscript") setEditorFocusMode(false);
+    setCommandOpen(false);
+    setSettingsFocus(undefined);
+    if (next === "library") {
+      useBookTabs.getState().openLibrary();
+      return;
+    }
+    setScreen(next);
+    const state = useBookTabs.getState();
+    const tab = state.tabs.find((item) => item.id === state.activeId);
+    if (tab?.kind === "book") state.setScreen(tab.id, next);
+    else if (selectedBook) {
+      const bookTab = state.openBook(selectedBook.id, selectedBook.title || "Untitled manuscript");
+      state.setScreen(bookTab.id, next);
+    }
+  };
 
   useEffect(() => {
     const openCommandPalette = () => setCommandOpen(true);
@@ -537,7 +588,7 @@ export function BooksStudio() {
        </aside>
        <main className="books-main">
          <div className="books-main-header"><div className="books-breadcrumb"><button onClick={() => switchScreen("library")}>Books Studio</button>{selectedBook && <><ChevronRight size={13} /><strong>{selectedBook.title || "Untitled manuscript"}</strong></>}</div>{selectedBook && <div className="books-header-actions"><span className={`book-status-pill ${selectedBook.status}`}>{selectedBook.status.replace("revising", "in revision")}</span><button className="books-header-icon" onClick={() => switchScreen("settings")} title="Book settings" aria-label="Book settings"><Settings2 size={15} /></button></div>}</div>
-            {!selectedBook && screen !== "library" ? <div className="books-no-selection"><ArrowLeft size={20} /><h2>Choose a manuscript first.</h2><button className="books-primary-action" onClick={() => setScreen("library")}>Back to library</button></div> : screen === "library" ? <LibraryScreen books={books} creating={creatingBook} deletingBookId={deletingBookId} onNew={() => void newBook()} onOpen={(id) => void openBook(id)} onDelete={(book) => void removeBook(book)} /> : selectedBook && screen === "manuscript" ? <ManuscriptScreen book={selectedBook} chapters={orderedChapters} activeChapter={activeChapter} focusMode={editorFocusMode} onFocusModeChange={setEditorFocusMode} onOpenOutline={() => switchScreen("outline")} onNewChapter={() => void newChapter()} onNavigateSection={navigateSection} /> : selectedBook && screen === "outline" ? <OutlineScreen book={selectedBook} chapters={chapters} onNewChapter={(kind) => void newChapter(kind)} onOpenMatter={openMatter} onOpenChapter={openChapter} /> : selectedBook && screen === "settings" ? <SettingsScreen book={selectedBook} chapters={chapters} focus={settingsFocus} /> : selectedBook ? <ExportScreen book={selectedBook} chapters={chapters} onNavigate={switchScreen} onOpenChapter={openChapter} /> : null}
+            {!selectedBook && screen !== "library" ? <div className="books-no-selection"><ArrowLeft size={20} /><h2>Choose a manuscript first.</h2><button className="books-primary-action" onClick={() => switchScreen("library")}>Back to library</button></div> : screen === "library" ? <LibraryScreen books={books} creating={creatingBook} deletingBookId={deletingBookId} onNew={() => void newBook()} onOpen={(id) => void openBook(id)} onDelete={(book) => void removeBook(book)} /> : selectedBook && screen === "manuscript" ? <ManuscriptScreen book={selectedBook} chapters={orderedChapters} activeChapter={activeChapter} focusMode={editorFocusMode} onFocusModeChange={setEditorFocusMode} onOpenOutline={() => switchScreen("outline")} onNewChapter={() => void newChapter()} onNavigateSection={navigateSection} /> : selectedBook && screen === "outline" ? <OutlineScreen book={selectedBook} chapters={chapters} onNewChapter={(kind) => void newChapter(kind)} onOpenMatter={openMatter} onOpenChapter={openChapter} /> : selectedBook && screen === "settings" ? <SettingsScreen book={selectedBook} chapters={chapters} focus={settingsFocus} /> : selectedBook ? <ExportScreen book={selectedBook} chapters={chapters} onNavigate={switchScreen} onOpenChapter={openChapter} /> : null}
           </main>
           {selectedBook && <PrintBook book={selectedBook} chapters={chapters} toc={selectedToc} />}
            <BooksCommandPalette open={commandOpen} bookTitle={selectedBook ? (selectedBook.title || "Untitled manuscript") : undefined} chapters={orderedChapters} onClose={() => setCommandOpen(false)} onNavigate={switchScreen} onNewChapter={(kind) => void newChapter(kind)} onOpenChapter={openChapter} />

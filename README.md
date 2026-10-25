@@ -50,6 +50,7 @@ Books Studio is a second workspace in the same app, switched from the titlebar b
 - Restores the last open manuscript and Books sidebar state after relaunch; each manuscript remembers its own last active section when you switch between books.
 - First-class books and chapters stored in SQLite, separate from the notes tables.
 - Distraction-reduced writing surface with H1-H6 Markdown formatting, preview mode, focus mode, section statistics, keyboard save, list continuation, and local auto-save.
+- Find and replace inside a section, plus optional timed writing sprints that track the words written during each session.
 - Auto-saved reader metadata for title, subtitle, author, genre, description, draft status, cover color, and a configurable word goal.
 - Structured manuscript sections with typed title pages, prologues, chapters, interludes, appendices, front matter, and back matter. Add and classify sections from the left rail or their trackpad context menu.
 - Optional dedication, epigraph, copyright, and acknowledgements pages are editable from the outline and included in exports.
@@ -63,6 +64,7 @@ Books Studio is a second workspace in the same app, switched from the titlebar b
 - Generated contents with configurable title, H1-H6 depth, legacy matter inclusion, per-section visibility, and individual heading visibility controls.
 - Export to EPUB 3, DOCX, styled HTML, Markdown, and plain text. Print / Save as PDF uses the selected trim size and page styling.
 - Export preview includes separate cover and interior views plus an actionable preflight for reader metadata, empty sections, contents, repeated titles, page numbering, and embedded artwork.
+- Browser-style book tabs with a Library home tab, drag-to-reorder, middle-click close, relative navigation, and the same titlebar controls as the Notes workspace.
 - Keyboard-complete tabs, command search, section menus, and accessible in-app confirmation dialogs keep manuscript navigation and destructive actions inside the Studio workflow.
 
 ## Install
@@ -101,8 +103,8 @@ Installers are written to `src-tauri/target/release/bundle/`.
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd+N` | Create a note |
-| `Cmd+T` | Open a new tab / browse all notes |
+| `Cmd+N` | Create a note, or a book while Books Studio is active |
+| `Cmd+T` | Open a new tab: all notes, or the Books library |
 | `Cmd+W` | Close the active tab |
 | `Cmd+Shift+D` | Duplicate the active note |
 | `Cmd+K` / `Cmd+Shift+P` | Open the command palette |
@@ -112,7 +114,8 @@ Installers are written to `src-tauri/target/release/bundle/`.
 | `Cmd+Ctrl+S` | Toggle the sidebar |
 | `Cmd+Shift+T` | Toggle appearance |
 | `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous tab |
-| `Cmd+F` | Find and replace in Markdown mode |
+| `Cmd+F` | Find in Markdown mode / find a section in Books Studio |
+| `Cmd+Alt+F` | Find and replace in a Books Studio section |
 | `Cmd+P` | Print the current note |
 | `Cmd+B` / `Cmd+I` / `Cmd+U` | Bold / italic / underline in rich text |
 | `Cmd+1` / `Cmd+2` | Apply heading 1 / heading 2 in Markdown mode |

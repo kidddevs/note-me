@@ -9,6 +9,7 @@ import {
 import { useMemo, useState } from "react";
 import { useNotes } from "../store/notes";
 import { useTabs } from "../store/tabs";
+import { useWorkspace } from "../store/workspace";
 import { notify } from "../store/toast";
 import { formatRelative } from "../lib/format";
 
@@ -45,6 +46,7 @@ export function ClipboardPanel() {
       "From clipboard";
     const note = await createNote(first, content);
     if (note) {
+      useWorkspace.getState().setMode("notes");
       useTabs.getState().openNote(note.id, note.title || "Untitled", false);
       notify("success", "Note created from clipboard", first);
     }

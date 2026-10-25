@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import {
+  BookOpen,
+  BookPlus,
   Check,
   Clipboard,
-  BookOpen,
   FilePlus2,
+  Library,
   Minus,
   Monitor,
   Moon,
@@ -19,10 +21,13 @@ import {
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTabs } from "../store/tabs";
+import { useBookTabs, type BookTab } from "../store/bookTabs";
+import { useBooks } from "../store/books";
 import { useTheme } from "../store/theme";
 import { useNotes } from "../store/notes";
-import { useWorkspace } from "../store/workspace";
+import { useWorkspace, type WorkspaceMode } from "../store/workspace";
 import { notify } from "../store/toast";
+import { createNewBook } from "../lib/actions";
 import type { Tab } from "../lib/types";
 import { useEffect, useRef, useState } from "react";
 
@@ -34,13 +39,14 @@ interface MenuState {
   x: number;
   y: number;
   tabId: string;
+  source: WorkspaceMode;
 }
 
 interface TabMenuState {
   menu: MenuState | null;
-  drag: { id: string } | null;
+  drag: { id: string; source: WorkspaceMode } | null;
   setMenu: (m: MenuState | null) => void;
-  setDrag: (d: { id: string } | null) => void;
+  setDrag: (d: { id: string; source: WorkspaceMode } | null) => void;
   dropOn: (targetId: string) => void;
 }
 
@@ -51,68 +57,68 @@ const useTabMenu = create<TabMenuState>((set) => ({
   setDrag: (drag) => set({ drag }),
   dropOn: (targetId) => {
     const { drag } = useTabMenu.getState();
-    const s = useTabs.getState();
-    const from = s.tabs.findIndex((t) => t.id === drag?.id);
-    const to = s.tabs.findIndex((t) => t.id === targetId);
+    if (!drag) return;
+    const store = drag.source === "notes" ? useTabs.getState() : useBookTabs.getState();
+    const from = store.tabs.findIndex((t) => t.id === drag.id);
+    const to = store.tabs.findIndex((t) => t.id === targetId);
     if (from !== -1 && to !== -1 && from !== to) {
-      s.moveTab(from, to);
-      if (drag?.id) s.activate(drag.id);
+      store.moveTab(from, to);
+      store.activate(drag.id);
     }
     set({ drag: null });
   },
 }));
 
-function TabComponent({ tab }: { tab: Tab }) {
-  const activate = useTabs((s) => s.activate);
-  const closeTab = useTabs((s) => s.closeTab);
-  const activeId = useTabs((s) => s.activeId);
+interface TabButtonProps {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  active: boolean;
+  source: WorkspaceMode;
+  onActivate: () => void;
+  onClose: () => void;
+}
+
+function TabButton({ id, title, icon, active, source, onActivate, onClose }: TabButtonProps) {
   const setMenu = useTabMenu((s) => s.setMenu);
-  const drag = useTabMenu((s) => s.drag);
+  const dragging = useTabMenu((s) => s.drag?.id === id);
 
   return (
     <div
-      className={`tab ${tab.id === activeId ? "active" : ""} ${drag?.id === tab.id ? "tab-drag" : ""}`}
-      onClick={() => activate(tab.id)}
+      className={`tab ${active ? "active" : ""} ${dragging ? "tab-drag" : ""}`}
+      onClick={onActivate}
       onMouseDown={(e) => {
         if (e.button === 1) {
           e.preventDefault();
           e.stopPropagation();
-          closeTab(tab.id);
+          onClose();
         }
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        setMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
+        setMenu({ x: e.clientX, y: e.clientY, tabId: id, source });
       }}
       draggable
       onDragStart={(e) => {
-        useTabMenu.getState().setDrag({ id: tab.id });
+        useTabMenu.getState().setDrag({ id, source });
         e.dataTransfer.effectAllowed = "move";
       }}
       onDragEnd={() => useTabMenu.getState().setDrag(null)}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
-        useTabMenu.getState().dropOn(tab.id);
+        if (useTabMenu.getState().drag?.source === source) useTabMenu.getState().dropOn(id);
       }}
-      title={tab.title}
+      title={title}
     >
-      {tab.kind === "note" ? (
-        tab.pinned ? (
-          <Pin size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
-        ) : (
-          <StickyNote size={12} style={{ flexShrink: 0, opacity: 0.75 }} />
-        )
-      ) : (
-        <Search size={12} style={{ flexShrink: 0, opacity: 0.75 }} />
-      )}
-      <span className="tab-title">{tab.title}</span>
+      {icon}
+      <span className="tab-title">{title}</span>
       <button
         className="tab-close"
         title="Close tab (⌘W)"
         onClick={(e) => {
           e.stopPropagation();
-          closeTab(tab.id);
+          onClose();
         }}
       >
         <X size={12} />
@@ -121,13 +127,63 @@ function TabComponent({ tab }: { tab: Tab }) {
   );
 }
 
+function NoteTab({ tab }: { tab: Tab }) {
+  const activate = useTabs((s) => s.activate);
+  const closeTab = useTabs((s) => s.closeTab);
+  const active = useTabs((s) => s.activeId === tab.id);
+
+  return (
+    <TabButton
+      id={tab.id}
+      title={tab.title}
+      active={active}
+      source="notes"
+      icon={
+        tab.kind === "note" ? (
+          tab.pinned ? (
+            <Pin size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+          ) : (
+            <StickyNote size={12} style={{ flexShrink: 0, opacity: 0.75 }} />
+          )
+        ) : (
+          <Search size={12} style={{ flexShrink: 0, opacity: 0.75 }} />
+        )
+      }
+      onActivate={() => activate(tab.id)}
+      onClose={() => closeTab(tab.id)}
+    />
+  );
+}
+
+function BookTabComponent({ tab }: { tab: BookTab }) {
+  const activate = useBookTabs((s) => s.activate);
+  const closeTab = useBookTabs((s) => s.closeTab);
+  const active = useBookTabs((s) => s.activeId === tab.id);
+
+  return (
+    <TabButton
+      id={tab.id}
+      title={tab.title}
+      active={active}
+      source="books"
+      icon={
+        tab.kind === "library" ? (
+          <Library size={12} style={{ flexShrink: 0, opacity: 0.75 }} />
+        ) : (
+          <BookOpen size={12} style={{ flexShrink: 0, opacity: 0.75 }} />
+        )
+      }
+      onActivate={() => activate(tab.id)}
+      onClose={() => closeTab(tab.id)}
+    />
+  );
+}
+
 export function TabContextMenu() {
   const menu = useTabMenu((s) => s.menu);
   const setMenu = useTabMenu((s) => s.setMenu);
-  const closeTab = useTabs((s) => s.closeTab);
-  const closeOtherTabs = useTabs((s) => s.closeOtherTabs);
-  const closeAllTabs = useTabs((s) => s.closeAllTabs);
   if (!menu) return null;
+  const store = menu.source === "notes" ? useTabs.getState() : useBookTabs.getState();
   return (
     <div
       className="menu-wrap"
@@ -137,7 +193,7 @@ export function TabContextMenu() {
       <button
         className="menu-item"
         onClick={() => {
-          closeTab(menu.tabId);
+          store.closeTab(menu.tabId);
           setMenu(null);
         }}
       >
@@ -146,7 +202,7 @@ export function TabContextMenu() {
       <button
         className="menu-item"
         onClick={() => {
-          closeOtherTabs(menu.tabId);
+          store.closeOtherTabs(menu.tabId);
           setMenu(null);
         }}
       >
@@ -156,7 +212,7 @@ export function TabContextMenu() {
       <button
         className="menu-item danger"
         onClick={() => {
-          closeAllTabs();
+          store.closeAllTabs();
           setMenu(null);
         }}
       >
@@ -169,6 +225,8 @@ export function TabContextMenu() {
 export function TitleBar() {
   const tabs = useTabs((s) => s.tabs);
   const openHome = useTabs((s) => s.openHome);
+  const bookTabs = useBookTabs((s) => s.tabs);
+  const books = useBooks((s) => s.books);
   const theme = useTheme((s) => s.theme);
   const cycleTheme = useTheme((s) => s.cycleTheme);
   const toggleSidebar = useTheme((s) => s.toggleSidebar);
@@ -180,6 +238,7 @@ export function TitleBar() {
   const booksSidebarCollapsed = useWorkspace((s) => s.booksSidebarCollapsed);
   const toggleBooksSidebar = useWorkspace((s) => s.toggleBooksSidebar);
   const [maximized, setMaximized] = useState(false);
+  const [creatingBook, setCreatingBook] = useState(false);
   const first = useRef(true);
 
   useEffect(() => {
@@ -199,37 +258,63 @@ export function TitleBar() {
     }
   };
 
+  const newBook = async () => {
+    if (creatingBook) return;
+    setCreatingBook(true);
+    try {
+      await createNewBook();
+    } catch (error) {
+      notify("error", "Manuscript could not be created", String(error));
+    } finally {
+      setCreatingBook(false);
+    }
+  };
+
+  useEffect(() => {
+    if (workspace !== "books") return;
+    if (useBookTabs.getState().tabs.length === 0) useBookTabs.getState().openLibrary();
+  }, [workspace]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       const k = e.key.toLowerCase();
       if (k === "t") {
-        if (workspace !== "notes") return;
         e.preventDefault();
-        openHome();
+        if (workspace === "notes") openHome();
+        else useBookTabs.getState().openLibrary();
       } else if (k === "n") {
-        if (workspace !== "notes") return;
         e.preventDefault();
-        newNote();
-      } else if (k === "w" && tabs.length > 0) {
-        if (workspace !== "notes") return;
-        e.preventDefault();
-        useTabs.getState().closeTab(useTabs.getState().activeId ?? "");
+        if (workspace === "notes") void newNote();
+        else void newBook();
+      } else if (k === "w") {
+        if (workspace === "notes") {
+          if (tabs.length === 0) return;
+          e.preventDefault();
+          useTabs.getState().closeTab(useTabs.getState().activeId ?? "");
+        } else {
+          if (useBookTabs.getState().tabs.length === 0) return;
+          e.preventDefault();
+          useBookTabs.getState().closeTab(useBookTabs.getState().activeId ?? "");
+        }
       } else if (k === "tab") {
         e.preventDefault();
-        useTabs.getState().activateRelative(e.shiftKey ? -1 : 1);
+        if (workspace === "notes") useTabs.getState().activateRelative(e.shiftKey ? -1 : 1);
+        else useBookTabs.getState().activateRelative(e.shiftKey ? -1 : 1);
       } else if (e.key === "]" && e.shiftKey) {
         e.preventDefault();
-        useTabs.getState().activateRelative(1);
+        if (workspace === "notes") useTabs.getState().activateRelative(1);
+        else useBookTabs.getState().activateRelative(1);
       } else if (e.key === "[" && e.shiftKey) {
         e.preventDefault();
-        useTabs.getState().activateRelative(-1);
+        if (workspace === "notes") useTabs.getState().activateRelative(-1);
+        else useBookTabs.getState().activateRelative(-1);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tabs.length, workspace]);
+  }, [tabs.length, workspace, creatingBook]);
 
   useEffect(() => {
     if (first.current) {
@@ -245,6 +330,15 @@ export function TitleBar() {
       }
     }
   }, [notes]);
+
+  useEffect(() => {
+    const s = useBookTabs.getState();
+    for (const t of s.tabs) {
+      if (t.kind !== "book" || t.bookId == null) continue;
+      const book = books.find((item) => item.id === t.bookId);
+      if (book && book.title !== t.title) s.renameBook(t.bookId, book.title || "Untitled manuscript");
+    }
+  }, [books]);
 
   const win = getCurrentWindow();
 
@@ -265,60 +359,55 @@ export function TitleBar() {
         >
           {workspace === "notes" ? <BookOpen size={15} /> : <StickyNote size={15} />}
         </button>
-        {workspace === "notes" && <>
-        <button
-          className="icon-btn"
-          title="Toggle Sidebar (⌘⌃S)"
-          aria-label="Toggle sidebar"
-          onClick={toggleSidebar}
-        >
-          <PanelLeft size={15} />
-        </button>
-        <button
-          className="icon-btn"
-          title="New Note (⌘N)"
-          aria-label="New note"
-          onClick={newNote}
-        >
-          <FilePlus2 size={15} />
-        </button>
-        <button
-          className="icon-btn"
-          title="Clipboard History (⌘⇧V)"
-          aria-label="Clipboard history"
-          onClick={() => toggleClipboardPanel()}
-        >
-          <Clipboard size={15} />
-        </button>
-        </>}
+        {workspace === "notes" ? (
+          <button
+            className="icon-btn"
+            title="New Note (⌘N)"
+            aria-label="New note"
+            onClick={newNote}
+          >
+            <FilePlus2 size={15} />
+          </button>
+        ) : (
+          <button
+            className="icon-btn"
+            title="New Book (⌘N)"
+            aria-label="New book"
+            onClick={() => void newBook()}
+            disabled={creatingBook}
+          >
+            <BookPlus size={15} />
+          </button>
+        )}
       </div>
 
       <div
         className="tab-strip"
         data-tauri-drag-region
         onMouseDown={(e) => {
-          if (workspace !== "notes") return;
           if (e.button === 1 && e.target === e.currentTarget) {
             e.preventDefault();
-            openHome();
+            if (workspace === "notes") openHome();
+            else useBookTabs.getState().openLibrary();
           }
         }}
       >
-        {workspace === "notes" ? <>
-          {tabs.map((t) => (
-            <TabComponent key={t.id} tab={t} />
-          ))}
-          <button
-            className="tab-new"
-            title="New Tab (⌘T)"
-            aria-label="New tab"
-            onClick={openHome}
-          >
-            <Plus size={14} />
-          </button>
-        </> : (
-          <div className="titlebar-workspace-name"><BookOpen size={13} /> <strong>Books Studio</strong><span>Long-form writing</span></div>
+        {workspace === "notes" ? (
+          tabs.map((t) => <NoteTab key={t.id} tab={t} />)
+        ) : (
+          bookTabs.map((t) => <BookTabComponent key={t.id} tab={t} />)
         )}
+        <button
+          className="tab-new"
+          title="New Tab (⌘T)"
+          aria-label="New tab"
+          onClick={() => {
+            if (workspace === "notes") openHome();
+            else useBookTabs.getState().openLibrary();
+          }}
+        >
+          <Plus size={14} />
+        </button>
       </div>
 
       <div className="win-controls" data-tauri-drag-region>
@@ -336,26 +425,18 @@ export function TitleBar() {
             <Monitor size={14} />
           )}
         </button>
-        {workspace === "notes" && (
-          <button
-            className="icon-btn"
-            title="Command Palette (⌘K)"
-            aria-label="Open command palette"
-            onClick={() => window.dispatchEvent(new CustomEvent("open-palette"))}
-          >
-            <Search size={14} />
-          </button>
-        )}
-        {workspace === "books" && (
-          <button
-            className="icon-btn"
-            title="Books command palette (⌘K)"
-            aria-label="Open Books Studio command palette"
-            onClick={() => window.dispatchEvent(new CustomEvent("open-books-palette"))}
-          >
-            <Search size={14} />
-          </button>
-        )}
+        <button
+          className="icon-btn"
+          title={workspace === "notes" ? "Command Palette (⌘K)" : "Books command palette (⌘K)"}
+          aria-label={workspace === "notes" ? "Open command palette" : "Open Books Studio command palette"}
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent(workspace === "notes" ? "open-palette" : "open-books-palette")
+            )
+          }
+        >
+          <Search size={14} />
+        </button>
         <button
           className="icon-btn"
           title="Preferences (⌘,)"
@@ -364,16 +445,34 @@ export function TitleBar() {
         >
           <Settings size={14} />
         </button>
-        {workspace === "books" && (
-          <button
-            className="icon-btn"
-            title={booksSidebarCollapsed ? "Show Books sidebar" : "Hide Books sidebar"}
-            aria-label={booksSidebarCollapsed ? "Show Books sidebar" : "Hide Books sidebar"}
-            onClick={toggleBooksSidebar}
-          >
-            <PanelLeft size={14} />
-          </button>
-        )}
+        <button
+          className="icon-btn"
+          title="Clipboard History (⌘⇧V)"
+          aria-label="Clipboard history"
+          onClick={() => toggleClipboardPanel()}
+        >
+          <Clipboard size={14} />
+        </button>
+        <button
+          className="icon-btn"
+          title={
+            workspace === "notes"
+              ? "Toggle Sidebar (⌘⌃S)"
+              : booksSidebarCollapsed
+                ? "Show Books sidebar"
+                : "Hide Books sidebar"
+          }
+          aria-label={
+            workspace === "notes"
+              ? "Toggle sidebar"
+              : booksSidebarCollapsed
+                ? "Show Books sidebar"
+                : "Hide Books sidebar"
+          }
+          onClick={workspace === "notes" ? toggleSidebar : toggleBooksSidebar}
+        >
+          <PanelLeft size={14} />
+        </button>
       </div>
 
       {!isMac && (
