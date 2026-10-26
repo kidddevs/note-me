@@ -58,6 +58,7 @@ Books Studio is a second workspace in the same app, switched from the titlebar b
 - Custom role typography for titles, H1-H6 headings, paragraphs, and quotes, including font stacks, size, weight, italic, alignment, line height, and letter spacing. Page-level font size, line height, paragraph spacing, and margins remain available in Book settings.
 - Artwork drawer for local images plus categorized, searchable, recolorable built-in SVG ornaments, dividers, botanical marks, symbols, geometric devices, borders, frames, lines, shapes, and arrows. Line, solid, frame, dotted, and dashed variants can be filtered before insertion. Images can also be pasted or dropped directly into the manuscript; inserted artwork is embedded in the manuscript Markdown for portable exports.
 - Canvas writing mode renders images and rich blocks as selectable visual elements instead of showing their source syntax. Text, images, tables, charts, and callouts can be resized from edge handles; visual elements can be reordered by dragging, and selected blocks can be moved or deleted from the contextual inspector. Text-box placement and width metadata uses hidden Markdown comments so Preview and exports remain clean; Source mode remains available for direct Markdown editing.
+- Page-style canvas with trim-size rulers, margin guides, zoom controls, and a floating quick-format bar for text style, alignment, width, ordering, duplication, and deletion.
 - Portable rich data blocks for GFM tables, configurable tables, bar / line / area / donut / stat charts, callouts, and graph fences. The contextual inspector exposes only the controls for the selected title, text, image, table, chart, or callout.
 - Running headers and footers with left, center, and right slots. Use `{{title}}`, `{{author}}`, `{{section}}`, and `{{page}}` tokens.
 - Flexible page numbering with automatic sequences or manual section range starts, Arabic or Roman styles, custom formats, configurable placement and starting section, plus per-section style overrides.
@@ -116,6 +117,8 @@ Installers are written to `src-tauri/target/release/bundle/`.
 | `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous tab |
 | `Cmd+F` | Find in Markdown mode / find a section in Books Studio |
 | `Cmd+Alt+F` | Find and replace in a Books Studio section |
+| `Cmd+Alt+0`–`Cmd+Alt+3` | Apply body, H1, H2, or H3 to the selected canvas block |
+| `Cmd+Alt+Q` | Apply quote style to the selected canvas block |
 | `Cmd+P` | Print the current note |
 | `Cmd+B` / `Cmd+I` / `Cmd+U` | Bold / italic / underline in rich text |
 | `Cmd+1` / `Cmd+2` | Apply heading 1 / heading 2 in Markdown mode |
