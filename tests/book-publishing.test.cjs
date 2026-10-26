@@ -13,6 +13,9 @@ const {
   bookMarkdown,
   bookPrintHtml,
   bookText,
+  canvasBlocks,
+  canvasTextSource,
+  restyleCanvasTextSource,
 } = require("./.compiled/src/lib/bookPublishing.js");
 
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -235,4 +238,19 @@ test("export dispatcher writes every file-level reader format", async () => {
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test("canvas style changes preserve presentation and convert block roles", () => {
+  const source = canvasTextSource("A small opening line.", { width: 60, align: "center" });
+  const heading = restyleCanvasTextSource(source, "heading2", { width: 60, align: "center" });
+  assert.match(heading, /^## A small opening line\./);
+  assert.match(heading, /note-me:layout width=60 align=center/);
+  assert.equal(canvasBlocks(heading)[0].role, "heading2");
+
+  const quote = restyleCanvasTextSource(heading, "quote", { width: 60, align: "center" });
+  assert.match(quote, /^> A small opening line\./);
+  assert.equal(canvasBlocks(quote)[0].role, "quote");
+
+  const paragraph = restyleCanvasTextSource(quote, "paragraph", { width: 100, align: "left" });
+  assert.equal(paragraph, "A small opening line.");
 });

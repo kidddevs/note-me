@@ -866,6 +866,20 @@ export function canvasTextSource(source: string, presentation: RichPresentation)
   return `${clean}${canvasLayoutComment(presentation)}`;
 }
 
+export function restyleCanvasTextSource(source: string, role: BookTextRole, presentation: RichPresentation = DEFAULT_RICH_PRESENTATION) {
+  const clean = canvasLayoutFromSource(source).clean.trim();
+  const body = clean.replace(/^#{1,6}\s+/, "").replace(/^>\s?/gm, "").trim();
+  if (!body) return canvasTextSource(source, presentation);
+  if (role === "quote") {
+    return canvasTextSource(body.split(/\r?\n/).map((line) => `> ${line}`).join("\n"), presentation);
+  }
+  if (role.startsWith("heading")) {
+    const level = Math.min(6, Math.max(1, Number(role.slice(-1)) || 1));
+    return canvasTextSource(`${"#".repeat(level)} ${body.replace(/\r?\n+/g, " ").trim()}`, presentation);
+  }
+  return canvasTextSource(body, presentation);
+}
+
 export function addTableRow(lines: string[]) {
   const columnCount = splitTableCells(lines[0] ?? "").length;
   return [...lines, `| ${Array.from({ length: Math.max(1, columnCount) }, () => "").join(" | ")} |`];
