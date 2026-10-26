@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
@@ -8,8 +11,11 @@ import {
   BookOpen,
   ChevronRight,
   Code2,
+  Copy,
+  Grid3X3,
   ImagePlus,
   LayoutList,
+  LayoutTemplate,
   Link2,
   List,
   ListOrdered,
@@ -17,24 +23,29 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Pause,
+  Pilcrow,
   Play,
   Plus,
   Quote,
   Replace,
   RotateCcw,
+  Ruler,
   Save,
   Search,
   Timer,
   Table2,
+  Trash2,
   Type,
   Upload,
   WandSparkles,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import type * as React from "react";
 import type { Book, Chapter, ChapterKind } from "../lib/types";
 import { BOOK_GRAPHICS, BOOK_GRAPHIC_CATEGORIES, graphicDataUri, type BookGraphic, type BookGraphicVariant } from "../lib/bookAssets";
-import { layoutForBook, serializeBookLayout, type BookLayout, type BookTypography } from "../lib/bookLayout";
+import { layoutForBook, serializeBookLayout, type BookLayout, type BookTextAlign, type BookTextRole, type BookTypography } from "../lib/bookLayout";
 import { sectionAnchorId } from "../lib/bookToc";
 import { useBooks } from "../store/books";
 import { notify } from "../store/toast";
@@ -56,15 +67,32 @@ import {
   imageMarkdown,
   markdownToHtml,
   bookInputFromBook,
+  restyleCanvasTextSource,
   tableBlockText,
   tableDataFromValue,
   wordCount,
   type CanvasBlock,
+  type RichAlign,
+  type RichPresentation,
 } from "../lib/bookPublishing";
 import { handleTabListKeyDown, manuscriptStyle, useConfirmationDialog } from "./BooksStudio";
 import type { EditorView } from "./BooksStudio";
 
 const SPRINT_PRESETS = [15, 25, 45] as const;
+const CANVAS_PREFS_KEY = "note-me.books.canvas";
+
+function readCanvasPrefs() {
+  const fallback = { zoom: 100, rulers: true, guides: true };
+  try {
+    const raw = window.localStorage.getItem(CANVAS_PREFS_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as { zoom?: unknown; rulers?: unknown; guides?: unknown };
+    const zoom = typeof parsed.zoom === "number" && parsed.zoom >= 60 && parsed.zoom <= 160 ? Math.round(parsed.zoom) : fallback.zoom;
+    return { zoom, rulers: parsed.rulers !== false, guides: parsed.guides !== false };
+  } catch {
+    return fallback;
+  }
+}
 
 function sprintClock(milliseconds: number) {
   const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
@@ -136,7 +164,90 @@ function CanvasResizeHandles({ label, onResizeStart }: { label: string; onResize
   return <><button className="books-canvas-resize-handle left" onPointerDown={(event) => onResizeStart(event, -1)} aria-label={`Resize ${label} from the left edge`} /><button className="books-canvas-resize-handle right" onPointerDown={(event) => onResizeStart(event, 1)} aria-label={`Resize ${label} from the right edge`} /></>;
 }
 
-function CanvasTextBlock({ block, index, width, selected, typography, onTextChange, onTextSelection, onEditorKeyDown, onResizeStart }: { block: CanvasBlock; index: number; width: number; selected: boolean; typography: BookTypography; onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void; onTextSelection: (block: CanvasBlock, event: React.SyntheticEvent<HTMLTextAreaElement>) => void; onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: -1 | 1) => void }) {
+function CanvasRulers({ trimWidth, trimHeight }: { trimWidth: number; trimHeight: number }) {
+  const width = Math.max(1, trimWidth);
+  const height = Math.max(1, trimHeight);
+  return (
+    <>
+      <div className="books-canvas-ruler horizontal" aria-hidden="true" style={{ "--ruler-minor": `${100 / (width * 4)}%`, "--ruler-major": `${100 / width}%` } as CSSProperties}>
+        {Array.from({ length: Math.floor(width) + 1 }, (_, index) => <span key={index} style={{ left: `${(index / width) * 100}%` }}>{index}</span>)}
+      </div>
+      <div className="books-canvas-ruler vertical" aria-hidden="true" style={{ "--ruler-minor": `${100 / (height * 4)}%`, "--ruler-major": `${100 / height}%` } as CSSProperties}>
+        {Array.from({ length: Math.floor(height) + 1 }, (_, index) => <span key={index} style={{ top: `${(index / height) * 100}%` }}>{index}</span>)}
+      </div>
+    </>
+  );
+}
+
+const CANVAS_ROLE_OPTIONS: { value: BookTextRole; label: string }[] = [
+  { value: "paragraph", label: "Body" },
+  { value: "heading1", label: "Heading 1" },
+  { value: "heading2", label: "Heading 2" },
+  { value: "heading3", label: "Heading 3" },
+  { value: "heading4", label: "Heading 4" },
+  { value: "heading5", label: "Heading 5" },
+  { value: "heading6", label: "Heading 6" },
+  { value: "quote", label: "Quote" },
+];
+
+const CANVAS_ALIGN_OPTIONS = [
+  { value: "left", label: "Place block left", icon: AlignLeft },
+  { value: "center", label: "Place block centered", icon: AlignCenter },
+  { value: "right", label: "Place block right", icon: AlignRight },
+] as const;
+
+function canvasBlockLabel(block: CanvasBlock) {
+  if (block.kind === "image") return "Artwork";
+  if (block.kind === "table") return "Data table";
+  if (block.kind === "chart") return "Chart";
+  if (block.kind === "callout") return "Callout";
+  if (block.role === "quote") return "Quote";
+  if (block.level) return `Heading ${block.level}`;
+  return "Paragraph";
+}
+
+function CanvasQuickToolbar({ label, role, textAlign, presentation, canMoveUp, canMoveDown, onRole, onTextAlign, onAlign, onWidth, onMove, onDuplicate, onDelete }: { label: string; role?: BookTextRole; textAlign?: BookTextAlign; presentation: RichPresentation; canMoveUp: boolean; canMoveDown: boolean; onRole: (role: BookTextRole) => void; onTextAlign?: (align: BookTextAlign) => void; onAlign: (align: RichAlign) => void; onWidth: (width: number) => void; onMove: (direction: -1 | 1) => void; onDuplicate: () => void; onDelete: () => void }) {
+  return (
+    <div className="books-canvas-quickbar" role="toolbar" aria-label={`${label} formatting`} onMouseDown={(event) => event.stopPropagation()} onDragStart={(event) => event.stopPropagation()}>
+      {role && (
+        <label className="books-canvas-quickbar-style" title="Text style (⌘⌥0–3, ⌘⌥Q)">
+          <Type size={12} aria-hidden="true" />
+          <select value={role} onChange={(event) => onRole(event.target.value as BookTextRole)} aria-label="Text style">
+            {CANVAS_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+      )}
+      {role && textAlign && onTextAlign && (
+        <label className="books-canvas-quickbar-text-align" title="Paragraph alignment">
+          <Pilcrow size={12} aria-hidden="true" />
+          <select value={textAlign} onChange={(event) => onTextAlign(event.target.value as BookTextAlign)} aria-label="Paragraph alignment">
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+            <option value="justify">Justify</option>
+          </select>
+        </label>
+      )}
+      <div className="books-canvas-quickbar-group" aria-label="Block placement">
+        {CANVAS_ALIGN_OPTIONS.map(({ value, label: alignLabel, icon: Icon }) => (
+          <button key={value} className={presentation.align === value ? "active" : ""} onClick={() => onAlign(value)} title={alignLabel} aria-label={alignLabel} aria-pressed={presentation.align === value}><Icon size={12} /></button>
+        ))}
+      </div>
+      <label className="books-canvas-quickbar-width">
+        <span>W</span>
+        <input type="range" min="20" max="100" step="5" value={presentation.width} onChange={(event) => onWidth(Number(event.target.value))} aria-label="Block width" />
+        <strong>{presentation.width}%</strong>
+      </label>
+      <span className="books-canvas-quickbar-sep" aria-hidden="true" />
+      <button onClick={() => onMove(-1)} disabled={!canMoveUp} title="Move block earlier" aria-label="Move block earlier"><ArrowUp size={12} /></button>
+      <button onClick={() => onMove(1)} disabled={!canMoveDown} title="Move block later" aria-label="Move block later"><ArrowDown size={12} /></button>
+      <button onClick={onDuplicate} title="Duplicate block" aria-label="Duplicate block"><Copy size={12} /></button>
+      <button className="danger" onClick={onDelete} title="Delete block" aria-label="Delete block"><Trash2 size={12} /></button>
+    </div>
+  );
+}
+
+function CanvasTextBlock({ block, index, width, selected, typography, toolbar, onTextChange, onTextSelection, onEditorKeyDown, onResizeStart }: { block: CanvasBlock; index: number; width: number; selected: boolean; typography: BookTypography; toolbar?: React.ReactNode; onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void; onTextSelection: (block: CanvasBlock, event: React.SyntheticEvent<HTMLTextAreaElement>) => void; onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: -1 | 1) => void }) {
   const [editing, setEditing] = useState(false);
   const editor = useRef<HTMLTextAreaElement>(null);
   const style = block.role ? typography[block.role] : typography.paragraph;
@@ -148,12 +259,13 @@ function CanvasTextBlock({ block, index, width, selected, typography, onTextChan
   }, [editing]);
   const beginEditing = () => setEditing(true);
   return <div className={`books-canvas-text-block align-${block.presentation.align} ${selected ? "selected" : ""}`} style={{ width: `${width}%` }}>
+    {selected && toolbar}
     {editing ? <textarea ref={editor} className={`books-canvas-text ${className}`} style={{ textIndent: `${style.firstLineIndent}em`, marginTop: `${style.spaceBefore}em`, marginBottom: `${style.spaceAfter}em`, paddingLeft: `${style.leftIndent}em`, paddingRight: `${style.rightIndent}em` }} value={block.display} rows={Math.max(1, block.display.split("\n").length)} onChange={(event) => onTextChange(block, event.target.value, event.target.selectionStart, event.target.selectionEnd)} onFocus={(event) => onTextSelection(block, event)} onSelect={(event) => onTextSelection(block, event)} onClick={(event) => onTextSelection(block, event)} onKeyUp={(event) => onTextSelection(block, event)} onBlur={() => setEditing(false)} onKeyDown={onEditorKeyDown} placeholder={index === 0 ? "Begin writing here…" : undefined} spellCheck aria-label={`${label} text`} /> : <div className={`books-canvas-text-preview ${block.display ? "" : "empty"}`} tabIndex={0} role="textbox" aria-label={`${label} text`} onClick={beginEditing} onKeyDown={(event) => { if (event.key === "Enter" || event.key === "F2") { event.preventDefault(); beginEditing(); } }} dangerouslySetInnerHTML={{ __html: block.display ? markdownToHtml(block.source, undefined, typography) : "Begin writing here…" }} />}
     {selected && <CanvasResizeHandles label={label} onResizeStart={(event, direction) => onResizeStart(event, block, direction)} />}
   </div>;
 }
 
-function ManuscriptCanvas({ content, selection, typography, onSelectVisual, onTextChange, onTextSelection, onEditorKeyDown, onEditorDragOver, onEditorDrop, onEditorPaste, onResizeStart, onEditSource, onDeleteBlock, onMoveBlock, resizing }: {
+function ManuscriptCanvas({ content, selection, typography, onSelectVisual, onTextChange, onTextSelection, onEditorKeyDown, onEditorDragOver, onEditorDrop, onEditorPaste, onResizeStart, onEditSource, onDeleteBlock, onMoveBlock, onChangePresentation, onRestyleText, onTextAlignRole, onMoveRange, onDuplicateBlock, resizing }: {
   content: string;
   selection: { start: number; end: number };
   typography: BookTypography;
@@ -168,6 +280,11 @@ function ManuscriptCanvas({ content, selection, typography, onSelectVisual, onTe
   onEditSource: (block: CanvasBlock) => void;
   onDeleteBlock: (block: CanvasBlock) => void;
   onMoveBlock: (fromStart: number, targetStart: number) => void;
+  onChangePresentation: (block: CanvasBlock, patch: Partial<RichPresentation>) => void;
+  onRestyleText: (block: CanvasBlock, role: BookTextRole) => void;
+  onTextAlignRole: (role: BookTextRole, align: BookTextAlign) => void;
+  onMoveRange: (start: number, end: number, direction: -1 | 1) => void;
+  onDuplicateBlock: (start: number, end: number) => void;
   resizing: { start: number; width: number } | null;
 }) {
   const parsedBlocks = canvasBlocks(content);
@@ -182,17 +299,32 @@ function ManuscriptCanvas({ content, selection, typography, onSelectVisual, onTe
   };
   return <div className="books-manuscript-canvas" onDragOver={onEditorDragOver} onDrop={onEditorDrop} onPaste={onEditorPaste} aria-label="Manuscript canvas">
     {blocks.map((block, index) => {
-      if (block.kind === "text") {
-        const selected = isSelected(block);
-        const width = resizing?.start === block.start ? resizing.width : block.presentation.width;
-        return <CanvasTextBlock key={`${block.start}-${index}`} block={block} index={index} width={width} selected={selected} typography={typography} onTextChange={onTextChange} onTextSelection={onTextSelection} onEditorKeyDown={onEditorKeyDown} onResizeStart={onResizeStart} />;
-      }
-      const selected = isSelected(block);
+      const selected = isSelected(block) && (block.kind !== "text" || block.source.trim().length > 0);
       const width = resizing?.start === block.start ? resizing.width : block.presentation.width;
+      const toolbar = (
+        <CanvasQuickToolbar
+          label={canvasBlockLabel(block)}
+          role={block.kind === "text" ? block.role : undefined}
+          textAlign={block.kind === "text" && block.role ? typography[block.role].textAlign : undefined}
+          presentation={block.presentation}
+          canMoveUp={index > 0}
+          canMoveDown={index < blocks.length - 1}
+          onRole={(role) => onRestyleText(block, role)}
+          onTextAlign={block.kind === "text" && block.role ? (align) => onTextAlignRole(block.role as BookTextRole, align) : undefined}
+          onAlign={(align) => onChangePresentation(block, { align })}
+          onWidth={(value) => onChangePresentation(block, { width: value })}
+          onMove={(direction) => onMoveRange(block.start, block.end, direction)}
+          onDuplicate={() => onDuplicateBlock(block.start, block.end)}
+          onDelete={() => onDeleteBlock(block)}
+        />
+      );
+      if (block.kind === "text") {
+        return <CanvasTextBlock key={`${block.start}-${index}`} block={block} index={index} width={width} selected={selected} typography={typography} toolbar={toolbar} onTextChange={onTextChange} onTextSelection={onTextSelection} onEditorKeyDown={onEditorKeyDown} onResizeStart={onResizeStart} />;
+      }
       return <div key={`${block.start}-${index}`} className={`books-canvas-visual ${selected ? "selected" : ""} align-${block.presentation.align}`} style={{ width: `${width}%` }} role="button" tabIndex={0} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/x-note-me-block", String(block.start)); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const fromStart = Number(event.dataTransfer.getData("application/x-note-me-block")); if (Number.isFinite(fromStart)) onMoveBlock(fromStart, block.start); }} onClick={() => onSelectVisual(block)} onDoubleClick={() => onEditSource(block)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectVisual(block); } else if ((event.key === "Backspace" || event.key === "Delete") && selected) { event.preventDefault(); onDeleteBlock(block); } }} aria-label={`Select ${block.kind === "image" ? "artwork" : block.kind}`}>
         <span className="books-canvas-visual-label">{block.kind === "image" ? "Artwork" : block.kind === "table" ? "Data table" : block.kind === "chart" ? "Chart / graph" : "Callout"}</span>
         {renderVisual(block)}
-        {selected && <><span className="books-canvas-edit-hint">Double-click to edit source</span><CanvasResizeHandles label={block.kind} onResizeStart={(event, direction) => onResizeStart(event, block, direction)} /></>}
+        {selected && <>{toolbar}<span className="books-canvas-edit-hint">Double-click to edit source</span><CanvasResizeHandles label={block.kind} onResizeStart={(event, direction) => onResizeStart(event, block, direction)} /></>}
       </div>;
     })}
   </div>;
@@ -209,6 +341,10 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [findIndex, setFindIndex] = useState(0);
   const [assetOpen, setAssetOpen] = useState(false);
   const [sourceMode, setSourceMode] = useState(false);
+  const [canvasPrefs] = useState(readCanvasPrefs);
+  const [canvasZoom, setCanvasZoom] = useState(canvasPrefs.zoom);
+  const [showRulers, setShowRulers] = useState(canvasPrefs.rulers);
+  const [showGuides, setShowGuides] = useState(canvasPrefs.guides);
   const confirmation = useConfirmationDialog();
   const [canvasResize, setCanvasResize] = useState<{ start: number; width: number } | null>(null);
   const [title, setTitle] = useState(activeChapter?.title ?? "");
@@ -226,6 +362,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [inspectorLayout, setInspectorLayout] = useState(() => layoutForBook(book));
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const pageEditorRef = useRef<HTMLDivElement>(null);
   const activeEditorMapRef = useRef({ sourceStart: 0, prefixLength: 0 });
   const findInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -257,6 +394,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     () => chapters.reduce((total, chapter) => total + (chapter.id === activeChapter?.id ? wordCount(content) : wordCount(chapter.content)), 0),
     [chapters, activeChapter?.id, content]
   );
+  const [trimWidth = 6, trimHeight = 9] = (book.trim_size || "6x9").split("x").map((value) => Number(value) || 0);
   const sprintWords = Math.max(0, currentManuscriptWords - sprintStartWords);
   const sprintRunning = sprintEndsAt !== null;
   const sprintPaused = !sprintRunning && !sprintFinished && sprintRemaining !== null && sprintRemaining > 0;
@@ -314,6 +452,14 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setSprintFinished(false);
     setSprintOpen(false);
   }, [book.id]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CANVAS_PREFS_KEY, JSON.stringify({ zoom: canvasZoom, rulers: showRulers, guides: showGuides }));
+    } catch {
+      // Canvas preferences are a convenience; ignore storage failures.
+    }
+  }, [canvasZoom, showGuides, showRulers]);
 
   useEffect(() => {
     if (sprintEndsAt === null) return;
@@ -445,6 +591,26 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     });
   };
 
+  const changeTextRoleAlign = (role: BookTextRole, align: BookTextAlign) => {
+    changeLayout((layout) => ({
+      ...layout,
+      typography: {
+        ...layout.typography,
+        [role]: { ...layout.typography[role], textAlign: align },
+      },
+    }));
+  };
+
+  const fitCanvasToWidth = () => {
+    const host = pageEditorRef.current;
+    if (!host) return;
+    const styles = window.getComputedStyle(host);
+    const horizontalPadding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
+    const rulerOffset = showRulers ? 20 : 0;
+    const available = host.clientWidth - horizontalPadding - rulerOffset - 2;
+    setCanvasZoom(Math.max(60, Math.min(100, Math.round((available / 780) * 100))));
+  };
+
   const replaceContentRange = (start: number, end: number, replacement: string, focusEditor = false) => {
     const nextContent = content.slice(0, start) + replacement + content.slice(end);
     setContent(nextContent);
@@ -465,20 +631,46 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setEditorSelection({ start: sourceStart, end: sourceEnd, titleFocused: false });
   };
 
-  const resizeCanvasBlock = (block: CanvasBlock, width: number) => {
-    const safeWidth = Math.min(100, Math.max(20, Math.round(width)));
+  const changeCanvasPresentation = (block: CanvasBlock, patch: Partial<RichPresentation>) => {
+    const nextPatch = { ...patch };
+    if (nextPatch.width !== undefined) nextPatch.width = Math.min(100, Math.max(20, Math.round(nextPatch.width)));
     if (block.kind === "image" && block.image) {
-      replaceContentRange(block.start, block.end, `${block.image.indent}${imageMarkdown(block.image.alt, block.image.source, { ...block.image.presentation, width: safeWidth })}`);
+      replaceContentRange(block.start, block.end, `${block.image.indent}${imageMarkdown(block.image.alt, block.image.source, { ...block.image.presentation, ...nextPatch })}`);
     } else if (block.kind === "table") {
-      replaceContentRange(block.start, block.end, tableBlockText(block.tableLines ?? [], { ...(block.tableOptions ?? tableDataFromValue(null)), width: safeWidth }));
+      replaceContentRange(block.start, block.end, tableBlockText(block.tableLines ?? [], { ...(block.tableOptions ?? tableDataFromValue(null)), ...nextPatch }));
     } else if (block.kind === "chart" && block.chart) {
-      replaceContentRange(block.start, block.end, chartBlockText({ ...block.chart, width: safeWidth }));
+      replaceContentRange(block.start, block.end, chartBlockText({ ...block.chart, ...nextPatch }));
     } else if (block.kind === "callout") {
-      const presentation = { ...(block.calloutPresentation ?? DEFAULT_RICH_PRESENTATION), width: safeWidth };
+      const presentation = { ...(block.calloutPresentation ?? DEFAULT_RICH_PRESENTATION), ...nextPatch };
       replaceContentRange(block.start, block.end, calloutBlockText(block.calloutTitle ?? "Note", block.calloutTone ?? "note", block.source.split(/\r?\n/).slice(2, -1).join("\n"), presentation));
     } else if (block.kind === "text") {
-      replaceContentRange(block.start, block.end, canvasTextSource(block.source, { ...block.presentation, width: safeWidth }));
+      replaceContentRange(block.start, block.end, canvasTextSource(block.source, { ...block.presentation, ...nextPatch }));
     }
+  };
+
+  const resizeCanvasBlock = (block: CanvasBlock, width: number) => {
+    changeCanvasPresentation(block, { width });
+  };
+
+  const restyleCanvasTextBlock = (block: CanvasBlock, role: BookTextRole) => {
+    if (block.kind !== "text") return;
+    replaceContentRange(block.start, block.end, restyleCanvasTextSource(block.source, role, block.presentation));
+  };
+
+  const textBlockAtSelection = () => {
+    if (editorSelection.titleFocused) return null;
+    return canvasBlocks(content).find((block) => block.kind === "text" && block.start <= editorSelection.start && block.end >= editorSelection.start) ?? null;
+  };
+
+  const duplicateCanvasRange = (start: number, end: number) => {
+    const source = content.slice(start, end);
+    if (!source) return;
+    const insertion = `\n\n${source}`;
+    const nextContent = content.slice(0, end) + insertion + content.slice(end);
+    setContent(nextContent);
+    markDraft({ content: nextContent });
+    const duplicateStart = end + 2;
+    setEditorSelection({ start: duplicateStart, end: duplicateStart + source.length, titleFocused: false });
   };
 
   const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: -1 | 1) => {
@@ -791,6 +983,16 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       onNavigateSection(event.key === "ArrowUp" ? -1 : 1);
       return;
     }
+    if (modifier && event.altKey) {
+      const role = ({ Digit0: "paragraph", Digit1: "heading1", Digit2: "heading2", Digit3: "heading3", KeyQ: "quote" } as Record<string, BookTextRole>)[event.code];
+      const block = role ? textBlockAtSelection() : null;
+      if (role && block) {
+        event.preventDefault();
+        event.stopPropagation();
+        restyleCanvasTextBlock(block, role);
+        return;
+      }
+    }
     if (modifier && event.key.toLowerCase() === "s") {
       event.preventDefault();
       void saveNow();
@@ -852,7 +1054,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const manuscriptBody = sourceMode ? (
     <textarea ref={editorRef} className="manuscript-editor" value={content} onChange={(event) => { const value = event.target.value; setContent(value); markDraft({ content: value }); requestAnimationFrame(syncEditorSelection); }} onSelect={syncEditorSelection} onClick={syncEditorSelection} onKeyUp={syncEditorSelection} onFocus={syncEditorSelection} onKeyDown={onEditorKeyDown} onDragOver={onEditorDragOver} onDrop={onEditorDrop} onPaste={onEditorPaste} spellCheck placeholder="Begin writing here…" aria-label="Manuscript source" />
   ) : (
-    <div ref={canvasRef} className="books-canvas-host"><ManuscriptCanvas content={content} selection={editorSelection} typography={inspectorLayout.typography} onSelectVisual={(block) => { editorRef.current?.blur(); setEditorSelection({ start: block.start, end: block.end, titleFocused: false }); }} onTextChange={updateCanvasText} onTextSelection={syncCanvasSelection} onEditorKeyDown={onEditorKeyDown} onEditorDragOver={onEditorDragOver} onEditorDrop={onEditorDrop} onEditorPaste={onEditorPaste} onResizeStart={startCanvasResize} onEditSource={(block) => { setEditorSelection({ start: block.start, end: block.end, titleFocused: false }); setSourceMode(true); requestAnimationFrame(() => requestAnimationFrame(() => { editorRef.current?.focus(); editorRef.current?.setSelectionRange(block.start, block.end); })); }} onDeleteBlock={(block) => confirmDeleteCanvasRange(block.start, block.end)} onMoveBlock={moveCanvasBlock} resizing={canvasResize} /></div>
+    <div ref={canvasRef} className="books-canvas-host"><ManuscriptCanvas content={content} selection={editorSelection} typography={inspectorLayout.typography} onSelectVisual={(block) => { editorRef.current?.blur(); setEditorSelection({ start: block.start, end: block.end, titleFocused: false }); }} onTextChange={updateCanvasText} onTextSelection={syncCanvasSelection} onEditorKeyDown={onEditorKeyDown} onEditorDragOver={onEditorDragOver} onEditorDrop={onEditorDrop} onEditorPaste={onEditorPaste} onResizeStart={startCanvasResize} onEditSource={(block) => { setEditorSelection({ start: block.start, end: block.end, titleFocused: false }); setSourceMode(true); requestAnimationFrame(() => requestAnimationFrame(() => { editorRef.current?.focus(); editorRef.current?.setSelectionRange(block.start, block.end); })); }} onDeleteBlock={(block) => confirmDeleteCanvasRange(block.start, block.end)} onMoveBlock={moveCanvasBlock} onChangePresentation={changeCanvasPresentation} onRestyleText={restyleCanvasTextBlock} onTextAlignRole={changeTextRoleAlign} onMoveRange={moveCanvasRange} onDuplicateBlock={duplicateCanvasRange} resizing={canvasResize} /></div>
   );
   const activeChapterIndex = chapters.findIndex((chapter) => chapter.id === activeChapter.id);
   return (
@@ -947,10 +1149,31 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                <button onClick={insertCallout} title="Insert callout" aria-label="Insert callout"><Quote size={15} /></button>
             </div>}
             {assetOpen && <BooksAssetDrawer onClose={() => setAssetOpen(false)} onInsert={insertAsset} />}
+            {view === "write" && (
+              <div className="books-canvas-controlbar">
+                <span className="books-canvas-controlbar-title"><LayoutTemplate size={12} aria-hidden="true" /><strong>{trimWidth} × {trimHeight} in</strong><span>{book.margin} in margins</span></span>
+                <div className="books-canvas-zoom" role="group" aria-label="Canvas zoom">
+                  <button onClick={() => setCanvasZoom((value) => Math.max(60, value - 10))} disabled={canvasZoom <= 60} title="Zoom out" aria-label="Zoom out"><ZoomOut size={13} /></button>
+                  <button className="books-canvas-zoom-value" onClick={() => setCanvasZoom(100)} title="Reset zoom" aria-label={`Reset zoom. Current zoom ${canvasZoom} percent`}>{canvasZoom}%</button>
+                  <button onClick={() => setCanvasZoom((value) => Math.min(160, value + 10))} disabled={canvasZoom >= 160} title="Zoom in" aria-label="Zoom in"><ZoomIn size={13} /></button>
+                  <button className="books-canvas-zoom-fit" onClick={fitCanvasToWidth} title="Fit page to width" aria-label="Fit page to width">Fit</button>
+                </div>
+                <div className="books-canvas-toggles">
+                  <button className={showRulers ? "active" : ""} onClick={() => setShowRulers((value) => !value)} title="Toggle rulers" aria-pressed={showRulers}><Ruler size={13} /> Rulers</button>
+                  <button className={showGuides ? "active" : ""} onClick={() => setShowGuides((value) => !value)} title="Toggle margin guides" aria-pressed={showGuides}><Grid3X3 size={13} /> Guides</button>
+                </div>
+              </div>
+            )}
             {view === "write" ? (
-             <div className="books-page-editor">
-                  <div className="books-chapter-heading-row"><input className="books-chapter-title-input" value={title} onFocus={() => setEditorSelection({ start: 0, end: title.length, titleFocused: true })} onChange={(event) => { const value = event.target.value; setTitle(value); setEditorSelection({ start: 0, end: value.length, titleFocused: true }); markDraft({ title: value }); }} placeholder="Section title" aria-label="Section title" /></div>
-                  {manuscriptBody}
+             <div className="books-page-editor" ref={pageEditorRef}>
+                <div className={`books-page-frame ${showRulers ? "with-rulers" : ""}`} style={{ zoom: canvasZoom / 100 }}>
+                  {showRulers && <CanvasRulers trimWidth={trimWidth} trimHeight={trimHeight} />}
+                  <div className={`books-page-sheet ${showGuides ? "show-guides" : ""}`}>
+                    {showGuides && <div className="books-page-guide" aria-hidden="true" />}
+                    <div className="books-chapter-heading-row"><input className="books-chapter-title-input" value={title} onFocus={() => setEditorSelection({ start: 0, end: title.length, titleFocused: true })} onChange={(event) => { const value = event.target.value; setTitle(value); setEditorSelection({ start: 0, end: value.length, titleFocused: true }); markDraft({ title: value }); }} placeholder="Section title" aria-label="Section title" /></div>
+                    {manuscriptBody}
+                  </div>
+                </div>
              </div>
           ) : (
               <article className="books-manuscript-preview" dangerouslySetInnerHTML={{ __html: markdownToHtml(content, sectionAnchorId(activeChapter.id), inspectorLayout.typography) }} />
