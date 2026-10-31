@@ -14,7 +14,6 @@ import {
   History,
   ImagePlus,
   LayoutList,
-  LayoutTemplate,
   Minus,
   MousePointer2,
   Move,
@@ -91,7 +90,7 @@ import {
 import { handleTabListKeyDown, manuscriptStyle, useConfirmationDialog } from "./BooksStudio";
 
 const SPRINT_PRESETS = [15, 25, 45] as const;
-const CANVAS_PREFS_KEY = "note-me.books.canvas";
+const CANVAS_PREFS_KEY = "note-me.books.canvas.v2";
 
 function readCanvasPrefs() {
   const fallback = { zoom: 100, rulers: true, guides: true };
@@ -1916,7 +1915,12 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                   </div>
                 )}
               </div>
-              <span className="design-mode-chip"><Palette size={12} /> Design canvas</span>
+              <div className="books-canvas-zoom topline-zoom" role="group" aria-label="Canvas zoom">
+                <button onClick={() => setCanvasZoom((value) => Math.max(60, value - 10))} disabled={canvasZoom <= 60} title="Zoom out" aria-label="Zoom out"><ZoomOut size={13} /></button>
+                <button className="books-canvas-zoom-value" onClick={() => setCanvasZoom(100)} title="Reset zoom" aria-label={`Reset zoom. Current zoom ${canvasZoom} percent`}>{canvasZoom}%</button>
+                <button onClick={() => setCanvasZoom((value) => Math.min(160, value + 10))} disabled={canvasZoom >= 160} title="Zoom in" aria-label="Zoom in"><ZoomIn size={13} /></button>
+                <button className="books-canvas-zoom-fit" onClick={fitCanvasToWidth} title="Fit page to width" aria-label="Fit page to width">Fit</button>
+              </div><span className="design-mode-chip"><Palette size={12} /> Design canvas</span>
             </div>
              {findOpen && (
               <div className="books-find-bar">
@@ -1953,23 +1957,16 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 <div className="design-tool-group" aria-label="Insert block">
                   <button onClick={() => insertRichBlock("---")} title="Insert scene break" aria-label="Insert scene break"><Minus size={14} /></button>
                 </div>
+                <div className="design-tool-group books-canvas-toggles" aria-label="Canvas overlays">
+                  <button className={showRulers ? "active" : ""} onClick={() => setShowRulers((value) => !value)} title={showRulers ? "Hide rulers" : "Show rulers"} aria-pressed={showRulers}><Ruler size={13} /> Rulers</button>
+                  <button className={showGuides ? "active" : ""} onClick={() => setShowGuides((value) => !value)} title={showGuides ? "Hide margin guides" : "Show margin guides"} aria-pressed={showGuides}><Grid3X3 size={13} /> Guides</button>
+                </div>
                 <div className="design-toolbar-end">
-                  <span className="books-canvas-controlbar-title"><LayoutTemplate size={12} aria-hidden="true" /><strong>{trimWidth} × {trimHeight} in</strong></span>
                   <div className="books-layout-switch" role="group" aria-label="Canvas layout mode">
                     <button className={!freeLayout ? "active" : ""} onClick={() => setFreeLayout(false)} aria-pressed={!freeLayout} title="Flow text blocks in document order"><Rows3 size={12} /> Flow</button>
                     <button className={freeLayout ? "active" : ""} onClick={() => setFreeLayout(true)} aria-pressed={freeLayout} title="Arrange text boxes and objects freely on the artboard"><Move size={12} /> Free</button>
                   </div>
                   <button className="books-page-settings-button" onClick={() => { setEditorSelection({ start: -1, end: -1, titleFocused: false }); setInspectorOpen(true); }} title="Page background and document design" aria-label="Page settings"><PaintBucket size={12} /> Page</button>
-                  <div className="books-canvas-zoom" role="group" aria-label="Canvas zoom">
-                    <button onClick={() => setCanvasZoom((value) => Math.max(60, value - 10))} disabled={canvasZoom <= 60} title="Zoom out" aria-label="Zoom out"><ZoomOut size={13} /></button>
-                    <button className="books-canvas-zoom-value" onClick={() => setCanvasZoom(100)} title="Reset zoom" aria-label={`Reset zoom. Current zoom ${canvasZoom} percent`}>{canvasZoom}%</button>
-                    <button onClick={() => setCanvasZoom((value) => Math.min(160, value + 10))} disabled={canvasZoom >= 160} title="Zoom in" aria-label="Zoom in"><ZoomIn size={13} /></button>
-                    <button className="books-canvas-zoom-fit" onClick={fitCanvasToWidth} title="Fit page to width" aria-label="Fit page to width">Fit</button>
-                  </div>
-                  <div className="books-canvas-toggles">
-                    <button className={showRulers ? "active" : ""} onClick={() => setShowRulers((value) => !value)} title="Toggle rulers" aria-pressed={showRulers}><Ruler size={13} /> Rulers</button>
-                    <button className={showGuides ? "active" : ""} onClick={() => setShowGuides((value) => !value)} title="Toggle margin guides" aria-pressed={showGuides}><Grid3X3 size={13} /> Guides</button>
-                  </div>
                 </div>
               </div>
             {assetOpen && <BooksAssetDrawer onClose={() => setAssetOpen(false)} onInsert={insertAsset} />}
@@ -1980,7 +1977,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                     const target = event.target as HTMLElement;
                     if (!target.closest("[data-canvas-block], input, textarea, button, select, .books-chapter-heading-row")) setEditorSelection({ start: -1, end: -1, titleFocused: false });
                   }}>
-                    {showGuides && <div className="books-page-guide" aria-hidden="true" />}
+                    {showGuides && <div className="books-page-margin-lines" aria-hidden="true"><span className="top" /><span className="right" /><span className="bottom" /><span className="left" /></div>}
                     <div className="books-chapter-heading-row"><input className="books-chapter-title-input" value={title} onFocus={() => setEditorSelection({ start: 0, end: title.length, titleFocused: true })} onChange={(event) => { const value = event.target.value; setTitle(value); setEditorSelection({ start: 0, end: value.length, titleFocused: true }); markDraft({ title: value }); }} placeholder="Section title" aria-label="Section title" /></div>
                     {manuscriptBody}
                   </div>

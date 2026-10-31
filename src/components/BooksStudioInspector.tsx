@@ -291,17 +291,19 @@ function StyleLibrary({ layout, context, onLayoutChange, onReplaceRange }: { lay
     onLayoutChange((current) => ({ ...current, paragraphStyles: current.paragraphStyles.map((style) => style.id === preset.id ? { ...style, name } : style) }));
   };
 
-  return <div className="design-style-library">
-    <div className="design-style-library-head"><div><strong>Paragraph style</strong><small>Applied to this text box</small></div><button className="design-add-style" onClick={createStyle} disabled={!role} title="Create a style from the current selection"><Plus size={13} /> New</button></div>
-    <label className="design-style-select">
-      <Palette size={13} />
-      <select value={activeId ?? ""} onChange={(event) => applyStyle(event.target.value || undefined)} disabled={!isText} aria-label="Paragraph style">
-        <option value="">Role default</option>
-        {layout.paragraphStyles.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-      </select>
-    </label>
+  return <InspectorSection icon={<Palette size={14} />} title="Paragraph style" summary={activePreset?.name ?? "Role default"} defaultOpen>
+    <div className="design-style-picker">
+      <label className="design-style-select">
+        <Palette size={13} />
+        <select value={activeId ?? ""} onChange={(event) => applyStyle(event.target.value || undefined)} disabled={!isText} aria-label="Paragraph style">
+          <option value="">Role default</option>
+          {layout.paragraphStyles.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+        </select>
+      </label>
+      <button className="design-add-style" onClick={createStyle} disabled={!role} title="Create a style from the current selection"><Plus size={13} /> New</button>
+    </div>
     <div className="design-style-library-actions">
-      <button className="design-browse-styles" onClick={() => setBrowseOpen((value) => !value)} aria-expanded={browseOpen}><Palette size={12} /> {browseOpen ? "Hide style cards" : "Browse style cards"}</button>
+      <button className="design-browse-styles" onClick={() => setBrowseOpen((value) => !value)} aria-expanded={browseOpen}><Palette size={12} /> {browseOpen ? "Hide cards" : "Browse cards"}</button>
       {activePreset && <>
         <input key={activePreset.id} className="design-style-name" defaultValue={activePreset.name} onBlur={(event) => { const name = event.target.value.trim(); if (name && name !== activePreset.name) renameStyle(activePreset, name); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} aria-label="Style name" />
         <button onClick={() => duplicateStyle(activePreset)} title="Duplicate style"><Copy size={13} /></button>
@@ -322,7 +324,7 @@ function StyleLibrary({ layout, context, onLayoutChange, onReplaceRange }: { lay
         </button>;
       })}
     </div>}
-  </div>;
+  </InspectorSection>;
 }
 
 function FrameControls({ context, freeLayout, onReplaceRange }: { context: EditorContext; freeLayout: boolean; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {

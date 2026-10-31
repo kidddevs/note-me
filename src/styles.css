@@ -3602,6 +3602,8 @@ textarea:focus-visible,
 .books-editor-workspace { display: flex; flex: 1; min-height: 0; }
 .books-writing-column { display: flex; flex: 1; min-width: 0; min-height: 0; max-width: 820px; margin: 0 auto; flex-direction: column; }
 .books-writing-topline { justify-content: flex-end; gap: 12px; min-height: 37px; padding: 0 20px; color: var(--text-3); font-size: 10px; }
+.books-writing-topline .books-canvas-zoom { margin-left: 0; }
+.topline-zoom { padding: 0 2px; }
 .books-sprint-control { position: relative; display: inline-flex; align-items: center; }
 .books-sprint-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 23px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-3); font: inherit; font-size: 10px; cursor: pointer; }
 .books-sprint-chip:hover { background: var(--surface-hover); color: var(--text); }
@@ -3734,6 +3736,23 @@ textarea:focus-visible,
   border-radius: 1px;
   pointer-events: none;
 }
+.books-page-margin-lines {
+  position: absolute;
+  inset: var(--page-pad-top) var(--page-pad-right) var(--page-pad-bottom) var(--page-pad-left);
+  z-index: 0;
+  pointer-events: none;
+}
+.books-page-margin-lines span {
+  position: absolute;
+  display: block;
+  background: color-mix(in srgb, var(--editor-accent) 52%, transparent);
+}
+.books-page-margin-lines .top { top: 0; right: 0; left: 0; height: 1px; }
+.books-page-margin-lines .bottom { right: 0; bottom: 0; left: 0; height: 1px; }
+.books-page-margin-lines .left { top: 0; bottom: 0; left: 0; width: 1px; }
+.books-page-margin-lines .right { top: 0; right: 0; bottom: 0; width: 1px; }
+.books-chapter-heading-row,
+.books-canvas-host { position: relative; z-index: 1; }
 .books-canvas-ruler {
   position: absolute;
   overflow: hidden;
@@ -4815,6 +4834,16 @@ kbd {
 .design-toolbar-end { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
 .design-toolbar-end .books-canvas-zoom { margin-left: 0; }
 .design-toolbar-end .books-canvas-controlbar-title strong { font-size: 9.5px; }
+.design-toolbar-end .books-layout-switch button,
+.design-toolbar-end .books-canvas-zoom button,
+.design-toolbar-end .books-canvas-toggles button,
+.design-toolbar-end .books-page-settings-button { width: auto; height: 24px; }
+.design-toolbar-end .books-canvas-zoom button { min-width: 24px; padding: 0 5px; }
+.design-toolbar-end .books-canvas-toggles button { padding: 0 6px; }
+.design-toolbar-end .books-canvas-zoom button svg,
+.design-toolbar-end .books-canvas-toggles button svg { flex-shrink: 0; }
+.design-toolbar .books-canvas-toggles button { width: auto; height: 26px; padding: 0 7px; gap: 4px; font-size: 8.5px; }
+.design-toolbar .books-canvas-toggles button svg { flex-shrink: 0; }
 .design-toolbar-label { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px 0 2px; color: var(--text-4); font-size: 8.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
 .design-inline-format { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-xs); }
 .design-inline-format > button { display: flex; width: 24px; height: 24px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-3); font: inherit; font-size: 11px; cursor: pointer; }
@@ -4978,6 +5007,8 @@ kbd {
 .design-style-library-head small { color: var(--text-4); font-size: 8px; }
 .design-add-style { display: inline-flex; align-items: center; gap: 4px; min-height: 25px; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--book-accent) 35%, var(--border)); border-radius: 5px; background: var(--book-accent-soft); color: var(--book-accent); font: inherit; font-size: 8.5px; font-weight: 650; cursor: pointer; }
 .design-add-style:disabled { opacity: .4; cursor: default; }
+.design-style-picker { display: flex; align-items: center; gap: 6px; }
+.design-style-picker .design-style-select { min-width: 0; flex: 1; }
 .design-style-select { display: flex; align-items: center; gap: 6px; height: 31px; padding: 0 7px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--book-accent); }
 .design-style-select select { min-width: 0; flex: 1; height: 28px; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 10.5px; cursor: pointer; }
 .design-style-library-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
