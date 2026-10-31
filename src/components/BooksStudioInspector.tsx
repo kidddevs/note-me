@@ -539,17 +539,19 @@ export function BooksInspector({ context, layout, freeLayout, onLayoutChange, on
       <button onClick={() => onDuplicateRange(context.start, context.end)} aria-label="Duplicate" title="Duplicate"><Copy size={14} /></button>
       <button className="delete" onClick={(event) => onDeleteRange(context.start, context.end, event.currentTarget)} aria-label="Delete" title="Delete"><Trash2 size={14} /></button>
     </div>}
-    {context.kind === "none" ? <DocumentPanel layout={layout} onLayoutChange={onLayoutChange} /> : <>
-      {isText && <StyleLibrary layout={layout} context={context} onLayoutChange={onLayoutChange} onReplaceRange={onReplaceRange} />}
-      {(isText || context.kind === "title") && editingStyle && <TextStyleEditor style={editingStyle} preset={context.kind === "title" ? null : activePreset} role={role} showInlineFormatting={isText} onPatch={patchStyle} onInlineFormat={onInlineFormat} onConvertRole={onConvertRole} onDelete={deleteStyle} onDuplicate={duplicateStyle} />}
-      {isText && <FrameControls context={context} freeLayout={freeLayout} onReplaceRange={onReplaceRange} />}
-      {context.kind === "image" && <ImageInspector context={context} freeLayout={freeLayout} onReplaceRange={onReplaceRange} onReplaceImage={onReplaceImage} />}
-      {context.kind === "table" && <TableInspector context={context} onReplaceRange={onReplaceRange} />}
-      {context.kind === "chart" && <ChartInspector context={context} onReplaceRange={onReplaceRange} />}
-      {context.kind === "callout" && <CalloutInspector context={context} onReplaceRange={onReplaceRange} />}
-      <InspectorSection icon={<BookOpen size={14} />} title="Chapter pulse" summary={`${chapterWords.toLocaleString()} words`} defaultOpen={false}>
-        <div className="design-pulse"><strong>{chapterWords.toLocaleString()}</strong><span>words in this section</span><div className="design-goal-track"><span style={{ width: `${goalProgress}%` }} /></div><div className="design-goal-meta"><span>{totalWords.toLocaleString()} total</span><span>{goalProgress}% of goal</span></div></div>
-      </InspectorSection>
-    </>}
+    <div className="design-inspector-body">
+      {context.kind === "none" ? <DocumentPanel layout={layout} onLayoutChange={onLayoutChange} /> : <>
+        {isText && <StyleLibrary layout={layout} context={context} onLayoutChange={onLayoutChange} onReplaceRange={onReplaceRange} />}
+        {(isText || context.kind === "title") && editingStyle && <TextStyleEditor style={editingStyle} preset={context.kind === "title" ? null : activePreset} role={role} showInlineFormatting={isText} onPatch={patchStyle} onInlineFormat={onInlineFormat} onConvertRole={onConvertRole} onDelete={deleteStyle} onDuplicate={duplicateStyle} />}
+        {isText && <FrameControls context={context} freeLayout={freeLayout} onReplaceRange={onReplaceRange} />}
+        {context.kind === "image" && <ImageInspector context={context} freeLayout={freeLayout} onReplaceRange={onReplaceRange} onReplaceImage={onReplaceImage} />}
+        {context.kind === "table" && <TableInspector context={context} onReplaceRange={onReplaceRange} />}
+        {context.kind === "chart" && <ChartInspector context={context} onReplaceRange={onReplaceRange} />}
+        {context.kind === "callout" && <CalloutInspector context={context} onReplaceRange={onReplaceRange} />}
+        <InspectorSection icon={<BookOpen size={14} />} title="Chapter pulse" summary={`${chapterWords.toLocaleString()} words`} defaultOpen={false}>
+          <div className="design-pulse"><strong>{chapterWords.toLocaleString()}</strong><span>words in this section</span><div className="design-goal-track"><span style={{ width: `${goalProgress}%` }} /></div><div className="design-goal-meta"><span>{totalWords.toLocaleString()} total</span><span>{goalProgress}% of goal</span></div></div>
+        </InspectorSection>
+      </>}
+    </div>
   </aside>;
 }
