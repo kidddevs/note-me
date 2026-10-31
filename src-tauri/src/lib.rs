@@ -349,6 +349,9 @@ pub fn run() {
             update_chapter,
             delete_chapter,
             reorder_chapters,
+            list_chapter_snapshots,
+            create_chapter_snapshot,
+            delete_chapter_snapshot,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

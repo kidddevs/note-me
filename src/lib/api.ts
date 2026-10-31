@@ -7,6 +7,8 @@ import type {
   Chapter,
   ChapterKind,
   ChapterInput,
+  ChapterSnapshot,
+  ChapterSnapshotInput,
   ClipboardItem,
   Note,
   Tag,
@@ -111,6 +113,17 @@ export const api = {
   deleteChapter: (id: number) => invoke<void>("delete_chapter", { id }),
   reorderChapters: (bookId: number, chapterIds: number[]) =>
     invoke<void>("reorder_chapters", { bookId, chapterIds }),
+  listChapterSnapshots: (chapterId: number) =>
+    invoke<ChapterSnapshot[]>("list_chapter_snapshots", { chapterId }),
+  createChapterSnapshot: (chapterId: number, snapshot: ChapterSnapshotInput) =>
+    invoke<ChapterSnapshot>("create_chapter_snapshot", {
+      chapterId,
+      title: snapshot.title,
+      content: snapshot.content,
+      reason: snapshot.reason,
+      wordCount: snapshot.wordCount,
+    }),
+  deleteChapterSnapshot: (id: number) => invoke<void>("delete_chapter_snapshot", { id }),
 
   listCategories: () => invoke<Category[]>("list_categories"),
   createCategory: (name: string, color: string, icon: string) =>

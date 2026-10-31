@@ -55,10 +55,15 @@ Books Studio is a second workspace in the same app, switched from the titlebar b
 - Structured manuscript sections with typed title pages, prologues, chapters, interludes, appendices, front matter, and back matter. Add and classify sections from the left rail or their trackpad context menu.
 - Optional dedication, epigraph, copyright, and acknowledgements pages are editable from the outline and included in exports.
 - Custom trim sizes: 5 x 8, 5.25 x 8, 6 x 9, A5, A4, and US Letter.
+- Paragraph style presets with character, paragraph, indent, spacing, tab, rule, border, shading, hyphenation, justification, drop cap, nested opening, GREP, bullet, numbering, color, underline, strikethrough, column, and role formatting controls. Presets are stored with the book layout, can be created, renamed, duplicated, deleted, and applied to any text box; edits to a preset update every text box using it.
 - Custom role typography for titles, H1-H6 headings, paragraphs, and quotes, including font stacks, size, weight, italic, alignment, line height, and letter spacing. Page-level font size, line height, paragraph spacing, and margins remain available in Book settings.
-- Artwork drawer for local images plus categorized, searchable, recolorable built-in SVG ornaments, dividers, botanical marks, symbols, geometric devices, borders, frames, lines, shapes, and arrows. Line, solid, frame, dotted, and dashed variants can be filtered before insertion. Images can also be pasted or dropped directly into the manuscript; inserted artwork is embedded in the manuscript Markdown for portable exports.
-- Canvas writing mode renders images and rich blocks as selectable visual elements instead of showing their source syntax. Text, images, tables, charts, and callouts can be resized from edge handles; visual elements can be reordered by dragging, and selected blocks can be moved or deleted from the contextual inspector. Text-box placement and width metadata uses hidden Markdown comments so Preview and exports remain clean; Source mode remains available for direct Markdown editing.
-- Page-style canvas with trim-size rulers, margin guides, zoom controls, and a floating quick-format bar for text style, alignment, width, ordering, duplication, and deletion.
+- Artwork drawer for local images plus categorized, searchable, recolorable built-in SVG ornaments, dividers, botanical marks, symbols, geometric devices, borders, frames, lines, shapes, and arrows. Artwork can be dragged from the drawer onto the page or selected and reshaped with crop presets, fit modes, frames, corner treatments, captions, alignment, width, and direct replacement. Images can also be pasted or dropped directly into the manuscript; inserted artwork is embedded in the manuscript Markdown for portable exports.
+- InDesign-style design canvas with Flow and Free layout modes. Flow keeps text in document order; Free turns the safe content area into an artboard where text boxes, artwork, tables, charts, and callouts can be positioned freely in X and Y, resized from either edge, snapped to margins, layered front/back, and reordered. Pointer direct manipulation, an eight-handle transform box with vertical frame resizing, live position/size badges, alignment guides that snap to page edges and sibling objects, zero-height insertion previews, zoom, rulers, guides, and fit-to-width make the page feel like a desktop publishing surface. The canvas itself stays free of floating control rails; selected-object controls live in the right rail.
+- Page appearance settings separate the paper background (default white) and document accent color from the cover color. The editor chrome follows the app appearance accent, while page typography and document accents remain part of the book design. The manuscript breadcrumb bar is gone; its status and settings controls now live in the chapter bar, and canvas tools and page controls share one compact toolbar.
+- Redesigned contextual design inspector for the selected object. Text boxes expose paragraph style presets, character controls, paragraph rhythm, hyphenation, columns, tabs, drop caps, nested openings, paragraph rules, border, shading, bullets, numbering, and GREP styling. Artwork exposes crop shape, fit, width, height, free position, corner radius, border, shadow, opacity, rotation, caption, alt text, alignment, and replacement. Tables, charts, and callouts keep their data and presentation controls in the same inspector, and empty selections reveal document-wide styles and role typography.
+- Page-style canvas with trim-size rulers, per-edge page margins, margin guides, zoom controls, a fit-to-width action, and a freeform page surface. Enter creates a new paragraph on the canvas (Shift+Enter adds a line break), selected text boxes auto-grow, and inline character formatting covers bold, italic, underline, strikethrough, links, quotes, lists, and scene breaks. Source and Preview modes have been removed; Export Studio remains the place to inspect final reader output.
+- Outline workbench with manuscript statistics, reading time, section word-weight bars, drag-to-reorder manuscript order, hidden and empty section health checks, and a curated generated-contents preview.
+- Section-level undo and redo with grouped typing history, plus local version checkpoints captured automatically while writing, on manual save, and before every restore. Checkpoints can be previewed, restored, or deleted from the editor.
 - Portable rich data blocks for GFM tables, configurable tables, bar / line / area / donut / stat charts, callouts, and graph fences. The contextual inspector exposes only the controls for the selected title, text, image, table, chart, or callout.
 - Running headers and footers with left, center, and right slots. Use `{{title}}`, `{{author}}`, `{{section}}`, and `{{page}}` tokens.
 - Flexible page numbering with automatic sequences or manual section range starts, Arabic or Roman styles, custom formats, configurable placement and starting section, plus per-section style overrides.
@@ -115,13 +120,14 @@ Installers are written to `src-tauri/target/release/bundle/`.
 | `Cmd+Ctrl+S` | Toggle the sidebar |
 | `Cmd+Shift+T` | Toggle appearance |
 | `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous tab |
-| `Cmd+F` | Find in Markdown mode / find a section in Books Studio |
+| `Cmd+F` | Find in the current Books Studio section |
 | `Cmd+Alt+F` | Find and replace in a Books Studio section |
-| `Cmd+Alt+0`–`Cmd+Alt+3` | Apply body, H1, H2, or H3 to the selected canvas block |
-| `Cmd+Alt+Q` | Apply quote style to the selected canvas block |
+| `Cmd+Alt+0`–`Cmd+Alt+3` | Apply Body, H1, H2, or H3 to the selected text box |
+| `Cmd+Alt+Q` | Apply quote style to the selected text box |
+| `Cmd+Z` / `Cmd+Shift+Z` | Undo / redo manuscript edits |
 | `Cmd+P` | Print the current note |
-| `Cmd+B` / `Cmd+I` / `Cmd+U` | Bold / italic / underline in rich text |
-| `Cmd+1` / `Cmd+2` | Apply heading 1 / heading 2 in Markdown mode |
+| `Cmd+B` / `Cmd+I` / `Cmd+U` | Bold / italic / underline in rich text and canvas text |
+| `Cmd+Shift+X` | Strikethrough in canvas text |
 
 ## Data and privacy
 

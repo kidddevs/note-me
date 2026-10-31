@@ -113,6 +113,26 @@ export interface ChapterInput {
   tocHeadingExclusions?: string[];
 }
 
+export type ChapterSnapshotReason = "auto" | "manual" | "safety" | "restore";
+
+export interface ChapterSnapshot {
+  id: number;
+  chapter_id: number;
+  book_id: number;
+  title: string;
+  content: string;
+  reason: ChapterSnapshotReason;
+  word_count: number;
+  created_at: string;
+}
+
+export interface ChapterSnapshotInput {
+  title: string;
+  content: string;
+  reason: ChapterSnapshotReason;
+  wordCount: number;
+}
+
 export interface Category {
   id: number;
   name: string;

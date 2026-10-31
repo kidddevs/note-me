@@ -98,7 +98,12 @@ export function fontCss(fontFamily: string) {
 }
 
 export function wordCount(text: string) {
-  return text.trim() ? text.trim().split(/\s+/).length : 0;
+  const clean = text.replace(/<!--[\s\S]*?-->/g, "").replace(/\u200B/g, "").trim();
+  return clean ? clean.split(/\s+/).length : 0;
+}
+
+export function hasManuscriptContent(text: string) {
+  return Boolean(text.replace(/\u200B/g, "").replace(/<!--[\s\S]*?-->/g, "").trim());
 }
 
 export function imageMimeType(path: string) {
@@ -143,6 +148,7 @@ export async function imageFileToMarkdown(file: File) {
 
 function plainTextContent(value: string) {
   return value
+    .replace(/\u200B/g, "")
     .replace(/:::\s*(chart|graph)\s*\n([\s\S]*?)\n:::/gi, (_match, _kind: string, body: string) => {
       const chart = chartDataFromJson(body);
       return chart?.title ? `[Chart: ${chart.title}]` : "[Chart]";
@@ -159,7 +165,8 @@ function plainTextContent(value: string) {
     })
     .replace(/!\[([^\]]*)\]\((?:data:image\/|https?:\/\/)[^)]+\)(?:\{[^}]*\})?/gi, (_match, alt: string) => alt ? `[Image: ${alt}]` : "[Image]")
     .replace(/\[([^\]]+)\]\((?:https?:\/\/|mailto:)[^)]+\)/gi, "$1")
-    .replace(/\s*<!--\s*note-me:layout\s+width=\d{1,3}\s+align=(?:left|center|right)\s*-->/gi, "");
+    .replace(/\s*<!--\s*note-me:layout\s+[^>]*?-->/gi, "")
+    .replace(/<!--\s*note-me:free-layout\s*-->/gi, "");
 }
 
 export function findOccurrences(text: string, query: string) {
@@ -272,31 +279,125 @@ function escapeHtml(value: string) {
 
 type ImageRadius = "none" | "soft" | "round";
 type ImageAlign = "left" | "center" | "right";
+export type ImageAspect = "auto" | "square" | "portrait" | "landscape" | "wide";
+export type ImageFrame = "none" | "hairline" | "mat";
 export type RichAlign = "left" | "center" | "right";
 
 export interface ImagePresentation {
   radius: ImageRadius;
   align: ImageAlign;
   width: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  z?: number;
+  aspect: ImageAspect;
+  fit: "contain" | "cover";
+  frame: ImageFrame;
+  caption: string;
+  cornerRadius?: number;
+  borderWidth?: number;
+  borderColor?: string;
+  borderStyle?: "solid" | "dashed" | "dotted";
+  shadow?: "none" | "soft" | "medium" | "strong";
+  opacity?: number;
+  rotation?: number;
 }
 
 export interface RichPresentation {
   width: number;
   align: RichAlign;
+  x?: number;
+  y?: number;
+  height?: number;
+  z?: number;
+  styleId?: string;
 }
 
 export const DEFAULT_RICH_PRESENTATION: RichPresentation = { width: 100, align: "left" };
 
-const DEFAULT_IMAGE_PRESENTATION: ImagePresentation = { radius: "none", align: "center", width: 100 };
+export function clampPresentationX(value: number | undefined, width: number) {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.round(Math.min(100 - width, Math.max(0, value)) * 10) / 10;
+}
+
+export function clampPresentationHeight(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.round(Math.min(400, Math.max(4, value)) * 10) / 10;
+}
+
+export function clampPresentationY(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.round(Math.min(400, Math.max(0, value)) * 10) / 10;
+}
+
+export function clampPresentationZ(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.round(Math.min(9999, Math.max(-999, value)));
+}
+
+export function clampStyleId(value: unknown) {
+  const clean = String(value ?? "").replace(/[^a-z0-9_-]/gi, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+  return clean || undefined;
+}
+
+export function richPresentationLeft(presentation: RichPresentation) {
+  const width = Math.min(100, Math.max(20, presentation.width));
+  if (presentation.x !== undefined && Number.isFinite(presentation.x)) {
+    return Math.min(100 - width, Math.max(0, presentation.x));
+  }
+  if (presentation.align === "center") return Math.max(0, (100 - width) / 2);
+  if (presentation.align === "right") return Math.max(0, 100 - width);
+  return 0;
+}
+
+export function richAlignForLeft(left: number, width: number): RichAlign {
+  if (width >= 99.5) return "left";
+  const maxLeft = Math.max(0, 100 - width);
+  const centerLeft = maxLeft / 2;
+  if (Math.abs(left - centerLeft) <= 1.5) return "center";
+  if (left <= 1.5) return "left";
+  if (maxLeft - left <= 1.5) return "right";
+  return left + width / 2 < 50 ? "left" : "right";
+}
+
+const DEFAULT_IMAGE_PRESENTATION: ImagePresentation = { radius: "none", align: "center", width: 100, aspect: "auto", fit: "contain", frame: "none", caption: "" };
+
+function decodeAttribute(value: string) {
+  try {
+    return decodeURIComponent(value.replace(/\+/g, "%20"));
+  } catch {
+    return value;
+  }
+}
 
 function parseImageAttributes(value?: string): ImagePresentation {
   const result = { ...DEFAULT_IMAGE_PRESENTATION };
+  let requestedX: number | undefined;
+  let requestedY: number | undefined;
   for (const token of (value ?? "").split(/\s+/).filter(Boolean)) {
     const [key, raw] = token.split("=");
     if (key === "radius" && ["none", "soft", "round"].includes(raw as string)) result.radius = raw as ImageRadius;
     if (key === "align" && ["left", "center", "right"].includes(raw as string)) result.align = raw as ImageAlign;
     if (key === "width" && raw) result.width = Math.min(100, Math.max(20, Number(raw) || 100));
+    if (key === "h" && raw) result.height = Math.min(240, Math.max(5, Number(raw) || 0));
+    if (key === "x" && raw) requestedX = Number(raw);
+    if (key === "y" && raw) requestedY = Number(raw);
+    if (key === "z" && raw) result.z = clampPresentationZ(Number(raw));
+    if (key === "aspect" && ["auto", "square", "portrait", "landscape", "wide"].includes(raw as string)) result.aspect = raw as ImageAspect;
+    if (key === "fit" && ["contain", "cover"].includes(raw as string)) result.fit = raw as "contain" | "cover";
+    if (key === "frame" && ["none", "hairline", "mat"].includes(raw as string)) result.frame = raw as ImageFrame;
+    if (key === "caption" && raw) result.caption = decodeAttribute(raw).slice(0, 240);
+    if (key === "corner" && raw) result.cornerRadius = Math.min(120, Math.max(0, Number(raw) || 0));
+    if (key === "bw" && raw) result.borderWidth = Math.min(20, Math.max(0, Number(raw) || 0));
+    if (key === "bc" && raw) result.borderColor = raw === "accent" || raw.startsWith("#") ? raw : undefined;
+    if (key === "bs" && ["solid", "dashed", "dotted"].includes(raw as string)) result.borderStyle = raw as ImagePresentation["borderStyle"];
+    if (key === "shadow" && ["none", "soft", "medium", "strong"].includes(raw as string)) result.shadow = raw as ImagePresentation["shadow"];
+    if (key === "opacity" && raw) result.opacity = Math.min(1, Math.max(0.05, Number(raw) || 1));
+    if (key === "rotate" && raw) result.rotation = Math.min(180, Math.max(-180, Number(raw) || 0));
   }
+  result.x = clampPresentationX(requestedX, result.width);
+  result.y = clampPresentationY(requestedY);
   return result;
 }
 
@@ -305,6 +406,21 @@ function imageAttributesText(presentation: ImagePresentation) {
     presentation.radius !== "none" ? `radius=${presentation.radius}` : "",
     presentation.align !== "center" ? `align=${presentation.align}` : "",
     presentation.width !== 100 ? `width=${presentation.width}` : "",
+    presentation.height !== undefined ? `h=${presentation.height}` : "",
+    presentation.x !== undefined ? `x=${clampPresentationX(presentation.x, presentation.width)}` : "",
+    presentation.y !== undefined ? `y=${clampPresentationY(presentation.y)}` : "",
+    presentation.z !== undefined ? `z=${clampPresentationZ(presentation.z)}` : "",
+    presentation.aspect !== "auto" ? `aspect=${presentation.aspect}` : "",
+    presentation.fit !== "contain" ? `fit=${presentation.fit}` : "",
+    presentation.frame !== "none" ? `frame=${presentation.frame}` : "",
+    presentation.caption ? `caption=${encodeURIComponent(presentation.caption)}` : "",
+    presentation.cornerRadius !== undefined ? `corner=${presentation.cornerRadius}` : "",
+    presentation.borderWidth !== undefined ? `bw=${presentation.borderWidth}` : "",
+    presentation.borderColor ? `bc=${presentation.borderColor}` : "",
+    presentation.borderStyle ? `bs=${presentation.borderStyle}` : "",
+    presentation.shadow && presentation.shadow !== "none" ? `shadow=${presentation.shadow}` : "",
+    presentation.opacity !== undefined && presentation.opacity !== 1 ? `opacity=${presentation.opacity}` : "",
+    presentation.rotation !== undefined && presentation.rotation !== 0 ? `rotate=${presentation.rotation}` : "",
   ].filter(Boolean);
   return attributes.length ? `{${attributes.join(" ")}}` : "";
 }
@@ -326,10 +442,13 @@ function inlineHtml(value: string) {
     .replace(/__([^_]+)__/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
     .replace(/_([^_]+)_/g, "<em>$1</em>")
+    .replace(/~~([^~]+)~~/g, "<s>$1</s>")
+    .replace(/\+\+([^+]+)\+\+/g, "<u>$1</u>")
     .replace(/!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}]*)\})?/g, (_match, alt: string, source: string, attributes: string | undefined) => {
       if (!/^(?:https?:\/\/|data:image\/)/i.test(source)) return "";
       const presentation = parseImageAttributes(attributes);
-      return `<img class="book-image radius-${presentation.radius} align-${presentation.align}" style="max-width:${presentation.width}%" src="${source}" alt="${alt}" loading="lazy" />`;
+      const frameClass = presentation.frame === "none" ? "" : ` frame-${presentation.frame}`;
+      return `<figure class="book-figure align-${presentation.align}" style="width:${presentation.width}%"><span class="book-image-frame radius-${presentation.radius} aspect-${presentation.aspect} fit-${presentation.fit}${frameClass}"><img class="book-image" src="${source}" alt="${escapeHtml(alt)}" loading="lazy" /></span>${presentation.caption ? `<figcaption>${escapeHtml(presentation.caption)}</figcaption>` : ""}</figure>`;
     })
      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, source: string) => /^(?:https?:\/\/|mailto:|#)/i.test(source) ? `<a href="${source}">${label}</a>` : label);
 }
@@ -369,6 +488,9 @@ export interface ChartData {
   showGrid: boolean;
   width: number;
   align: RichAlign;
+  x?: number;
+  y?: number;
+  z?: number;
 }
 
 export interface TableData {
@@ -377,6 +499,9 @@ export interface TableData {
   striped: boolean;
   compact: boolean;
   width: number;
+  x?: number;
+  y?: number;
+  z?: number;
 }
 
 const CHART_PALETTES: Record<ChartPalette, string[]> = {
@@ -396,9 +521,15 @@ export function objectValue(value: unknown): value is Record<string, unknown> {
 
 export function richPresentationFromValue(value: unknown, fallback: RichPresentation = DEFAULT_RICH_PRESENTATION): RichPresentation {
   if (!objectValue(value)) return { ...fallback };
+  const width = typeof value.width === "number" && Number.isFinite(value.width) ? Math.min(100, Math.max(20, value.width)) : fallback.width;
   return {
-    width: typeof value.width === "number" && Number.isFinite(value.width) ? Math.min(100, Math.max(20, value.width)) : fallback.width,
+    width,
     align: ["left", "center", "right"].includes(String(value.align)) ? String(value.align) as RichAlign : fallback.align,
+    x: clampPresentationX(typeof value.x === "number" ? value.x : undefined, width),
+    y: clampPresentationY(typeof value.y === "number" ? value.y : undefined),
+    height: clampPresentationHeight(typeof value.height === "number" ? value.height : undefined),
+    z: clampPresentationZ(typeof value.z === "number" ? value.z : undefined),
+    styleId: clampStyleId(value.styleId),
   };
 }
 
@@ -589,12 +720,16 @@ function renderCallout(body: string, typography: BookTypography = DEFAULT_BOOK_T
 
 export function tableDataFromValue(value: unknown): TableData {
   if (!objectValue(value)) return { caption: "", align: "left", striped: false, compact: false, width: 100 };
+  const width = typeof value.width === "number" && Number.isFinite(value.width) ? Math.min(100, Math.max(20, value.width)) : 100;
   return {
     caption: typeof value.caption === "string" ? value.caption.slice(0, 120) : "",
     align: ["left", "center", "right"].includes(String(value.align)) ? String(value.align) as TableAlign : "left",
     striped: value.striped === true,
     compact: value.compact === true,
-    width: typeof value.width === "number" && Number.isFinite(value.width) ? Math.min(100, Math.max(20, value.width)) : 100,
+    width,
+    x: clampPresentationX(typeof value.x === "number" ? value.x : undefined, width),
+    y: clampPresentationY(typeof value.y === "number" ? value.y : undefined),
+    z: clampPresentationZ(typeof value.z === "number" ? value.z : undefined),
   };
 }
 
@@ -611,7 +746,7 @@ function renderRichBlock(kind: RichBlockKind, body: string, typography: BookTypo
 }
 
 export function markdownToHtml(markdown: string, anchorPrefix?: string, typography: BookTypography = DEFAULT_BOOK_TYPOGRAPHY) {
-  const lines = markdown.replace(/\r\n/g, "\n").replace(CANVAS_LAYOUT_COMMENT_PATTERN, "").split("\n");
+  const lines = stripCanvasModeMarkers(markdown).replace(/\r\n/g, "\n").replace(CANVAS_LAYOUT_COMMENT_PATTERN, "").split("\n");
   const html: string[] = [];
   let list: "ul" | "ol" | null = null;
   let paragraph: string[] = [];
@@ -699,6 +834,10 @@ export function markdownToHtml(markdown: string, anchorPrefix?: string, typograp
       flushParagraph();
       closeList();
       html.push("<div class=\"scene-break\">* * *</div>");
+    } else if (parseImageLine(line)) {
+      flushParagraph();
+      closeList();
+      html.push(inlineHtml(trimmed));
     } else if (bullet || numbered) {
       flushParagraph();
       const nextList = bullet ? "ul" : "ol";
@@ -843,22 +982,70 @@ export function calloutBlockText(title: string, tone: string, content: string, p
   return `:::callout\n${JSON.stringify({ title, tone, ...presentation })}\n${content}\n:::`;
 }
 
-const CANVAS_LAYOUT_PATTERN = /\s*<!--\s*note-me:layout\s+width=(\d{1,3})\s+align=(left|center|right)\s*-->\s*$/i;
-const CANVAS_LAYOUT_COMMENT_PATTERN = /\s*<!--\s*note-me:layout\s+width=\d{1,3}\s+align=(?:left|center|right)\s*-->/gi;
+const CANVAS_LAYOUT_PATTERN = /\s*<!--\s*note-me:layout\s+([^>]*?)\s*-->\s*$/i;
+const CANVAS_LAYOUT_COMMENT_PATTERN = /\s*<!--\s*note-me:layout\s+[^>]*?-->/gi;
+
+function layoutAttributes(value: string) {
+  const attributes = new Map<string, string>();
+  for (const token of value.split(/\s+/).filter(Boolean)) {
+    const separator = token.indexOf("=");
+    if (separator <= 0) continue;
+    attributes.set(token.slice(0, separator).toLocaleLowerCase(), token.slice(separator + 1));
+  }
+  return attributes;
+}
 
 function canvasLayoutFromSource(source: string) {
   const match = CANVAS_LAYOUT_PATTERN.exec(source);
   if (!match || match.index === undefined) return { clean: source, suffix: "", presentation: { ...DEFAULT_RICH_PRESENTATION } };
   const clean = source.slice(0, match.index).replace(/\s+$/, "");
+  const attributes = layoutAttributes(match[1]);
+  const width = Math.min(100, Math.max(20, Number(attributes.get("width")) || 100));
+  const alignValue = attributes.get("align");
+  const align = ["left", "center", "right"].includes(alignValue ?? "") ? alignValue as RichAlign : "left";
   return {
     clean,
     suffix: source.slice(clean.length),
-    presentation: { width: Math.min(100, Math.max(20, Number(match[1]) || 100)), align: match[2] as RichAlign },
+    presentation: {
+      width,
+      align,
+      ...(attributes.has("x") ? { x: clampPresentationX(Number(attributes.get("x")), width) } : {}),
+      ...(attributes.has("y") ? { y: clampPresentationY(Number(attributes.get("y"))) } : {}),
+      ...(attributes.has("height") ? { height: clampPresentationHeight(Number(attributes.get("height"))) } : {}),
+      ...(attributes.has("z") ? { z: clampPresentationZ(Number(attributes.get("z"))) } : {}),
+      ...(attributes.has("style") ? { styleId: clampStyleId(attributes.get("style")) } : {}),
+    },
   };
 }
 
 function canvasLayoutComment(presentation: RichPresentation) {
-  return presentation.width === 100 && presentation.align === DEFAULT_RICH_PRESENTATION.align ? "" : ` <!-- note-me:layout width=${presentation.width} align=${presentation.align} -->`;
+  const hasCustomX = presentation.x !== undefined && !(presentation.x === 0 && presentation.align === "left");
+  const hasLayout = presentation.width !== 100 || presentation.align !== "left" || hasCustomX || presentation.y !== undefined || presentation.height !== undefined || presentation.z !== undefined || Boolean(presentation.styleId);
+  if (!hasLayout) return "";
+  const attributes = [`width=${presentation.width}`, `align=${presentation.align}`];
+  if (hasCustomX) attributes.push(`x=${clampPresentationX(presentation.x, presentation.width)}`);
+  if (presentation.y !== undefined) attributes.push(`y=${clampPresentationY(presentation.y)}`);
+  if (presentation.height !== undefined) attributes.push(`height=${clampPresentationHeight(presentation.height)}`);
+  if (presentation.z !== undefined) attributes.push(`z=${clampPresentationZ(presentation.z)}`);
+  if (presentation.styleId) attributes.push(`style=${clampStyleId(presentation.styleId)}`);
+  return ` <!-- note-me:layout ${attributes.join(" ")} -->`;
+}
+
+export const EMPTY_CANVAS_PARAGRAPH = "\u200B";
+export const CANVAS_FREE_LAYOUT_MARKER = "<!-- note-me:free-layout -->";
+const CANVAS_FREE_LAYOUT_PATTERN = /<!--\s*note-me:free-layout\s*-->/gi;
+
+export function chapterUsesFreeLayout(content: string) {
+  return /<!--\s*note-me:free-layout\s*-->/i.test(content);
+}
+
+export function setChapterFreeLayout(content: string, free: boolean) {
+  const clean = content.replace(CANVAS_FREE_LAYOUT_PATTERN, "").replace(/\s+$/, "");
+  return free ? `${clean}\n\n${CANVAS_FREE_LAYOUT_MARKER}` : clean;
+}
+
+function stripCanvasModeMarkers(value: string) {
+  return value.replace(CANVAS_FREE_LAYOUT_PATTERN, (match) => " ".repeat(match.length));
 }
 
 export function canvasTextSource(source: string, presentation: RichPresentation) {
@@ -878,6 +1065,23 @@ export function restyleCanvasTextSource(source: string, role: BookTextRole, pres
     return canvasTextSource(`${"#".repeat(level)} ${body.replace(/\r?\n+/g, " ").trim()}`, presentation);
   }
   return canvasTextSource(body, presentation);
+}
+
+export function canvasParagraphBreak(block: CanvasBlock, selectionStart: number, selectionEnd: number, afterPresentation: Partial<RichPresentation> = {}) {
+  if (block.kind !== "text") return null;
+  const display = block.display.replace(/\u200B/g, "");
+  const localStart = Math.max(0, Math.min(display.length, selectionStart));
+  const localEnd = Math.max(localStart, Math.min(display.length, selectionEnd));
+  const before = display.slice(0, localStart);
+  const after = display.slice(localEnd);
+  if (!before.trim() && !after.trim()) return null;
+  const role = block.role ?? "paragraph";
+  const nextRole: BookTextRole = block.level ? "paragraph" : role === "quote" ? "quote" : "paragraph";
+  const presentation = block.presentation;
+  const afterStyle = { ...presentation, ...afterPresentation };
+  const beforeSource = before.trim() ? restyleCanvasTextSource(before, role, presentation) : canvasTextSource(EMPTY_CANVAS_PARAGRAPH, presentation);
+  const afterSource = after.trim() ? restyleCanvasTextSource(after, nextRole, afterStyle) : canvasTextSource(EMPTY_CANVAS_PARAGRAPH, afterStyle);
+  return { source: `${beforeSource}\n\n${afterSource}`, afterOffset: beforeSource.length + 2 };
 }
 
 export function addTableRow(lines: string[]) {
@@ -946,7 +1150,7 @@ function canvasBlockSpecial(value: string) {
 }
 
 export function canvasBlocks(value: string): CanvasBlock[] {
-  const lines = contentLines(value);
+  const lines = contentLines(stripCanvasModeMarkers(value));
   const blocks: CanvasBlock[] = [];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
@@ -966,10 +1170,10 @@ export function canvasBlocks(value: string): CanvasBlock[] {
         const kind = (directive?.[1].toLocaleLowerCase() ?? "chart") as RichBlockKind;
         if (kind === "table") {
           const table = tableContentFromBody(body);
-          blocks.push({ kind, start, end, source, display: source, editPrefix: "", editSuffix: "", tableLines: table.lines, tableOptions: table.options, presentation: { width: table.options.width, align: table.options.align } });
+          blocks.push({ kind, start, end, source, display: source, editPrefix: "", editSuffix: "", tableLines: table.lines, tableOptions: table.options, presentation: { width: table.options.width, align: table.options.align, ...(table.options.x !== undefined ? { x: table.options.x } : {}), ...(table.options.y !== undefined ? { y: table.options.y } : {}), ...(table.options.z !== undefined ? { z: table.options.z } : {}) } });
         } else if (kind === "chart") {
           const chart = chartDataFromJson(body);
-          blocks.push({ kind, start, end, source, display: source, editPrefix: "", editSuffix: "", chart, presentation: chart ? { width: chart.width, align: chart.align } : { ...DEFAULT_RICH_PRESENTATION, align: "center" } });
+          blocks.push({ kind, start, end, source, display: source, editPrefix: "", editSuffix: "", chart, presentation: chart ? { width: chart.width, align: chart.align, ...(chart.x !== undefined ? { x: chart.x } : {}), ...(chart.y !== undefined ? { y: chart.y } : {}), ...(chart.z !== undefined ? { z: chart.z } : {}) } : { ...DEFAULT_RICH_PRESENTATION, align: "center" } });
         } else {
           const parsed = richJsonLine(body);
           const options = objectValue(parsed.value) ? parsed.value : {};
@@ -995,7 +1199,7 @@ export function canvasBlocks(value: string): CanvasBlock[] {
     }
     const image = parseImageLine(line.text);
     if (image) {
-      blocks.push({ kind: "image", start: line.start, end: line.end, source: line.text, display: line.text, editPrefix: "", editSuffix: "", image, presentation: { width: image.presentation.width, align: image.presentation.align } });
+      blocks.push({ kind: "image", start: line.start, end: line.end, source: line.text, display: line.text, editPrefix: "", editSuffix: "", image, presentation: { width: image.presentation.width, align: image.presentation.align, ...(image.presentation.x !== undefined ? { x: image.presentation.x } : {}), ...(image.presentation.y !== undefined ? { y: image.presentation.y } : {}), ...(image.presentation.z !== undefined ? { z: image.presentation.z } : {}) } });
       continue;
     }
     const heading = /^(#{1,6})\s+(.+?)(\s*)$/.exec(trimmed);
@@ -1071,12 +1275,12 @@ export function bookMarkdown(book: Book, chapters: Chapter[]) {
   const orderedChapters = orderBookChapters(chapters);
   const chaptersMarkdown = orderedChapters.map((chapter, index) => {
     const displayLabel = chapterHeading(chapter, index, orderedChapters);
-    return `<a id="${sectionAnchorId(chapter.id)}"></a>\n# ${displayLabel}\n\n${addMarkdownHeadingAnchors(chapter.content.trim(), sectionAnchorId(chapter.id))}\n`;
+    return `<a id="${sectionAnchorId(chapter.id)}"></a>\n# ${displayLabel}\n\n${addMarkdownHeadingAnchors(chapter.content.replace(/\u200B/g, "").replace(/<!--\s*note-me:free-layout\s*-->/gi, "").trim(), sectionAnchorId(chapter.id))}\n`;
   }).join("\n");
   const front = frontMatterSections(book, chapters);
   const back = backMatterSections(book, chapters);
-  const frontMarkdown = front.map((section) => `<a id="${matterAnchorId(section.key)}"></a>\n## ${section.title}\n\n${addMarkdownHeadingAnchors(section.content.trim(), matterAnchorId(section.key))}\n`).join("\n");
-  const backMarkdown = back.map((section) => `<a id="${matterAnchorId(section.key)}"></a>\n## ${section.title}\n\n${addMarkdownHeadingAnchors(section.content.trim(), matterAnchorId(section.key))}\n`).join("\n");
+  const frontMarkdown = front.map((section) => `<a id="${matterAnchorId(section.key)}"></a>\n## ${section.title}\n\n${addMarkdownHeadingAnchors(section.content.replace(/\u200B/g, "").replace(/<!--\s*note-me:free-layout\s*-->/gi, "").trim(), matterAnchorId(section.key))}\n`).join("\n");
+  const backMarkdown = back.map((section) => `<a id="${matterAnchorId(section.key)}"></a>\n## ${section.title}\n\n${addMarkdownHeadingAnchors(section.content.replace(/\u200B/g, "").replace(/<!--\s*note-me:free-layout\s*-->/gi, "").trim(), matterAnchorId(section.key))}\n`).join("\n");
   return [frontMatter, tocEntriesMarkdown(book, chapters), frontMarkdown, chaptersMarkdown, backMarkdown]
     .filter(Boolean)
     .join("\n");
@@ -1123,7 +1327,7 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>${title}</title>
 <style>
-@page { size: ${trimCssSize(book.trim_size)}; margin: ${book.margin}in; }
+@page { size: ${trimCssSize(book.trim_size)}; margin: ${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in; }
 * { box-sizing: border-box; }
  body { margin: 0; color: #24211e; background: #fff; font-family: ${fontCss(book.font_family)}; font-size: ${book.font_size}pt; line-height: ${book.line_height}; } ${typographyCss(layout)}${imagePresentationCss()}
 .title-page { min-height: 70vh; display: flex; flex-direction: column; justify-content: center; text-align: center; page-break-after: always; }
@@ -1263,15 +1467,19 @@ function docxDrawingParagraph(label: string, bytes: Uint8Array, extension: strin
 }
 
 function docxImageParagraph(line: string, assets: DocxAssetState) {
-  const match = /^!\[([^\]]*)\]\(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+)\)(?:\{[^}]*\})?$/.exec(line.trim());
+  const match = /^!\[([^\]]*)\]\(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+)\)(?:\{([^}]*)\})?$/.exec(line.trim());
   if (!match) return null;
-  if (match[2] === "image/webp") return `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>${docxXml(match[1] || "Embedded image")}</w:t></w:r></w:p>`;
+  const captionXml = (() => {
+    const caption = parseImageAttributes(match[4]).caption;
+    return caption ? `<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>${docxXml(caption)}</w:t></w:r></w:p>` : "";
+  })();
+  if (match[2] === "image/webp") return `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>${docxXml(match[1] || "Embedded image")}</w:t></w:r></w:p>${captionXml}`;
   try {
     const bytes = Uint8Array.from(atob(match[3]), (value) => value.charCodeAt(0));
     const extension = match[2] === "image/jpeg" || match[2] === "image/jpg" ? "jpg" : match[2] === "image/svg+xml" ? "svg" : match[2] === "image/gif" ? "gif" : "png";
-    return docxDrawingParagraph(match[1] || "Embedded image", bytes, extension, assets);
+    return `${docxDrawingParagraph(match[1] || "Embedded image", bytes, extension, assets)}${captionXml}`;
   } catch {
-    return `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>${docxXml(match[1] || "Embedded image")}</w:t></w:r></w:p>`;
+    return `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>${docxXml(match[1] || "Embedded image")}</w:t></w:r></w:p>${captionXml}`;
   }
 }
 
@@ -1397,7 +1605,7 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
   ].join("");
   const pageFormat = layout.pageNumbering.style === "roman-lower" ? "lowerRoman" : layout.pageNumbering.style === "roman-upper" ? "upperRoman" : "decimal";
   const pageNumberType = layout.pageNumbering.enabled ? `<w:pgNumType w:fmt="${pageFormat}" w:start="${layout.pageNumbering.start}"/>` : "";
-  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${paragraphs}<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="${pageSize.width}" w:h="${pageSize.height}"/><w:pgMar w:top="${Math.round(book.margin * 1440)}" w:right="${Math.round(book.margin * 1440)}" w:bottom="${Math.round(book.margin * 1440)}" w:left="${Math.round(book.margin * 1440)}"/>${pageNumberType}</w:sectPr></w:body></w:document>`;
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${paragraphs}<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="${pageSize.width}" w:h="${pageSize.height}"/><w:pgMar w:top="${Math.round(layout.pageMargins.top * 1440)}" w:right="${Math.round(layout.pageMargins.right * 1440)}" w:bottom="${Math.round(layout.pageMargins.bottom * 1440)}" w:left="${Math.round(layout.pageMargins.left * 1440)}"/>${pageNumberType}</w:sectPr></w:body></w:document>`;
   const captionStyle: BookTextStyle = { ...layout.typography.heading3, fontSize: Math.max(8, layout.typography.heading3.fontSize - 2), fontWeight: 400, fontStyle: "italic", textAlign: "left" };
   const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr>${docxStyleXml("NormalDefaults", "Normal defaults", layout.typography.paragraph).match(/<w:rPr>([\s\S]*)<\/w:rPr>/)?.[1] ?? ""}</w:rPr></w:rPrDefault></w:docDefaults>${docxStyleXml("Normal", "Normal", layout.typography.paragraph, paragraphAfter)}${docxStyleXml("Title", "Title", layout.typography.title, paragraphAfter, "Normal")}${([1, 2, 3, 4, 5, 6] as const).map((level) => docxStyleXml(`Heading${level}`, `heading ${level}`, layout.typography[`heading${level}`], paragraphAfter, "Normal")).join("")}${docxStyleXml("Quote", "Quote", layout.typography.quote, paragraphAfter, "Normal")}${docxStyleXml("Caption", "Caption", captionStyle, 40, "Normal")}</w:styles>`;
   return zipSync({
@@ -1421,7 +1629,7 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   const epubImages = new Map<string, string>();
   const manifest: string[] = [];
   const spine: string[] = [];
-  const epubCss = `body{font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${book.margin}in}${typographyCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}`;
+  const epubCss = `body{font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in}${typographyCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}`;
   const embedImages = (body: string) => body.replace(/src="(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+))"/gi, (_match, dataUri: string, mime: string, encoded: string) => {
     const existingPath = epubImages.get(dataUri);
     if (existingPath) return `src="${existingPath}"`;
@@ -1503,7 +1711,7 @@ export function typographyCss(layout: BookLayout) {
 }
 
 export function imagePresentationCss() {
-  return ".book-image.radius-soft{border-radius:7px}.book-image.radius-round{border-radius:18px}.book-image.align-left{margin-left:0;margin-right:auto}.book-image.align-center{margin-left:auto;margin-right:auto}.book-image.align-right{margin-left:auto;margin-right:0}";
+  return ".book-figure{margin:1.4em auto;max-width:100%}.book-figure.align-left{margin-left:0;margin-right:auto}.book-figure.align-center{margin-left:auto;margin-right:auto}.book-figure.align-right{margin-left:auto;margin-right:0}.book-image-frame{display:block;width:100%;max-width:100%;overflow:hidden}.book-image-frame img{display:block;width:100%;height:auto;margin:0}.book-image-frame.radius-soft{border-radius:7px}.book-image-frame.radius-round{border-radius:18px}.book-image-frame.aspect-square{aspect-ratio:1/1}.book-image-frame.aspect-portrait{aspect-ratio:3/4}.book-image-frame.aspect-landscape{aspect-ratio:4/3}.book-image-frame.aspect-wide{aspect-ratio:16/9}.book-image-frame.fit-cover img{height:100%;object-fit:cover}.book-image-frame.fit-contain img{height:100%;object-fit:contain}.book-image-frame.frame-hairline{padding:5px;border:1px solid #c9c0b4}.book-image-frame.frame-mat{padding:11px;border:1px solid #d8cfc2;background:#f7f2ea}.book-figure figcaption{margin-top:.55em;color:#6f6259;font-size:.72em;font-style:italic;line-height:1.4;text-align:center}";
 }
 
 export function bookChromeValues(book: Book, layout: BookLayout, key: string, section: string, band: PageBand, ordinal: number) {

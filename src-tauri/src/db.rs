@@ -84,6 +84,26 @@ fn migrate_book_chapters(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+fn migrate_book_snapshots(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS book_snapshots (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            chapter_id INTEGER NOT NULL REFERENCES book_chapters(id) ON DELETE CASCADE,
+            book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            title      TEXT NOT NULL DEFAULT '',
+            content    TEXT NOT NULL DEFAULT '',
+            reason     TEXT NOT NULL DEFAULT 'auto',
+            word_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_book_snapshots_chapter_created
+            ON book_snapshots(chapter_id, created_at DESC, id DESC);
+        "#,
+    )
+    .map_err(|e| e.to_string())
+}
+
 pub fn init(app: &tauri::AppHandle) -> Result<(), String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -196,6 +216,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<(), String> {
 
     migrate_books(&conn)?;
     migrate_book_chapters(&conn)?;
+    migrate_book_snapshots(&conn)?;
 
     let db = Db(Mutex::new(conn));
     app.manage(db);
@@ -204,7 +225,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{migrate_book_chapters, migrate_books};
+    use super::{migrate_book_chapters, migrate_book_snapshots, migrate_books};
     use rusqlite::Connection;
 
     fn columns(conn: &Connection, table: &str) -> Vec<String> {
@@ -235,6 +256,7 @@ mod tests {
 
         migrate_books(&conn).expect("book migration should pass");
         migrate_book_chapters(&conn).expect("chapter migration should pass");
+        migrate_book_snapshots(&conn).expect("snapshot migration should pass");
 
         let book_columns = columns(&conn, "books");
         assert!(book_columns.contains(&"title".to_string()));
@@ -245,5 +267,10 @@ mod tests {
         assert!(chapter_columns.contains(&"chapter_kind".to_string()));
         assert!(chapter_columns.contains(&"toc_include".to_string()));
         assert!(chapter_columns.contains(&"toc_heading_exclusions".to_string()));
+
+        let snapshot_columns = columns(&conn, "book_snapshots");
+        assert!(snapshot_columns.contains(&"chapter_id".to_string()));
+        assert!(snapshot_columns.contains(&"reason".to_string()));
+        assert!(snapshot_columns.contains(&"word_count".to_string()));
     }
 }

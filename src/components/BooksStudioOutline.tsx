@@ -2,8 +2,10 @@ import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } fr
 import {
   ArrowDown,
   ArrowUp,
+  BookOpen,
   Check,
   ChevronRight,
+  Clock3,
   Eye,
   EyeOff,
   GripVertical,
@@ -11,6 +13,7 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -24,6 +27,7 @@ import {
   chapterKindLabel,
   tocTitle,
   wordCount,
+  hasManuscriptContent,
 } from "../lib/bookPublishing";
 import { handleMenuKeyDown, useConfirmationDialog } from "./BooksStudio";
 import type { MatterFocus } from "./BooksStudio";
@@ -300,15 +304,43 @@ export function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOp
   const toc = useMemo(() => buildBookToc(book, chapters, { includeExcludedHeadings: true }), [book, chapters]);
   const visibleTocCount = toc.filter((entry) => entry.included !== false).length;
   const confirmation = useConfirmationDialog();
+  const [dragChapterId, setDragChapterId] = useState<number | null>(null);
+  const [dragOverChapterId, setDragOverChapterId] = useState<number | null>(null);
+  const [dragOverAfter, setDragOverAfter] = useState(false);
+  const totalWords = chapters.reduce((total, chapter) => total + wordCount(chapter.content), 0);
+  const storyChapters = orderedChapters.filter((chapter) => chapterGroup(chapter.chapter_kind) === "story");
+  const hiddenSections = chapters.filter((chapter) => !chapter.toc_include).length;
+  const emptySections = chapters.filter((chapter) => wordCount(chapter.content) === 0).length;
+  const readTime = Math.max(1, Math.ceil(totalWords / 250));
+  const resumeChapter = storyChapters.find((chapter) => wordCount(chapter.content) > 0) ?? storyChapters[0] ?? orderedChapters[0];
   const move = async (index: number, direction: -1 | 1) => {
     const next = [...orderedChapters];
     const destination = index + direction;
-    if (destination < 0 || destination >= next.length) return;
+    if (destination < 0 || destination >= next.length || chapterGroup(next[index].chapter_kind) !== chapterGroup(next[destination].chapter_kind)) return;
     [next[index], next[destination]] = [next[destination], next[index]];
     try {
      await reorderChapters(next.map((chapter) => chapter.id));
     } catch (error) {
       notify("error", "Section order could not be saved", String(error));
+    }
+  };
+  const dropChapter = async (targetId: number, after: boolean) => {
+    if (dragChapterId === null || dragChapterId === targetId) return;
+    const from = orderedChapters.findIndex((chapter) => chapter.id === dragChapterId);
+    const to = orderedChapters.findIndex((chapter) => chapter.id === targetId);
+    if (from === -1 || to === -1 || chapterGroup(orderedChapters[from].chapter_kind) !== chapterGroup(orderedChapters[to].chapter_kind)) return;
+    const next = [...orderedChapters];
+    const [moved] = next.splice(from, 1);
+    const insertAt = from < to ? (after ? to : to - 1) : (after ? to + 1 : to);
+    next.splice(insertAt, 0, moved);
+    try {
+      await reorderChapters(next.map((chapter) => chapter.id));
+    } catch (error) {
+      notify("error", "Section order could not be saved", String(error));
+    } finally {
+      setDragChapterId(null);
+      setDragOverChapterId(null);
+      setDragOverAfter(false);
     }
   };
   const removeChapter = (chapter: Chapter, restoreFocus?: HTMLElement | null) => {
@@ -345,33 +377,100 @@ export function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOp
   ];
   const backMatter = [{ title: "Acknowledgements", content: book.acknowledgements }];
   const matterRow = (section: { title: string; content: string }, focus: MatterFocus) => (
-    <button className="books-matter-row" key={section.title} onClick={() => onOpenMatter(focus)}>
-      <span><strong>{section.title}</strong><small>{section.content.trim() ? `${wordCount(section.content).toLocaleString()} words` : "Not written yet"}</small></span><ChevronRight size={14} />
+    <button className="books-outline-matter" key={section.title} onClick={() => onOpenMatter(focus)}>
+      <span className="books-outline-matter-mark" aria-hidden="true">Aa</span>
+      <span><strong>{section.title}</strong><small>{hasManuscriptContent(section.content) ? `${wordCount(section.content).toLocaleString()} words` : "Not written yet"}</small></span><ChevronRight size={14} />
     </button>
   );
+  const maxStoryWords = Math.max(1, ...storyChapters.map((chapter) => wordCount(chapter.content)));
   return (
     <>
     <div className="books-screen books-outline-screen">
-       <div className="books-screen-heading"><div><span className="books-eyebrow"><LayoutList size={13} /> Structure</span><h1>Outline</h1><p>Reorder the manuscript. Add and classify sections from the left rail.</p></div><div className="books-outline-actions"><button className="books-primary-action" onClick={() => onNewChapter("chapter")}><Plus size={15} /> Add chapter</button></div></div>
-      <div className="books-outline-list">
-        <div className="books-outline-group"><div className="books-outline-group-heading"><span>Front matter</span><small>Before the story</small></div>{frontMatter.map((section) => matterRow(section, "front"))}</div>
-        <div className="books-outline-group books-outline-story"><div className="books-outline-group-heading"><span>Story</span><small>{chapters.length} sections</small></div>
-        {chapters.length === 0 && <div className="books-outline-empty">No story sections yet. Add the first beat of your manuscript.</div>}
-         {orderedChapters.map((chapter, index) => (
-          <div className="books-outline-row" key={chapter.id}>
-             <button className="books-outline-main" onClick={() => onOpenChapter(chapter.id)}><span className="outline-index">{String(index + 1).padStart(2, "0")}</span><span><strong>{chapter.title || "Untitled section"}</strong><small>{chapterKindLabel(chapter.chapter_kind)} · {wordCount(chapter.content).toLocaleString()} words</small></span><ChevronRight size={15} /></button>
-              <div className="books-outline-controls"><span className="books-outline-kind">{chapterKindLabel(chapter.chapter_kind)}</span><button onClick={() => void move(index, -1)} disabled={index === 0 || chapterGroup(orderedChapters[index - 1].chapter_kind) !== chapterGroup(chapter.chapter_kind)} title="Move up" aria-label={`Move ${chapter.title || "untitled section"} up`}><ArrowUp size={14} /></button><button onClick={() => void move(index, 1)} disabled={index === orderedChapters.length - 1 || chapterGroup(orderedChapters[index + 1]?.chapter_kind ?? chapter.chapter_kind) !== chapterGroup(chapter.chapter_kind)} title="Move down" aria-label={`Move ${chapter.title || "untitled section"} down`}><ArrowDown size={14} /></button><button className="danger" onClick={(event) => void removeChapter(chapter, event.currentTarget)} title="Delete section" aria-label={`Delete ${chapter.title || "untitled section"}`}><Trash2 size={14} /></button></div>
-          </div>
-        ))}
+      <div className="books-screen-heading books-outline-heading">
+        <div><span className="books-eyebrow"><LayoutList size={13} /> Structure</span><h1>Outline</h1><p>Shape the reading order, see the weight of each section, and curate the contents map.</p></div>
+        <div className="books-outline-actions">
+          <button className="books-outline-secondary" onClick={() => resumeChapter && onOpenChapter(resumeChapter.id)} disabled={!resumeChapter}><BookOpen size={14} /> Resume writing</button>
+          <button className="books-primary-action" onClick={() => onNewChapter("chapter")}><Plus size={15} /> Add chapter</button>
         </div>
-        <div className="books-outline-group"><div className="books-outline-group-heading"><span>Back matter</span><small>After the story</small></div>{backMatter.map((section) => matterRow(section, "back"))}</div>
-       </div>
-       <section className="books-generated-toc" aria-labelledby="generated-toc-heading">
-          <div className="books-generated-toc-heading"><div><span className="books-eyebrow"><LayoutList size={13} /> Generated contents</span><h2 id="generated-toc-heading">{tocTitle(book)}</h2></div><span>{visibleTocCount === toc.length ? `${toc.length} entries` : `${visibleTocCount} visible · ${toc.length - visibleTocCount} hidden`}</span></div>
-           {toc.length === 0 ? <p className="books-generated-toc-empty">Enable contents in Book settings, then add headings to a section to build this map.</p> : <div className="books-generated-toc-list">{toc.map((entry) => <div key={entry.id} className={`books-generated-toc-item ${entry.included === false ? "hidden" : ""}`} style={{ paddingLeft: `${Math.max(0, entry.level - 1) * 18}px` }}><button className={`books-generated-toc-entry ${entry.source === "heading" ? "heading" : "section"}`} onClick={() => entry.chapterId !== undefined && onOpenChapter(entry.chapterId)}><span>{entry.label}</span>{entry.source === "heading" && <small>H{entry.headingLevel}</small>}</button>{entry.source === "heading" && entry.chapterId !== undefined && <button className="books-generated-toc-toggle" onClick={(event) => { event.stopPropagation(); void toggleHeading(entry); }} aria-label={entry.included === false ? `Include ${entry.label} in contents` : `Hide ${entry.label} from contents`} aria-pressed={entry.included !== false} title={entry.included === false ? "Include heading in contents" : "Hide heading from contents"}>{entry.included === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>}</div>)}</div>}
-       </section>
-     </div>
-     {confirmation.dialog}
-     </>
+      </div>
+      <div className="books-outline-stats">
+        <div className="books-outline-stat"><span>Sections</span><strong>{chapters.length}</strong><small>{storyChapters.length} story · {chapters.length - storyChapters.length} matter</small></div>
+        <div className="books-outline-stat"><span>Total words</span><strong>{totalWords.toLocaleString()}</strong><small>Across the manuscript</small></div>
+        <div className="books-outline-stat"><span>Estimated read</span><strong>{readTime} min</strong><small>At 250 words per minute</small></div>
+        <div className="books-outline-stat"><span>Contents</span><strong>{visibleTocCount}</strong><small>{toc.length - visibleTocCount ? `${toc.length - visibleTocCount} hidden entries` : "All entries visible"}</small></div>
+      </div>
+      <div className="books-outline-workbench">
+        <div className="books-outline-structure">
+          <section className="books-outline-panel">
+            <div className="books-outline-panel-heading"><span><BookOpen size={14} /> Front matter</span><small>Before the story</small></div>
+            <div className="books-outline-matter-list">{frontMatter.map((section) => matterRow(section, "front"))}</div>
+          </section>
+          <section className="books-outline-panel books-outline-story-panel">
+            <div className="books-outline-panel-heading"><span><LayoutList size={14} /> Manuscript order</span><small>{chapters.length} {chapters.length === 1 ? "section" : "sections"} · drag to reorder</small></div>
+            {chapters.length === 0 && <div className="books-outline-empty">No story sections yet. Add the first beat of your manuscript.</div>}
+            <div className="books-outline-story-list">
+              {orderedChapters.map((chapter, index) => {
+                const words = wordCount(chapter.content);
+                const group = chapterGroup(chapter.chapter_kind);
+                const previousGroup = index > 0 ? chapterGroup(orderedChapters[index - 1].chapter_kind) : null;
+                return (
+                  <Fragment key={chapter.id}>
+                    {previousGroup !== group && <div className={`books-outline-band-label ${group}`}><span>{group === "front" ? "Opening pages" : group === "story" ? "Story" : "Closing pages"}</span><span>{chapters.filter((item) => chapterGroup(item.chapter_kind) === group).length}</span></div>}
+                    <div
+                      className={`books-outline-row ${dragChapterId === chapter.id ? "dragging" : ""} ${dragOverChapterId === chapter.id ? `drop-target ${dragOverAfter ? "drop-after" : "drop-before"}` : ""}`}
+                      draggable
+                      onDragStart={(event) => { setDragChapterId(chapter.id); setDragOverChapterId(null); setDragOverAfter(false); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(chapter.id)); }}
+                      onDragEnd={() => { setDragChapterId(null); setDragOverChapterId(null); setDragOverAfter(false); }}
+                      onDragOver={(event) => { const dragged = chapters.find((item) => item.id === dragChapterId); if (dragged && dragChapterId !== chapter.id && chapterGroup(dragged.chapter_kind) === group) { event.preventDefault(); const bounds = event.currentTarget.getBoundingClientRect(); setDragOverChapterId(chapter.id); setDragOverAfter(event.clientY > bounds.top + bounds.height / 2); } }}
+                      onDrop={(event) => { event.preventDefault(); void dropChapter(chapter.id, dragOverAfter); }}
+                    >
+                      <span className="books-outline-grip" aria-hidden="true"><GripVertical size={13} /></span>
+                      <span className="outline-index">{String(index + 1).padStart(2, "0")}</span>
+                      <button className="books-outline-main" onClick={() => onOpenChapter(chapter.id)}>
+                        <span className="books-outline-copy">
+                          <strong>{chapter.title || "Untitled section"}</strong>
+                          <span className="books-outline-meta">{chapterKindLabel(chapter.chapter_kind)} <i /> {words.toLocaleString()} words <i /> {Math.max(1, Math.ceil(words / 250))} min</span>
+                          <span className="books-outline-progress" aria-hidden="true"><span style={{ width: `${Math.max(3, Math.round((words / maxStoryWords) * 100))}%` }} /></span>
+                        </span>
+                        <ChevronRight size={15} />
+                      </button>
+                      <div className="books-outline-controls">
+                        <button onClick={() => void move(index, -1)} disabled={index === 0 || chapterGroup(orderedChapters[index - 1].chapter_kind) !== group} title="Move up" aria-label={`Move ${chapter.title || "untitled section"} up`}><ArrowUp size={14} /></button>
+                        <button onClick={() => void move(index, 1)} disabled={index === orderedChapters.length - 1 || chapterGroup(orderedChapters[index + 1]?.chapter_kind ?? chapter.chapter_kind) !== group} title="Move down" aria-label={`Move ${chapter.title || "untitled section"} down`}><ArrowDown size={14} /></button>
+                        <button className="danger" onClick={(event) => void removeChapter(chapter, event.currentTarget)} title="Delete section" aria-label={`Delete ${chapter.title || "untitled section"}`}><Trash2 size={14} /></button>
+                      </div>
+                    </div>
+                  </Fragment>
+                );
+              })}
+            </div>
+          </section>
+          <section className="books-outline-panel">
+            <div className="books-outline-panel-heading"><span><Sparkles size={14} /> Back matter</span><small>After the story</small></div>
+            <div className="books-outline-matter-list">{backMatter.map((section) => matterRow(section, "back"))}</div>
+          </section>
+        </div>
+        <aside className="books-outline-aside">
+          <section className="books-outline-card books-outline-toc-card" aria-labelledby="generated-toc-heading">
+            <div className="books-outline-card-heading"><div><span className="books-eyebrow"><LayoutList size={13} /> Generated contents</span><strong id="generated-toc-heading">{tocTitle(book)}</strong></div><span>{visibleTocCount === toc.length ? `${toc.length} entries` : `${visibleTocCount} of ${toc.length} visible`}</span></div>
+            {toc.length === 0 ? <p className="books-generated-toc-empty">Enable contents in Book settings, then add headings to a section to build this map.</p> : <div className="books-generated-toc-list">{toc.map((entry) => <div key={entry.id} className={`books-generated-toc-item ${entry.included === false ? "hidden" : ""}`} style={{ paddingLeft: `${Math.max(0, entry.level - 1) * 18}px` }}><button className={`books-generated-toc-entry ${entry.source === "heading" ? "heading" : "section"}`} onClick={() => entry.chapterId !== undefined && onOpenChapter(entry.chapterId)}><span>{entry.label}</span>{entry.source === "heading" && <small>H{entry.headingLevel}</small>}</button>{entry.source === "heading" && entry.chapterId !== undefined && <button className="books-generated-toc-toggle" onClick={(event) => { event.stopPropagation(); void toggleHeading(entry); }} aria-label={entry.included === false ? `Include ${entry.label} in contents` : `Hide ${entry.label} from contents`} aria-pressed={entry.included !== false} title={entry.included === false ? "Include heading in contents" : "Hide heading from contents"}>{entry.included === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>}</div>)}</div>}
+            <p className="books-outline-card-note">Section visibility is controlled from the eye toggle in the sections rail. Heading visibility is curated here.</p>
+          </section>
+          <section className="books-outline-card books-outline-health">
+            <div className="books-outline-card-heading"><div><span className="books-eyebrow"><Sparkles size={13} /> Manuscript health</span><strong>Structure at a glance</strong></div></div>
+            <div className="books-outline-health-list">
+              <div><span><BookOpen size={13} /> Sections</span><strong>{chapters.length}</strong></div>
+              <div><span><Clock3 size={13} /> Read time</span><strong>{readTime} min</strong></div>
+              <div><span><EyeOff size={13} /> Hidden sections</span><strong>{hiddenSections}</strong></div>
+              <div><span><LayoutList size={13} /> Empty sections</span><strong className={emptySections ? "attention" : ""}>{emptySections}</strong></div>
+            </div>
+            {hiddenSections > 0 && <p className="books-outline-health-note">{hiddenSections} {hiddenSections === 1 ? "section is" : "sections are"} hidden from the generated contents.</p>}
+          </section>
+          <p className="books-outline-hint"><GripVertical size={12} /> Drag a section to change its place in the manuscript.</p>
+        </aside>
+      </div>
+    </div>
+    {confirmation.dialog}
+    </>
   );
 }

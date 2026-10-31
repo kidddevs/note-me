@@ -83,6 +83,18 @@ pub struct Chapter {
 }
 
 #[derive(Serialize, Clone)]
+pub struct ChapterSnapshot {
+    pub id: i64,
+    pub chapter_id: i64,
+    pub book_id: i64,
+    pub title: String,
+    pub content: String,
+    pub reason: String,
+    pub word_count: i64,
+    pub created_at: String,
+}
+
+#[derive(Serialize, Clone)]
 pub struct ClipboardItem {
     pub id: i64,
     pub kind: String,

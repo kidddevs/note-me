@@ -15,7 +15,17 @@ const {
   bookText,
   canvasBlocks,
   canvasTextSource,
+  imageMarkdown,
+  markdownToHtml,
   restyleCanvasTextSource,
+  richPresentationLeft,
+  richAlignForLeft,
+  wordCount,
+  hasManuscriptContent,
+  canvasParagraphBreak,
+  chapterUsesFreeLayout,
+  setChapterFreeLayout,
+  EMPTY_CANVAS_PARAGRAPH,
 } = require("./.compiled/src/lib/bookPublishing.js");
 
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -135,10 +145,11 @@ test("Markdown export preserves portable metadata, anchors, and contents", () =>
 test("HTML export includes print geometry, book chrome, rich blocks, and embedded media", () => {
   const output = bookHtml(book(), chapters());
   assert.match(output, /^<!doctype html>/);
-  assert.match(output, /@page \{ size: 6in 9in; margin: 1in; \}/);
+  assert.match(output, /@page \{ size: 6in 9in; margin: 1in 1in 1in 1in; \}/);
   assert.match(output, /class="book-toc"/);
   assert.match(output, /class="book-chrome"/);
-  assert.match(output, /class="book-image radius-soft align-center"/);
+  assert.match(output, /class="book-figure align-center" style="width:30%"/);
+  assert.match(output, /class="book-image-frame radius-soft aspect-auto fit-contain"/);
   assert.ok(output.includes(`data:image/png;base64,${TINY_PNG}`));
   assert.match(visibleText(output), /The first light found the room/);
 });
@@ -253,4 +264,144 @@ test("canvas style changes preserve presentation and convert block roles", () =>
 
   const paragraph = restyleCanvasTextSource(quote, "paragraph", { width: 100, align: "left" });
   assert.equal(paragraph, "A small opening line.");
+});
+
+test("canvas blocks keep a free horizontal offset inside the safe margins", () => {
+  const source = canvasTextSource("A placed line.", { width: 60, align: "left", x: 23 });
+  assert.match(source, /note-me:layout width=60 align=left x=23/);
+  const block = canvasBlocks(source)[0];
+  assert.equal(block.presentation.x, 23);
+  assert.equal(block.presentation.width, 60);
+  assert.equal(richPresentationLeft(block.presentation), 23);
+  assert.equal(richAlignForLeft(0, 60), "left");
+  assert.equal(richAlignForLeft(20, 60), "center");
+  assert.equal(richAlignForLeft(40, 60), "right");
+  assert.equal(richAlignForLeft(0, 100), "left");
+
+  const clamped = canvasBlocks(canvasTextSource("Too far right.", { width: 60, align: "right", x: 95 }))[0];
+  assert.equal(clamped.presentation.x, 40);
+
+  const legacy = canvasBlocks(`${source.replace(" x=23", "")}\n`);
+  assert.equal(legacy[0].presentation.x, undefined);
+});
+
+test("canvas paragraph breaks split blocks, keep styles, and create a typing target", () => {
+  const source = canvasTextSource("A first line with more words.", { width: 60, align: "left", x: 12 });
+  const block = canvasBlocks(source)[0];
+  const split = canvasParagraphBreak(block, block.display.indexOf("more"), block.display.indexOf("more"));
+  const parts = canvasBlocks(split.source);
+  assert.equal(parts.length, 2);
+  assert.equal(parts[0].role, "paragraph");
+  assert.equal(parts[1].role, "paragraph");
+  assert.equal(parts[1].presentation.width, 60);
+  assert.equal(parts[1].presentation.x, 12);
+
+  const atEnd = canvasParagraphBreak(block, block.display.length, block.display.length);
+  const endParts = canvasBlocks(atEnd.source);
+  assert.equal(endParts.length, 2);
+  assert.equal(endParts[1].display, EMPTY_CANVAS_PARAGRAPH);
+
+  const heading = canvasBlocks("## A heading")[0];
+  const headingParts = canvasBlocks(canvasParagraphBreak(heading, heading.display.length, heading.display.length).source);
+  assert.equal(headingParts[0].role, "heading2");
+  assert.equal(headingParts[1].role, "paragraph");
+
+  const quote = canvasBlocks("> A quoted line")[0];
+  const quoteParts = canvasBlocks(canvasParagraphBreak(quote, 3, 3).source);
+  assert.equal(quoteParts[0].role, "quote");
+  assert.equal(quoteParts[1].role, "quote");
+
+  const removed = canvasParagraphBreak(canvasBlocks("Alpha beta gamma")[0], 6, 10);
+  assert.deepEqual(canvasBlocks(removed.source).map((part) => part.display), ["Alpha", "gamma"]);
+});
+
+test("word count ignores empty-paragraph markers and hidden layout metadata", () => {
+  const content = `A considered line. <!-- note-me:layout width=60 align=left x=18 -->\n\n\u200B <!-- note-me:layout width=40 align=right -->`;
+  assert.equal(wordCount(content), 3);
+  assert.equal(hasManuscriptContent(content), true);
+  assert.equal(hasManuscriptContent("\u200B <!-- note-me:layout width=40 align=right -->"), false);
+});
+
+test("free layout positions and paragraph style references round trip", () => {
+  const source = canvasTextSource("Feature copy", { width: 60, align: "left", x: 12, y: 24, height: 18, z: 5, styleId: "feature-opening" });
+  const block = canvasBlocks(source)[0];
+  assert.equal(block.presentation.x, 12);
+  assert.equal(block.presentation.y, 24);
+  assert.equal(block.presentation.height, 18);
+  assert.equal(block.presentation.z, 5);
+  assert.equal(block.presentation.styleId, "feature-opening");
+  assert.match(source, /y=24/);
+  assert.match(source, /height=18/);
+  assert.match(source, /z=5/);
+  assert.match(source, /style=feature-opening/);
+
+  const free = setChapterFreeLayout(`${source}\n\nA second paragraph.`, true);
+  assert.equal(chapterUsesFreeLayout(free), true);
+  assert.equal(canvasBlocks(free).length, 2);
+  assert.doesNotMatch(markdownToHtml(free), /free-layout/);
+  assert.equal(chapterUsesFreeLayout(setChapterFreeLayout(free, false)), false);
+});
+
+test("inline underline and strikethrough survive Markdown rendering", () => {
+  const html = markdownToHtml("A ~~struck~~ note with ++underlined++ words.");
+  assert.match(html, /<s>struck<\/s>/);
+  assert.match(html, /<u>underlined<\/u>/);
+});
+
+test("artwork keeps the free horizontal offset in portable attributes", () => {
+  const markdown = imageMarkdown("A placed figure", "https://example.com/art.png", {
+    radius: "none",
+    align: "left",
+    width: 50,
+    height: 38,
+    x: 12,
+    y: 22,
+    z: 3,
+    aspect: "auto",
+    fit: "contain",
+    frame: "none",
+    caption: "",
+    cornerRadius: 14,
+    borderWidth: 2,
+    borderColor: "#111111",
+    borderStyle: "dashed",
+    shadow: "soft",
+    opacity: 0.8,
+    rotation: 3,
+  });
+  assert.match(markdown, /width=50 h=38 x=12 y=22 z=3/);
+  assert.match(markdown, /corner=14 bw=2 bc=#111111 bs=dashed shadow=soft opacity=0.8 rotate=3/);
+  const block = canvasBlocks(markdown)[0];
+  assert.equal(block.presentation.x, 12);
+  assert.equal(block.presentation.y, 22);
+  assert.equal(block.presentation.z, 3);
+  assert.equal(block.image.presentation.height, 38);
+  assert.equal(block.image.presentation.cornerRadius, 14);
+  assert.equal(block.image.presentation.shadow, "soft");
+  assert.equal(richPresentationLeft(block.presentation), 12);
+
+  const appended = canvasBlocks(imageMarkdown("A placed figure", "https://example.com/art.png", {
+    radius: "none", align: "right", width: 50, x: 999, aspect: "auto", fit: "contain", frame: "none", caption: "",
+  }))[0];
+  assert.equal(appended.presentation.x, 50);
+});
+
+test("artwork presentation metadata round trips into export markup", () => {
+  const markdown = imageMarkdown("A figure", "https://example.com/art.png", {
+    radius: "soft",
+    align: "left",
+    width: 60,
+    aspect: "wide",
+    fit: "cover",
+    frame: "mat",
+    caption: "A considered caption",
+  });
+  assert.match(markdown, /aspect=wide/);
+  assert.match(markdown, /frame=mat/);
+  assert.match(markdown, /caption=A%20considered%20caption/);
+  const html = markdownToHtml(markdown);
+  assert.match(html, /^<figure /);
+  assert.match(html, /class="book-image-frame radius-soft aspect-wide fit-cover frame-mat"/);
+  assert.match(html, /<figcaption>A considered caption<\/figcaption>/);
+  assert.doesNotMatch(html, /<p[^>]*><figure/);
 });

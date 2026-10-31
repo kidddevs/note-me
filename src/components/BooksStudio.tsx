@@ -43,7 +43,6 @@ import { ExportScreen, PrintBook } from "./BooksStudioExport";
 import { SettingsScreen } from "./BooksStudioSettings";
 
 export type StudioScreen = "library" | "manuscript" | "outline" | "settings" | "export";
-export type EditorView = "write" | "preview";
 export type ExportFormat = BookExportFormat;
 export type MatterFocus = "front" | "back";
 
@@ -188,8 +187,32 @@ export async function exportBook(book: Book, chapters: Chapter[], format: Export
   notify("success", "Book exported", path);
 }
 
+function hexChannels(value: string) {
+  const raw = value.replace("#", "").trim();
+  const normalized = raw.length === 3 ? raw.split("").map((part) => `${part}${part}`).join("") : raw.slice(0, 6);
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return null;
+  return [0, 2, 4].map((index) => Number.parseInt(normalized.slice(index, index + 2), 16));
+}
+
+function pageLuminance(value: string) {
+  const channels = hexChannels(value);
+  if (!channels) return 1;
+  const [red, green, blue] = channels.map((channel) => {
+    const unit = channel / 255;
+    return unit <= 0.03928 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function colorWithAlpha(value: string, alpha: number) {
+  const channels = hexChannels(value);
+  if (!channels) return `rgba(165, 107, 62, ${alpha})`;
+  return `rgba(${channels.join(", ")}, ${alpha})`;
+}
+
 export function manuscriptStyle(book: Book): CSSProperties {
-  const typography = layoutForBook(book).typography;
+  const layout = layoutForBook(book);
+  const typography = layout.typography;
   const typographyVars = Object.fromEntries(Object.entries(typography).flatMap(([role, style]) => [
     [`--book-${role}-font`, fontCss(style.fontFamily)],
     [`--book-${role}-size`, `${style.fontSize}pt`],
@@ -212,13 +235,23 @@ export function manuscriptStyle(book: Book): CSSProperties {
     [`--book-${role}-nested-font`, fontCss(style.nestedFontFamily)],
     [`--book-${role}-nested-color`, style.nestedColor],
   ]));
+  const pageColor = layout.pageColor || "#ffffff";
+  const lightPage = pageLuminance(pageColor) > 0.55;
   return {
-    "--book-accent": book.cover_color || "#a56b3e",
+    "--book-paper": pageColor,
+    "--book-ink": lightPage ? "#29231e" : "#f3e9dc",
+    "--book-muted": lightPage ? "#817970" : "#a99d91",
+    "--document-accent": layout.accentColor || "#a56b3e",
+    "--document-accent-soft": colorWithAlpha(layout.accentColor || "#a56b3e", 0.12),
     "--book-font": fontCss(book.font_family),
     "--book-font-size": `${book.font_size}pt`,
     "--book-line-height": book.line_height,
     "--book-paragraph-spacing": `${book.paragraph_spacing}em`,
     "--book-margin": `${book.margin}in`,
+    "--book-margin-top": String(layout.pageMargins.top),
+    "--book-margin-right": String(layout.pageMargins.right),
+    "--book-margin-bottom": String(layout.pageMargins.bottom),
+    "--book-margin-left": String(layout.pageMargins.left),
     ...typographyVars,
   } as CSSProperties;
 }
@@ -587,8 +620,8 @@ export function BooksStudio() {
          {selectedBook && <SectionsRail chapters={chapters} activeChapterId={activeChapterId} onSelect={openChapter} onNewChapter={(kind) => void newChapter(kind)} />}
        </aside>
        <main className="books-main">
-         <div className="books-main-header"><div className="books-breadcrumb"><button onClick={() => switchScreen("library")}>Books Studio</button>{selectedBook && <><ChevronRight size={13} /><strong>{selectedBook.title || "Untitled manuscript"}</strong></>}</div>{selectedBook && <div className="books-header-actions"><span className={`book-status-pill ${selectedBook.status}`}>{selectedBook.status.replace("revising", "in revision")}</span><button className="books-header-icon" onClick={() => switchScreen("settings")} title="Book settings" aria-label="Book settings"><Settings2 size={15} /></button></div>}</div>
-            {!selectedBook && screen !== "library" ? <div className="books-no-selection"><ArrowLeft size={20} /><h2>Choose a manuscript first.</h2><button className="books-primary-action" onClick={() => switchScreen("library")}>Back to library</button></div> : screen === "library" ? <LibraryScreen books={books} creating={creatingBook} deletingBookId={deletingBookId} onNew={() => void newBook()} onOpen={(id) => void openBook(id)} onDelete={(book) => void removeBook(book)} /> : selectedBook && screen === "manuscript" ? <ManuscriptScreen book={selectedBook} chapters={orderedChapters} activeChapter={activeChapter} focusMode={editorFocusMode} onFocusModeChange={setEditorFocusMode} onOpenOutline={() => switchScreen("outline")} onNewChapter={() => void newChapter()} onNavigateSection={navigateSection} /> : selectedBook && screen === "outline" ? <OutlineScreen book={selectedBook} chapters={chapters} onNewChapter={(kind) => void newChapter(kind)} onOpenMatter={openMatter} onOpenChapter={openChapter} /> : selectedBook && screen === "settings" ? <SettingsScreen book={selectedBook} chapters={chapters} focus={settingsFocus} /> : selectedBook ? <ExportScreen book={selectedBook} chapters={chapters} onNavigate={switchScreen} onOpenChapter={openChapter} /> : null}
+         {screen !== "manuscript" && <div className="books-main-header"><div className="books-breadcrumb"><button onClick={() => switchScreen("library")}>Books Studio</button>{selectedBook && <><ChevronRight size={13} /><strong>{selectedBook.title || "Untitled manuscript"}</strong></>}</div>{selectedBook && <div className="books-header-actions"><span className={`book-status-pill ${selectedBook.status}`}>{selectedBook.status.replace("revising", "in revision")}</span><button className="books-header-icon" onClick={() => switchScreen("settings")} title="Book settings" aria-label="Book settings"><Settings2 size={15} /></button></div>}</div>}
+            {!selectedBook && screen !== "library" ? <div className="books-no-selection"><ArrowLeft size={20} /><h2>Choose a manuscript first.</h2><button className="books-primary-action" onClick={() => switchScreen("library")}>Back to library</button></div> : screen === "library" ? <LibraryScreen books={books} creating={creatingBook} deletingBookId={deletingBookId} onNew={() => void newBook()} onOpen={(id) => void openBook(id)} onDelete={(book) => void removeBook(book)} /> : selectedBook && screen === "manuscript" ? <ManuscriptScreen book={selectedBook} chapters={orderedChapters} activeChapter={activeChapter} focusMode={editorFocusMode} onFocusModeChange={setEditorFocusMode} onOpenOutline={() => switchScreen("outline")} onOpenSettings={() => switchScreen("settings")} onNewChapter={() => void newChapter()} onNavigateSection={navigateSection} /> : selectedBook && screen === "outline" ? <OutlineScreen book={selectedBook} chapters={chapters} onNewChapter={(kind) => void newChapter(kind)} onOpenMatter={openMatter} onOpenChapter={openChapter} /> : selectedBook && screen === "settings" ? <SettingsScreen book={selectedBook} chapters={chapters} focus={settingsFocus} /> : selectedBook ? <ExportScreen book={selectedBook} chapters={chapters} onNavigate={switchScreen} onOpenChapter={openChapter} /> : null}
           </main>
           {selectedBook && <PrintBook book={selectedBook} chapters={chapters} toc={selectedToc} />}
            <BooksCommandPalette open={commandOpen} bookTitle={selectedBook ? (selectedBook.title || "Untitled manuscript") : undefined} chapters={orderedChapters} onClose={() => setCommandOpen(false)} onNavigate={switchScreen} onNewChapter={(kind) => void newChapter(kind)} onOpenChapter={openChapter} />

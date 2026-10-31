@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db::Db;
-use crate::models::{AppStats, Book, Category, Chapter, ClipboardItem, Note, Tag, TaskItem};
+use crate::models::{
+    AppStats, Book, Category, Chapter, ChapterSnapshot, ClipboardItem, Note, Tag, TaskItem,
+};
 
 fn with_conn<T>(
     state: &State<Db>,
@@ -1023,6 +1025,118 @@ pub fn reorder_chapters(
         )
         .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
+    })
+}
+
+const SNAPSHOT_SELECT: &str = r#"
+    SELECT id, chapter_id, book_id, title, content, reason, word_count, created_at
+    FROM book_snapshots
+"#;
+
+fn row_to_snapshot(row: &rusqlite::Row) -> rusqlite::Result<ChapterSnapshot> {
+    Ok(ChapterSnapshot {
+        id: row.get(0)?,
+        chapter_id: row.get(1)?,
+        book_id: row.get(2)?,
+        title: row.get(3)?,
+        content: row.get(4)?,
+        reason: row.get(5)?,
+        word_count: row.get(6)?,
+        created_at: row.get(7)?,
+    })
+}
+
+fn validate_snapshot_reason(value: &str) -> Result<(), String> {
+    match value {
+        "auto" | "manual" | "safety" | "restore" => Ok(()),
+        _ => Err("snapshot reason is not supported".to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn list_chapter_snapshots(
+    state: State<Db>,
+    chapter_id: i64,
+) -> Result<Vec<ChapterSnapshot>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn
+            .prepare(&format!(
+                "{SNAPSHOT_SELECT} WHERE chapter_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 50"
+            ))
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![chapter_id], row_to_snapshot)
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        Ok(rows)
+    })
+}
+
+#[tauri::command]
+pub fn create_chapter_snapshot(
+    state: State<Db>,
+    chapter_id: i64,
+    title: String,
+    content: String,
+    reason: String,
+    word_count: i64,
+) -> Result<ChapterSnapshot, String> {
+    validate_snapshot_reason(&reason)?;
+    with_conn(&state, |conn| {
+        let book_id: Option<i64> = conn
+            .query_row(
+                "SELECT book_id FROM book_chapters WHERE id = ?1",
+                params![chapter_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let book_id = book_id.ok_or_else(|| "chapter not found".to_string())?;
+        conn.execute(
+            "INSERT INTO book_snapshots (chapter_id, book_id, title, content, reason, word_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                chapter_id,
+                book_id,
+                title,
+                content,
+                reason,
+                word_count.max(0)
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        let id = conn.last_insert_rowid();
+        conn.execute(
+            "DELETE FROM book_snapshots
+             WHERE chapter_id = ?1 AND id NOT IN (
+                 SELECT id FROM book_snapshots
+                 WHERE chapter_id = ?1
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 50
+             )",
+            params![chapter_id],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.query_row(
+            &format!("{SNAPSHOT_SELECT} WHERE id = ?1"),
+            params![id],
+            row_to_snapshot,
+        )
+        .map_err(|e| e.to_string())
+    })
+}
+
+#[tauri::command]
+pub fn delete_chapter_snapshot(state: State<Db>, id: i64) -> Result<(), String> {
+    with_conn(&state, |conn| {
+        let deleted = conn
+            .execute("DELETE FROM book_snapshots WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        if deleted != 1 {
+            return Err("snapshot not found".to_string());
+        }
+        Ok(())
     })
 }
 

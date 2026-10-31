@@ -1,4 +1,5 @@
 import { buildBookToc } from "./bookToc";
+import { hasManuscriptContent } from "./bookPublishing";
 import type { Book, Chapter } from "./types";
 
 export type BookExportCheckSeverity = "error" | "warning" | "info";
@@ -33,7 +34,7 @@ export function bookExportChecks(book: Book, chapters: Chapter[]): BookExportChe
     return checks;
   }
 
-  const emptyStorySections = chapters.filter((chapter) => STORY_KINDS.has(chapter.chapter_kind) && !chapter.content.trim());
+  const emptyStorySections = chapters.filter((chapter) => STORY_KINDS.has(chapter.chapter_kind) && !hasManuscriptContent(chapter.content));
   if (emptyStorySections.length) {
     checks.push({
       id: "empty-sections",
