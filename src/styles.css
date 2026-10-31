@@ -3715,10 +3715,11 @@ textarea:focus-visible,
 .books-page-frame { position: relative; width: min(100%, 780px); flex-shrink: 0; margin: 0 auto; container-type: inline-size; }
 .books-page-frame.with-rulers { padding: 20px 0 0 20px; }
 .books-page-sheet {
-  --page-pad-top: clamp(34px, calc(var(--book-margin-top, 1) * 1in), 180px);
-  --page-pad-right: clamp(30px, calc(var(--book-margin-right, 1) * 1in), 180px);
-  --page-pad-bottom: clamp(40px, calc(var(--book-margin-bottom, 1) * 1in), 180px);
-  --page-pad-left: clamp(30px, calc(var(--book-margin-left, 1) * 1in), 180px);
+  --page-inch: calc(100cqw / var(--book-trim-width, 6));
+  --page-pad-top: clamp(22px, calc(var(--book-margin-top, 1) * var(--page-inch)), 240px);
+  --page-pad-right: clamp(22px, calc(var(--book-margin-right, 1) * var(--page-inch)), 240px);
+  --page-pad-bottom: clamp(26px, calc(var(--book-margin-bottom, 1) * var(--page-inch)), 240px);
+  --page-pad-left: clamp(22px, calc(var(--book-margin-left, 1) * var(--page-inch)), 240px);
   position: relative;
   display: flex;
   width: 100%;
@@ -4818,7 +4819,7 @@ kbd {
   .books-page-editor,
   .books-manuscript-preview { padding-right: 22px; padding-left: 22px; }
   .books-page-editor { padding-top: 14px; padding-bottom: 50px; }
-  .books-page-sheet { --page-pad-top: clamp(30px, calc(var(--book-margin-top, 1) * 72px), 64px); --page-pad-right: clamp(22px, calc(var(--book-margin-right, 1) * 72px), 56px); --page-pad-bottom: clamp(34px, calc(var(--book-margin-bottom, 1) * 72px), 64px); --page-pad-left: clamp(22px, calc(var(--book-margin-left, 1) * 72px), 56px); min-height: 520px; }
+  .books-page-sheet { --page-pad-top: clamp(20px, calc(var(--book-margin-top, 1) * var(--page-inch)), 82px); --page-pad-right: clamp(16px, calc(var(--book-margin-right, 1) * var(--page-inch)), 64px); --page-pad-bottom: clamp(24px, calc(var(--book-margin-bottom, 1) * var(--page-inch)), 82px); --page-pad-left: clamp(16px, calc(var(--book-margin-left, 1) * var(--page-inch)), 64px); min-height: 520px; }
   .books-canvas-controlbar { padding-right: 12px; padding-left: 12px; }
   .books-canvas-quickbar { top: -34px; max-width: calc(100vw - 40px); overflow-x: auto; }
   .books-preview-toolbar { align-items: flex-start; flex-direction: column; padding-top: 8px; padding-bottom: 8px; }

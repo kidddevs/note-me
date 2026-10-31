@@ -237,7 +237,10 @@ export function manuscriptStyle(book: Book): CSSProperties {
   ]));
   const pageColor = layout.pageColor || "#ffffff";
   const lightPage = pageLuminance(pageColor) > 0.55;
+  const [trimWidth = 6, trimHeight = 9] = (book.trim_size || "6x9").split("x").map((value) => Number(value) || 0);
   return {
+    "--book-trim-width": String(trimWidth || 6),
+    "--book-trim-height": String(trimHeight || 9),
     "--book-paper": pageColor,
     "--book-ink": lightPage ? "#29231e" : "#f3e9dc",
     "--book-muted": lightPage ? "#817970" : "#a99d91",
