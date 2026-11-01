@@ -2,7 +2,9 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSPrope
 import {
   ArrowLeft,
   BookOpen,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Download,
   LayoutList,
   Library,
@@ -267,6 +269,7 @@ export function BooksPageChrome({ book, keyName, section, band, ordinal }: { boo
 }
 
 function ScreenNav({ screen, hasBook, onChange }: { screen: StudioScreen; hasBook: boolean; onChange: (screen: StudioScreen) => void }) {
+  const [workspaceOpen, setWorkspaceOpen] = useState(true);
   const modifier = navigator.userAgent.includes("Macintosh") || navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+";
   const items: { id: StudioScreen; label: string; icon: typeof Library; shortcut: string }[] = [
     { id: "library", label: "Library", icon: Library, shortcut: `${modifier}1` },
@@ -277,8 +280,11 @@ function ScreenNav({ screen, hasBook, onChange }: { screen: StudioScreen; hasBoo
   ];
   return (
     <nav className="books-nav" aria-label="Books Studio">
-      <span className="books-nav-label">Workspace</span>
-      {items.map(({ id, label, icon: Icon, shortcut }) => {
+      <button className="books-nav-label books-collapsible" onClick={() => setWorkspaceOpen((open) => !open)} aria-expanded={workspaceOpen} title={workspaceOpen ? "Collapse workspace" : "Expand workspace"}>
+        <span>Workspace</span>
+        {workspaceOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+      </button>
+      {workspaceOpen && items.map(({ id, label, icon: Icon, shortcut }) => {
         const disabled = id !== "library" && !hasBook;
         return (
           <button key={id} className={`books-nav-item ${screen === id ? "active" : ""}`} onClick={() => onChange(id)} title={disabled ? `Choose a manuscript to open ${label.toLocaleLowerCase()}` : `${label} (${shortcut})`} disabled={disabled} aria-current={screen === id ? "page" : undefined}>
@@ -463,6 +469,7 @@ export function BooksStudio() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [creatingBook, setCreatingBook] = useState(false);
   const [deletingBookId, setDeletingBookId] = useState<number | null>(null);
+  const [shelfOpen, setShelfOpen] = useState(true);
   const [editorFocusMode, setEditorFocusMode] = useState(false);
   const confirmation = useConfirmationDialog();
   const selectedBook = useMemo(() => books.find((book) => book.id === selectedBookId) ?? null, [books, selectedBookId]);
@@ -618,8 +625,11 @@ export function BooksStudio() {
         <button className="books-new-button" onClick={() => void newBook()} disabled={creatingBook}><Plus size={15} /> {creatingBook ? "Creating…" : "New manuscript"}</button>
         <ScreenNav screen={screen} hasBook={Boolean(selectedBook)} onChange={switchScreen} />
         <div className="books-sidebar-divider" />
-        <div className="books-shelf-heading"><span>Your shelf</span><button onClick={() => void newBook()} title="New manuscript" aria-label="New manuscript" disabled={creatingBook}><Plus size={13} /></button></div>
-         <div className="books-sidebar-books">{books.map((book) => <button key={book.id} className={`books-sidebar-book ${book.id === selectedBookId ? "active" : ""}`} onClick={() => void openBook(book.id)}><span>{book.title || "Untitled manuscript"}</span></button>)}{books.length === 0 && <span className="books-no-books">No manuscripts yet</span>}</div>
+        <div className="books-shelf-heading">
+          <button className="books-shelf-toggle" onClick={() => setShelfOpen((open) => !open)} aria-expanded={shelfOpen} title={shelfOpen ? "Collapse shelf" : "Expand shelf"}><span>Your shelf</span>{shelfOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</button>
+          <button className="books-shelf-add" onClick={() => void newBook()} title="New manuscript" aria-label="New manuscript" disabled={creatingBook}><Plus size={13} /></button>
+        </div>
+         {shelfOpen && <div className="books-sidebar-books">{books.map((book) => <button key={book.id} className={`books-sidebar-book ${book.id === selectedBookId ? "active" : ""}`} onClick={() => void openBook(book.id)}><span>{book.title || "Untitled manuscript"}</span></button>)}{books.length === 0 && <span className="books-no-books">No manuscripts yet</span>}</div>}
          {selectedBook && <SectionsRail chapters={chapters} activeChapterId={activeChapterId} onSelect={openChapter} onNewChapter={(kind) => void newChapter(kind)} />}
        </aside>
        <main className="books-main">

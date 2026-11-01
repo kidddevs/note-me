@@ -76,6 +76,7 @@ import {
   type TableAlign,
 } from "../lib/bookPublishing";
 import { cloneParagraphStyle, styleColor, styleFromRole, uniqueStyleId } from "../lib/bookStyles";
+import { PagePatternPicker } from "./PagePatternPicker";
 
 function InspectorSection({ icon, title, summary, children, defaultOpen = false }: { icon: ReactNode; title: string; summary?: string; children: ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -487,6 +488,7 @@ function DocumentPanel({ layout, onLayoutChange }: { layout: BookLayout; onLayou
       <div className="design-color-presets" aria-label="Document accent presets">
         {([["Editorial", "#a56b3e"], ["Ink", "#29231e"], ["Botanical", "#6f7f6d"], ["Berry", "#874e47"], ["Ocean", "#486777"]] as const).map(([label, color]) => <button key={label} style={{ background: color }} onClick={() => onLayoutChange((current) => ({ ...current, accentColor: color }))} title={`${label} document accent`} aria-label={`${label} document accent`} />)}
       </div>
+      <div className="design-field wide"><span>Paper pattern</span><PagePatternPicker layout={layout} onChange={onLayoutChange} /></div>
       <p className="design-help">Page background and document accent are separate from the cover color. The editor chrome follows the app appearance instead.</p>
     </InspectorSection>
     <InspectorSection icon={<Frame size={14} />} title="Page margins" summary={`${layout.pageMargins.top} / ${layout.pageMargins.right} / ${layout.pageMargins.bottom} / ${layout.pageMargins.left} in`}>

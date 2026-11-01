@@ -4,7 +4,9 @@ import {
   ArrowUp,
   BookOpen,
   Check,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clock3,
   Eye,
   EyeOff,
@@ -49,6 +51,7 @@ export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter
   const [dragChapterId, setDragChapterId] = useState<number | null>(null);
   const [dragOverChapterId, setDragOverChapterId] = useState<number | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<"front" | "story" | "back", boolean>>({ front: false, story: false, back: false });
+  const [railOpen, setRailOpen] = useState(true);
   const [addMenuStyle, setAddMenuStyle] = useState<CSSProperties | null>(null);
   const [contextMenuStyle, setContextMenuStyle] = useState<CSSProperties | null>(null);
   const railRef = useRef<HTMLElement>(null);
@@ -197,17 +200,19 @@ export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter
 
   return (
     <>
-    <section ref={railRef} className="books-sections-rail" aria-labelledby="books-sections-heading">
+    <section ref={railRef} className={`books-sections-rail ${railOpen ? "" : "collapsed"}`} aria-labelledby="books-sections-heading">
       <div className="books-sections-heading">
-        <div>
+        <button className="books-sections-toggle" onClick={() => setRailOpen((open) => !open)} aria-expanded={railOpen} title={railOpen ? "Collapse sections" : "Expand sections"}>
           <span id="books-sections-heading">Sections</span>
           <small>{chapters.length} {chapters.length === 1 ? "section" : "sections"}</small>
-        </div>
-         <div className="books-sections-heading-actions">
+          {railOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+        {railOpen && <div className="books-sections-heading-actions">
            {chapters.length > 4 && <button className="books-section-add-button" onClick={() => { setAddOpen(false); closeContextMenu(); setSearchOpen((open) => !open); }} aria-label="Search sections" aria-expanded={searchOpen} title="Search sections"><Search size={13} /></button>}
            <button className="books-section-add-button" onClick={(event) => { menuTriggerRef.current = event.currentTarget; closeContextMenu(); setSearchOpen(false); if (addOpen) closeAddMenu(true); else { setAddOpen(true); setAddMenuStyle(popoverStyle(event.currentTarget, 430)); } }} aria-label="Add section" aria-expanded={addOpen} aria-haspopup="menu" title="Add section"><Plus size={14} /></button>
-         </div>
+         </div>}
        </div>
+       {railOpen && <>
        {searchOpen && <div className="books-section-search"><Search size={12} /><input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setSearchQuery(""); setSearchOpen(false); } }} placeholder="Filter sections" aria-label="Filter sections" />{searchQuery && <button onClick={() => setSearchQuery("")} aria-label="Clear section search"><X size={12} /></button>}</div>}
        {addOpen && (
          <div ref={addMenuRef} className="books-section-add-menu" role="menu" aria-label="Add section" style={addMenuStyle ?? undefined} onKeyDown={(event) => handleMenuKeyDown(event, () => closeAddMenu(true))}>
@@ -277,6 +282,7 @@ export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter
           })}
         </div>
       )}
+      </>}
       {menuChapter && <div ref={contextMenuRef} className="books-section-context" role="menu" aria-label={`Options for ${menuChapter.title || "untitled section"}`} style={contextMenuStyle ?? undefined} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => handleMenuKeyDown(event, () => closeContextMenu(true))}>
         <span className="books-section-menu-kicker">Section type</span>
         {CHAPTER_KIND_OPTIONS.map((option) => (
@@ -290,7 +296,7 @@ export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter
         <button role="menuitem" onClick={() => { closeContextMenu(); void toggleContents(menuChapter); }}>{menuChapter.toc_include ? <EyeOff size={13} /> : <Eye size={13} />}{menuChapter.toc_include ? "Hide from contents" : "Include in contents"}</button>
         <button role="menuitem" className="danger" onClick={() => void removeChapter(menuChapter, menuTriggerRef.current)}><Trash2 size={13} /> Delete section</button>
       </div>}
-       <p className="books-sections-hint">Right-click for options. Focus a section and use Up/Down to move through the rail.</p>
+       {railOpen && <p className="books-sections-hint">Right-click for options. Focus a section and use Up/Down to move through the rail.</p>}
     </section>
     {confirmation.dialog}
     </>

@@ -2518,6 +2518,9 @@ textarea:focus-visible,
 .books-nav-label {
   padding: 0 9px 7px;
 }
+.books-nav-label.books-collapsible { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 6px; padding: 0 9px 7px; border: 0; background: transparent; color: var(--text-3); font: inherit; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.books-nav-label.books-collapsible:hover { color: var(--book-accent); }
+.books-nav-label.books-collapsible svg { flex-shrink: 0; color: var(--text-4); }
 
 .books-eyebrow {
   display: inline-flex;
@@ -2573,7 +2576,10 @@ textarea:focus-visible,
   padding: 0 9px 8px;
 }
 
-.books-shelf-heading button {
+.books-shelf-toggle { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: .1em; text-transform: uppercase; text-align: left; cursor: pointer; }
+.books-shelf-toggle:hover { color: var(--book-accent); }
+.books-shelf-toggle svg { flex-shrink: 0; margin-left: auto; color: var(--text-4); }
+.books-shelf-add {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2586,7 +2592,7 @@ textarea:focus-visible,
   cursor: pointer;
 }
 
-.books-shelf-heading button:hover {
+.books-shelf-heading .books-shelf-add:hover {
   background: var(--surface-hover);
   color: var(--book-accent);
 }
@@ -2647,25 +2653,19 @@ textarea:focus-visible,
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   padding: 0 8px 9px;
   color: var(--text-2);
   font-size: 11px;
   font-weight: 650;
 }
+.books-sections-toggle { display: flex; flex: 1; min-width: 0; align-items: baseline; gap: 7px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 650; text-align: left; cursor: pointer; }
+.books-sections-toggle:hover { color: var(--book-accent); }
+.books-sections-toggle small { color: var(--text-4); font-size: 9px; font-weight: 450; }
+.books-sections-toggle svg { flex-shrink: 0; align-self: center; margin-left: auto; color: var(--text-4); }
+.books-sections-rail.collapsed { flex: 0 0 auto; padding-bottom: 0; }
 
 .books-sections-heading-actions { display: flex; align-items: center; gap: 2px; }
-
-.books-sections-heading > div {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-}
-
-.books-sections-heading small {
-  color: var(--text-4);
-  font-size: 9px;
-  font-weight: 450;
-}
 
 .books-section-add-button,
 .books-section-more,
@@ -3733,6 +3733,29 @@ textarea:focus-visible,
   border-radius: 0;
   background: var(--book-paper);
 }
+.books-page-sheet.paper-ruled,
+.page-pattern-swatch.paper-ruled {
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--page-pattern-step) - 1px), var(--page-pattern-color) calc(var(--page-pattern-step) - 1px), var(--page-pattern-color) var(--page-pattern-step));
+  background-size: 100% var(--page-pattern-step);
+}
+.books-page-sheet.paper-dotted,
+.page-pattern-swatch.paper-dotted {
+  background-image: radial-gradient(circle, var(--page-pattern-color) 1px, transparent 1.2px);
+  background-size: var(--page-pattern-step) var(--page-pattern-step);
+  background-position: calc(var(--page-pattern-step) * .5) calc(var(--page-pattern-step) * .5);
+}
+.books-page-sheet.paper-grid,
+.page-pattern-swatch.paper-grid {
+  background-image:
+    repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--page-pattern-step) - 1px), var(--page-pattern-color) calc(var(--page-pattern-step) - 1px), var(--page-pattern-color) var(--page-pattern-step)),
+    repeating-linear-gradient(to right, transparent 0, transparent calc(var(--page-pattern-step) - 1px), var(--page-pattern-color) calc(var(--page-pattern-step) - 1px), var(--page-pattern-color) var(--page-pattern-step));
+  background-size: var(--page-pattern-step) var(--page-pattern-step);
+}
+.books-page-sheet.paper-planner,
+.page-pattern-swatch.paper-planner {
+  background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(14.2857% - 1px), var(--page-pattern-color) calc(14.2857% - 1px), var(--page-pattern-color) 14.2857%);
+  background-size: 14.2857% 100%;
+}
 .books-page-guide {
   position: absolute;
   inset: var(--page-pad-top) var(--page-pad-right) var(--page-pad-bottom) var(--page-pad-left);
@@ -3824,7 +3847,7 @@ textarea:focus-visible,
 .books-canvas-zoom .books-canvas-zoom-value { min-width: 38px; color: var(--text-2); font-size: 9px; font-weight: 650; }
 .books-canvas-zoom .books-canvas-zoom-fit { min-width: 27px; margin-left: 3px; border: 1px solid var(--border); color: var(--text-3); font-size: 8.5px; font-weight: 650; }
 .books-canvas-zoom .books-canvas-zoom-fit:hover { border-color: color-mix(in srgb, var(--book-accent) 35%, var(--border)); color: var(--book-accent); }
-.books-canvas-toggles { display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.books-canvas-toggles { display: flex; align-items: center; gap: 6px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
 .books-canvas-toggles button { display: flex; align-items: center; gap: 4px; min-height: 22px; padding: 0 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text-3); font: inherit; font-size: 8.5px; cursor: pointer; }
 .books-canvas-toggles button:hover { background: var(--surface-hover); color: var(--text); }
 .books-canvas-toggles button.active { border-color: color-mix(in srgb, var(--book-accent) 30%, var(--border)); background: var(--book-accent-soft); color: var(--book-accent); }
@@ -5005,6 +5028,28 @@ kbd {
 .design-color-presets { display: flex; align-items: center; gap: 6px; }
 .design-color-presets button { width: 24px; height: 24px; padding: 0; border: 2px solid var(--surface); border-radius: 50%; box-shadow: 0 0 0 1px var(--border-strong); cursor: pointer; }
 .design-color-presets button:hover { box-shadow: 0 0 0 2px var(--editor-accent); }
+.page-pattern-picker { display: flex; flex-direction: column; gap: 8px; }
+.page-pattern-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.page-pattern-grid button { display: flex; min-width: 0; padding: 4px; flex-direction: column; gap: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text-3); font: inherit; font-size: 8px; cursor: pointer; }
+.page-pattern-grid button:hover { border-color: var(--book-accent); color: var(--book-accent); }
+.page-pattern-grid button.active { border-color: var(--book-accent); background: var(--book-accent-soft); color: var(--book-accent); }
+.page-pattern-grid button strong { overflow: hidden; font-size: 8px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.page-pattern-swatch { display: block; width: 100%; height: 32px; border: 1px solid color-mix(in srgb, var(--text) 10%, var(--border)); border-radius: 3px; background-color: #fff; }
+.page-pattern-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.page-pattern-controls > label { display: flex; min-width: 0; flex-direction: column; gap: 4px; color: var(--text-3); font-size: 8.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.page-pattern-color,
+.page-pattern-spacing { display: flex; min-width: 0; align-items: center; gap: 5px; }
+.page-pattern-color input[type="color"] { width: 27px; height: 25px; flex-shrink: 0; padding: 2px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg); cursor: pointer; }
+.page-pattern-color code,
+.page-pattern-spacing code { color: var(--text-4); font-family: var(--mono); font-size: 8px; letter-spacing: 0; text-transform: none; }
+.page-pattern-spacing input { min-width: 0; flex: 1; }
+.books-paper-presets { margin-bottom: 13px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--bg) 55%, var(--surface)); }
+.books-paper-preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.books-paper-preset-grid button { display: flex; min-width: 0; padding: 7px 8px; flex-direction: column; gap: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-2); text-align: left; cursor: pointer; }
+.books-paper-preset-grid button:hover { border-color: var(--book-accent); background: var(--book-accent-soft); color: var(--book-accent); }
+.books-paper-preset-grid strong { font-size: 10px; font-weight: 650; }
+.books-paper-preset-grid small { overflow: hidden; color: var(--text-4); font-size: 8.5px; line-height: 1.3; text-overflow: ellipsis; }
+.books-page-pattern-settings { margin-bottom: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--bg) 55%, var(--surface)); }
 .design-margin-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .design-margin-presets button { display: flex; min-height: 37px; align-items: center; justify-content: center; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text-2); font: inherit; font-size: 9px; cursor: pointer; flex-direction: column; gap: 2px; }
 .design-margin-presets button:hover { border-color: var(--editor-accent); background: var(--editor-accent-soft); color: var(--editor-accent); }

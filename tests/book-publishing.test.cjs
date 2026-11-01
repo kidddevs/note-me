@@ -156,6 +156,17 @@ test("HTML export includes print geometry, book chrome, rich blocks, and embedde
   assert.match(visibleText(output), /The first light found the room/);
 });
 
+test("paper patterns travel into HTML and print exports", () => {
+  const patterned = book({ layout_json: JSON.stringify({ pagePattern: "dotted", pagePatternColor: "#6f7f6d", pagePatternSpacing: 0.3, pageColor: "#fffaf3" }) });
+  const html = bookHtml(patterned, chapters());
+  assert.match(html, /background-color: #fffaf3/);
+  assert.match(html, /radial-gradient\(circle,#6f7f6d/);
+  assert.match(html, /background-size:0\.3in 0\.3in/);
+  const print = bookPrintHtml(patterned, chapters());
+  assert.match(print, /print-color-adjust: exact/);
+  assert.match(print, /background-color: #fffaf3/);
+});
+
 test("plain-text export removes presentation markup while retaining reader content", () => {
   const output = bookText(book(), chapters());
   assert.match(output, /The Shape of Morning/);

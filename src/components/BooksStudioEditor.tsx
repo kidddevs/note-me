@@ -152,7 +152,12 @@ function BooksAssetDrawer({ onClose, onInsert }: { onClose: () => void; onInsert
   const [color, setColor] = useState("#a56b3e");
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
-  const graphics = BOOK_GRAPHICS.filter((item) => item.category === category && (variant === "all" || item.variant === variant) && (!query.trim() || item.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
+  const search = query.trim().toLocaleLowerCase();
+  const graphics = BOOK_GRAPHICS.filter((item) => {
+    if (variant !== "all" && item.variant !== variant) return false;
+    if (!search) return item.category === category;
+    return `${item.label} ${item.category}`.toLocaleLowerCase().includes(search);
+  });
 
   const importImage = async () => {
     setUploading(true);
@@ -188,7 +193,7 @@ function BooksAssetDrawer({ onClose, onInsert }: { onClose: () => void; onInsert
         <button className="books-assets-close" onClick={onClose} aria-label="Close artwork drawer"><X size={14} /></button>
       </div>
       <div className="books-assets-tools">
-        <button className="books-asset-upload" onClick={() => void importImage()} disabled={uploading}><Upload size={13} /> {uploading ? "Reading image…" : "Add image from Mac"}</button>
+        <button className="books-asset-upload" onClick={() => void importImage()} disabled={uploading}><Upload size={13} /> {uploading ? "Reading image…" : "Add image from computer"}</button>
         <div className="books-asset-color-group"><label className="books-asset-color"><span>Graphic color</span><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /><code>{color}</code></label><div className="books-asset-swatches" aria-label="Graphic color presets">{["#a56b3e", "#29231e", "#6f7f6d", "#874e47", "#756e62"].map((preset) => <button key={preset} className={color === preset ? "active" : ""} style={{ background: preset }} onClick={() => setColor(preset)} aria-label={`Use ${preset}`} />)}</div></div>
       </div>
       <label className="books-asset-search"><Search size={12} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this collection" aria-label="Search artwork collection" />{query && <button onClick={() => setQuery("")} aria-label="Clear artwork search"><X size={12} /></button>}</label>
@@ -198,8 +203,8 @@ function BooksAssetDrawer({ onClose, onInsert }: { onClose: () => void; onInsert
         <div className="books-asset-variants" role="tablist" aria-label="Graphic variants" onKeyDown={handleTabListKeyDown}>{(["all", "line", "solid", "frame", "dotted", "dashed"] as const).map((item) => <button key={item} className={variant === item ? "active" : ""} onClick={() => setVariant(item)} role="tab" aria-selected={variant === item} tabIndex={variant === item ? 0 : -1}>{item === "all" ? "All variants" : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
        <div className="books-asset-grid">
          {graphics.map((item: BookGraphic) => {
-           const markdown = `![${item.label}](${graphicDataUri(item.svg, color)})\n`;
-           return <button key={item.id} className="books-asset-card" draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-note-me-artwork", markdown); }} onClick={() => onInsert(markdown)} title={`Insert ${item.label} or drag onto the page`}><span className="books-asset-preview" dangerouslySetInnerHTML={{ __html: item.svg.replace(/currentColor/g, color) }} /><strong>{item.label}</strong><small>{item.variant}</small></button>;
+           const markdown = `![${item.label}](${graphicDataUri(item.svg, color)}){width=${item.width}}\n`;
+           return <button key={item.id} className="books-asset-card" draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-note-me-artwork", markdown); }} onClick={() => onInsert(markdown)} title={`Insert ${item.label} or drag onto the page`}><span className="books-asset-preview" dangerouslySetInnerHTML={{ __html: item.svg.replace(/currentColor/g, color) }} /><strong>{item.label}</strong><small>{search ? item.category : item.variant}</small></button>;
          })}
         {graphics.length === 0 && <p className="books-assets-empty">No artwork matches “{query}”.</p>}
       </div>
@@ -2343,7 +2348,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
              <div className="books-page-editor" ref={pageEditorRef}>
                 <div className={`books-page-frame ${showRulers ? "with-rulers" : ""}`} style={{ zoom: canvasZoom / 100 }}>
                   {showRulers && <CanvasRulers trimWidth={trimWidth} trimHeight={trimHeight} />}
-                  <div className={`books-page-sheet ${showGuides ? "show-guides" : ""} ${freeLayout ? "free-layout" : ""}`} style={freeLayout ? { minHeight: `calc(${Math.max(0.2, trimHeight / Math.max(0.2, trimWidth))} * 100cqw)` } : undefined} onPointerDown={(event) => {
+                  <div className={`books-page-sheet paper-${inspectorLayout.pagePattern} ${showGuides ? "show-guides" : ""} ${freeLayout ? "free-layout" : ""}`} style={{ ...(freeLayout ? { minHeight: `calc(${Math.max(0.2, trimHeight / Math.max(0.2, trimWidth))} * 100cqw)` } : {}), "--page-pattern-color": inspectorLayout.pagePatternColor, "--page-pattern-step": `calc(var(--page-inch) * ${inspectorLayout.pagePatternSpacing})` } as CSSProperties} onPointerDown={(event) => {
                     const target = event.target as HTMLElement;
                     if (!target.closest("[data-canvas-block], input, textarea, button, select, .books-chapter-heading-row")) { setEditorSelection({ start: -1, end: -1, titleFocused: false }); setSelectedStarts([]); }
                   }} onDoubleClick={(event) => {

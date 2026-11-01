@@ -29,6 +29,19 @@ test("page colors default to white and parse independently from the cover", () =
   assert.equal(parsed.accentColor, "#6f7f6d");
 });
 
+test("paper patterns normalize and clamp to useful journal settings", () => {
+  const defaults = parseBookLayout("{}");
+  assert.equal(defaults.pagePattern, "blank");
+  assert.equal(defaults.pagePatternColor, "#c9c0b4");
+  assert.equal(defaults.pagePatternSpacing, 0.28);
+  const parsed = parseBookLayout(JSON.stringify({ pagePattern: "dotted", pagePatternColor: "#6f7f6d", pagePatternSpacing: 0.12 }));
+  assert.equal(parsed.pagePattern, "dotted");
+  assert.equal(parsed.pagePatternColor, "#6f7f6d");
+  assert.equal(parsed.pagePatternSpacing, 0.15);
+  assert.equal(parseBookLayout(JSON.stringify({ pagePattern: "invalid" })).pagePattern, "blank");
+  assert.equal(parseBookLayout(JSON.stringify({ pagePatternSpacing: 9 })).pagePatternSpacing, 0.6);
+});
+
 test("page margins normalize per edge and fall back to the book margin", () => {
   const parsed = parseBookLayout(JSON.stringify({ pageMargins: { top: 1.5, right: -1, bottom: 0.75, left: 9 } }));
   assert.deepEqual(parsed.pageMargins, { top: 1.5, right: 0.2, bottom: 0.75, left: 3 });

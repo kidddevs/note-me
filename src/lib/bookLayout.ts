@@ -3,6 +3,7 @@ import type { Book } from "./types";
 export type BookChromePosition = "left" | "center" | "right";
 export type BookPageNumberStyle = "arabic" | "roman-lower" | "roman-upper" | "custom";
 export type BookPageStartSection = "opening" | "contents" | "story" | "closing";
+export type BookPagePattern = "blank" | "ruled" | "dotted" | "grid" | "planner";
 export type BookTextAlign = "left" | "center" | "right" | "justify";
 export type BookTextFontStyle = "normal" | "italic";
 export type BookNestedStyle = "none" | "small-caps" | "bold" | "italic" | "accent";
@@ -137,9 +138,38 @@ export interface BookLayout {
   pageMargins: BookPageMargins;
   pageColor: string;
   accentColor: string;
+  pagePattern: BookPagePattern;
+  pagePatternColor: string;
+  pagePatternSpacing: number;
   typography: BookTypography;
   paragraphStyles: BookParagraphStyle[];
 }
+
+export const BOOK_PAGE_PATTERNS: { value: BookPagePattern; label: string; description: string }[] = [
+  { value: "blank", label: "Blank", description: "Clean paper with no printed guides" },
+  { value: "ruled", label: "Ruled", description: "Horizontal writing lines" },
+  { value: "dotted", label: "Dot grid", description: "A quiet dot grid for handwriting and sketching" },
+  { value: "grid", label: "Graph", description: "Square grid for diagrams, tables, and notes" },
+  { value: "planner", label: "Planner", description: "Seven columns for weekly spreads and trackers" },
+];
+
+export interface BookPaperPreset {
+  id: string;
+  label: string;
+  description: string;
+  trimSize: string;
+  margin: number;
+  pagePattern: BookPagePattern;
+  pageColor: string;
+}
+
+export const BOOK_PAPER_PRESETS: BookPaperPreset[] = [
+  { id: "manuscript", label: "Manuscript", description: "6 × 9 with clean paper and one-inch margins", trimSize: "6x9", margin: 1, pagePattern: "blank", pageColor: "#ffffff" },
+  { id: "journal", label: "Journal", description: "5.25 × 8 dotted paper with warm margins", trimSize: "5.25x8", margin: 0.75, pagePattern: "dotted", pageColor: "#fffaf3" },
+  { id: "notebook", label: "Notebook", description: "5 × 8 ruled paper for everyday notes", trimSize: "5x8", margin: 0.6, pagePattern: "ruled", pageColor: "#fffaf3" },
+  { id: "planner", label: "Planner", description: "US Letter weekly columns for spreads and trackers", trimSize: "8.5x11", margin: 0.5, pagePattern: "planner", pageColor: "#ffffff" },
+  { id: "sketchbook", label: "Sketchbook", description: "A5 graph paper for diagrams and visual notes", trimSize: "5.83x8.27", margin: 0.6, pagePattern: "grid", pageColor: "#ffffff" },
+];
 
 export const DEFAULT_BOOK_PAGE_MARGINS: BookPageMargins = {
   top: 1,
@@ -280,6 +310,9 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   pageMargins: DEFAULT_BOOK_PAGE_MARGINS,
   pageColor: "#ffffff",
   accentColor: "#a56b3e",
+  pagePattern: "blank",
+  pagePatternColor: "#c9c0b4",
+  pagePatternSpacing: 0.28,
   typography: DEFAULT_BOOK_TYPOGRAPHY,
   paragraphStyles: DEFAULT_PARAGRAPH_STYLES,
 };
@@ -287,6 +320,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
 const PAGE_STYLES: BookPageNumberStyle[] = ["arabic", "roman-lower", "roman-upper", "custom"];
 const PAGE_SECTIONS: BookPageStartSection[] = ["opening", "contents", "story", "closing"];
 const POSITIONS: BookChromePosition[] = ["left", "center", "right"];
+const PAGE_PATTERNS: BookPagePattern[] = BOOK_PAGE_PATTERNS.map((pattern) => pattern.value);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -306,6 +340,10 @@ function pageStyle(value: unknown, fallback: BookPageNumberStyle) {
 
 function pageSection(value: unknown, fallback: BookPageStartSection) {
   return PAGE_SECTIONS.includes(value as BookPageStartSection) ? value as BookPageStartSection : fallback;
+}
+
+function pagePattern(value: unknown, fallback: BookPagePattern) {
+  return PAGE_PATTERNS.includes(value as BookPagePattern) ? value as BookPagePattern : fallback;
 }
 
 function position(value: unknown, fallback: BookChromePosition) {
@@ -552,6 +590,9 @@ export function parseBookLayout(value?: string, typographyFallback: BookTypograp
     pageMargins: pageMargins(source.pageMargins, marginsFallback),
     pageColor: color(source.pageColor, DEFAULT_BOOK_LAYOUT.pageColor),
     accentColor: color(source.accentColor, DEFAULT_BOOK_LAYOUT.accentColor),
+    pagePattern: pagePattern(source.pagePattern, DEFAULT_BOOK_LAYOUT.pagePattern),
+    pagePatternColor: color(source.pagePatternColor, DEFAULT_BOOK_LAYOUT.pagePatternColor),
+    pagePatternSpacing: decimal(source.pagePatternSpacing, DEFAULT_BOOK_LAYOUT.pagePatternSpacing, 0.15, 0.6),
     typography: Object.fromEntries((Object.keys(typographyFallback) as BookTextRole[]).map((role) => [role, textStyle(sourceTypography[role], typographyFallback[role])])) as BookTypography,
     paragraphStyles: paragraphStyles(source.paragraphStyles),
   };
@@ -559,6 +600,22 @@ export function parseBookLayout(value?: string, typographyFallback: BookTypograp
 
 export function serializeBookLayout(layout: BookLayout) {
   return JSON.stringify(layout);
+}
+
+export function pagePatternBackgroundCss(layout: BookLayout) {
+  if (layout.pagePattern === "blank") return "";
+  const color = layout.pagePatternColor;
+  const step = `${layout.pagePatternSpacing}in`;
+  if (layout.pagePattern === "ruled") {
+    return `background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(${step} - 1px),${color} calc(${step} - 1px),${color} ${step});background-size:100% ${step};`;
+  }
+  if (layout.pagePattern === "dotted") {
+    return `background-image:radial-gradient(circle,${color} 1px,transparent 1.2px);background-size:${step} ${step};background-position:calc(${step} * 0.5) calc(${step} * 0.5);`;
+  }
+  if (layout.pagePattern === "grid") {
+    return `background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(${step} - 1px),${color} calc(${step} - 1px),${color} ${step}),repeating-linear-gradient(to right,transparent 0,transparent calc(${step} - 1px),${color} calc(${step} - 1px),${color} ${step});background-size:${step} ${step};`;
+  }
+  return `background-image:repeating-linear-gradient(to right,transparent 0,transparent calc(14.2857% - 1px),${color} calc(14.2857% - 1px),${color} 14.2857%);background-size:14.2857% 100%;`;
 }
 
 export function layoutForBook(book: Book) {

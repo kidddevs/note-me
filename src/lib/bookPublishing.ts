@@ -5,6 +5,7 @@ import {
   layoutSectionKey,
   layoutTokenText,
   pageNumberForSection,
+  pagePatternBackgroundCss,
   type BookLayout,
   type BookPageNumberStyle,
   type BookTextRole,
@@ -1361,7 +1362,7 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
 <style>
 @page { size: ${trimCssSize(book.trim_size)}; margin: ${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in; }
 * { box-sizing: border-box; }
- body { margin: 0; color: #24211e; background: #fff; font-family: ${fontCss(book.font_family)}; font-size: ${book.font_size}pt; line-height: ${book.line_height}; } ${typographyCss(layout)}${imagePresentationCss()}
+ body { margin: 0; color: #24211e; background-color: ${layout.pageColor}; ${pagePatternBackgroundCss(layout)} print-color-adjust: exact; -webkit-print-color-adjust: exact; font-family: ${fontCss(book.font_family)}; font-size: ${book.font_size}pt; line-height: ${book.line_height}; } ${typographyCss(layout)}${imagePresentationCss()}
 .title-page { min-height: 70vh; display: flex; flex-direction: column; justify-content: center; text-align: center; page-break-after: always; }
 h1 { margin: 0; font-size: 2.6em; line-height: 1.05; } .subtitle { margin: 1.3em 0 0; font-size: 1.15em; } .author { margin-top: 5em; font-size: .9em; text-transform: uppercase; letter-spacing: .16em; }
  .chapter, .book-matter { max-width: 100%; } .page-break { page-break-before: always; } .chapter-kicker { color: #8b6a43; font-size: .7em; letter-spacing: .18em; text-transform: uppercase; } h2 { margin: .45em 0 1.6em; font-size: 1.8em; } p { margin: 0 0 ${book.paragraph_spacing}em; text-align: justify; } img { display: block; max-width: 100%; height: auto; margin: 1.4em auto; } blockquote { margin: 1.4em 2em; font-style: italic; } .scene-break { margin: 1.8em 0; text-align: center; letter-spacing: .6em; } .book-toc { page-break-after: always; } .book-toc li { margin: .35em 0; margin-left: calc(var(--toc-indent) * 1.2em); list-style: none; } .book-chrome { margin: 0 0 2em; font-size: .68em; letter-spacing: .08em; text-transform: uppercase; } .book-chrome-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1em; min-height: 1.4em; } .book-chrome-row span:nth-child(2) { text-align: center; } .book-chrome-row span:last-child { text-align: right; } .book-chrome-row.footer { margin-top: .7em; color: #6f6259; }
@@ -1661,7 +1662,7 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   const epubImages = new Map<string, string>();
   const manifest: string[] = [];
   const spine: string[] = [];
-  const epubCss = `body{font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in}${typographyCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}`;
+  const epubCss = `body{font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;background-color:${layout.pageColor};${pagePatternBackgroundCss(layout)}}${typographyCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}`;
   const embedImages = (body: string) => body.replace(/src="(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+))"/gi, (_match, dataUri: string, mime: string, encoded: string) => {
     const existingPath = epubImages.get(dataUri);
     if (existingPath) return `src="${existingPath}"`;
@@ -1765,6 +1766,7 @@ export function bookChromeHtml(book: Book, layout: BookLayout, key: string, sect
   return markup ? `<div class="book-chrome">${markup}</div>` : "";
 }
 export function bookPrintHtml(book: Book, chapters: Chapter[]) {
-  const printStyles = `<style id="noteme-print-contract">@media print { body { background: #fff; } .title-page { page-break-after: always; } .page-break { page-break-before: always; } }</style>`;
+  const layout = layoutForBook(book);
+  const printStyles = `<style id="noteme-print-contract">@media print { html, body { background-color: ${layout.pageColor}; print-color-adjust: exact; -webkit-print-color-adjust: exact; } .title-page { page-break-after: always; } .page-break { page-break-before: always; } }</style>`;
   return bookHtml(book, chapters).replace("</head>", `${printStyles}</head>`);
 }
