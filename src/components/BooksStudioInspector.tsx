@@ -1,9 +1,15 @@
 import { Fragment, useState, type ReactNode } from "react";
 import {
   AlignCenter,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
   AlignJustify,
   AlignLeft,
   AlignRight,
+  AlignStartHorizontal,
+  AlignStartVertical,
   ArrowDown,
   ArrowUp,
   BarChart3,
@@ -27,6 +33,7 @@ import {
   Quote,
   Rows3,
   SendToBack,
+  Layers,
   SlidersHorizontal,
   Sparkles,
   Strikethrough,
@@ -34,6 +41,7 @@ import {
   Trash2,
   Type,
   Underline,
+  X,
 } from "lucide-react";
 import { DEFAULT_BOOK_TYPOGRAPHY, type BookBulletType, type BookGrepStyle, type BookLayout, type BookNestedStyle, type BookParagraphStyle, type BookRuleStyle, type BookTextAlign, type BookTextCase, type BookTextRole, type BookTextStyle } from "../lib/bookLayout";
 import {
@@ -199,6 +207,7 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
         <Field label="Columns"><NumberField value={style.columns} min={1} max={4} onChange={(columns) => onPatch({ columns })} /></Field>
         <Field label="Column gap"><NumberField value={style.columnGap} min={0} max={4} step={0.1} onChange={(columnGap) => onPatch({ columnGap })} suffix="em" /></Field>
       </div>
+      {style.columns > 1 && <p className="design-help">Columns fill the frame height set in Frame &amp; position. Select the frame to see its column guides.</p>}
       <div className="design-subgroup">
         <div className="design-subgroup-head"><strong>Drop cap</strong><Toggle checked={style.dropCap} onChange={(dropCap) => onPatch({ dropCap })} label={style.dropCap ? "On" : "Off"} /></div>
         {style.dropCap && <div className="design-grid">
@@ -338,8 +347,10 @@ function FrameControls({ context, freeLayout, onReplaceRange }: { context: Edito
       <Field label="X position"><NumberField value={left} min={0} max={Math.max(0, 100 - presentation.width)} step={0.5} onChange={(x) => update({ x })} suffix="%" /></Field>
       <Field label="Y position"><NumberField value={presentation.y ?? 0} min={0} max={400} step={0.5} onChange={(y) => update({ y })} suffix="%" /></Field>
       <Field label="Width"><NumberField value={presentation.width} min={20} max={100} step={0.5} onChange={(width) => update({ width, x: Math.min(left, 100 - width) })} suffix="%" /></Field>
+      <Field label="Height"><NumberField value={presentation.height ?? 0} min={0} max={400} step={0.5} onChange={(height) => update({ height: height || undefined })} suffix="%" /></Field>
       <Field label="Placement"><PlacementButtons value={presentation.align} onChange={(align) => update({ align, x: undefined })} /></Field>
     </div>
+    <p className="design-help">Set a frame height to balance multi-column text; 0 keeps the frame automatic.</p>
     {!freeLayout && <p className="design-help">Enable Free layout in the canvas bar to place this frame vertically anywhere on the artboard.</p>}
     {freeLayout && <p className="design-help">Position is measured from the top-left of the safe content area. Y uses the page content width as its unit.</p>}
   </InspectorSection>;
@@ -351,6 +362,8 @@ function ImageInspector({ context, freeLayout, onReplaceRange, onReplaceImage }:
   const presentation = image.presentation;
   const update = (patch: Partial<ImagePresentation>) => {
     const next = { ...presentation, ...patch };
+    if (patch.bleed) { next.wrap = undefined; next.width = 100; next.x = undefined; next.align = "left"; }
+    if (patch.wrap) { next.bleed = false; if (next.width >= 70) next.width = 45; }
     if (patch.align !== undefined && patch.x === undefined) next.x = undefined;
     if (next.x !== undefined) next.x = Math.max(0, Math.min(100 - next.width, next.x));
     onReplaceRange(context.start, context.end, `${image.indent}${imageMarkdown(image.alt, image.source, next)}`);
@@ -358,7 +371,7 @@ function ImageInspector({ context, freeLayout, onReplaceRange, onReplaceImage }:
   const updateAlt = (alt: string) => onReplaceRange(context.start, context.end, `${image.indent}${imageMarkdown(alt, image.source, presentation)}`);
   const left = richPresentationLeft({ width: presentation.width, align: presentation.align, x: presentation.x });
   return <div className="design-editor">
-    <InspectorSection icon={<ImagePlus size={14} />} title="Artwork" summary="Crop, fit, frame, effects" defaultOpen>
+    <InspectorSection icon={<ImagePlus size={14} />} title="Artwork" summary="Crop, fit, wrap, effects" defaultOpen>
       <div className="design-inline-actions"><button onClick={onReplaceImage}><ImagePlus size={13} /> Replace image</button><span className="design-mini-label">{presentation.width}% × {presentation.height ?? "auto"}</span></div>
       <div className="design-grid">
         <Field label="Shape"><select value={presentation.aspect} onChange={(event) => update({ aspect: event.target.value as ImagePresentation["aspect"], ...(event.target.value === "auto" ? {} : { fit: "cover" as const }) })}><option value="auto">Original</option><option value="square">Square</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option><option value="wide">Wide</option></select></Field>
@@ -381,6 +394,14 @@ function ImageInspector({ context, freeLayout, onReplaceRange, onReplaceImage }:
       {presentation.caption && <Field label="Caption" wide><input value={presentation.caption} onChange={(event) => update({ caption: event.target.value })} /></Field>}
       <Field label="Alt text" wide><input value={image.alt} onChange={(event) => updateAlt(event.target.value)} /></Field>
       <div className="design-grid"><Field label="Placement"><PlacementButtons value={presentation.align} onChange={(align) => update({ align, x: undefined })} /></Field><Field label="Frame"><select value={presentation.frame} onChange={(event) => update({ frame: event.target.value as ImagePresentation["frame"] })}><option value="none">No frame</option><option value="hairline">Hairline</option><option value="mat">Gallery mat</option></select></Field></div>
+      {!freeLayout && <div className="design-subgroup">
+        <div className="design-subgroup-head"><strong>Page flow</strong><Toggle checked={Boolean(presentation.bleed)} onChange={(bleed) => update({ bleed })} label="Full bleed" /></div>
+        <div className="design-grid">
+          <Field label="Text wrap"><select value={presentation.wrap ?? "none"} onChange={(event) => update({ wrap: event.target.value === "none" ? undefined : event.target.value as "left" | "right" })}><option value="none">No wrap</option><option value="left">Wrap left</option><option value="right">Wrap right</option></select></Field>
+          {presentation.wrap && <Field label="Wrap gap"><NumberField value={presentation.wrapGap ?? 1.4} min={0} max={6} step={0.1} onChange={(wrapGap) => update({ wrapGap })} suffix="em" /></Field>}
+        </div>
+        <p className="design-help">Runaround flows following text around the artwork. Full bleed extends it across the page margins.</p>
+      </div>}
       {!freeLayout && <p className="design-help">Free layout adds vertical artwork placement on the artboard.</p>}
       <p className="design-help">Height and Y position use the page content width as their unit, so artwork scales with the book.</p>
     </InspectorSection>
@@ -491,13 +512,48 @@ function DocumentPanel({ layout, onLayoutChange }: { layout: BookLayout; onLayou
   </div>;
 }
 
-export function BooksInspector({ context, layout, freeLayout, onLayoutChange, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; freeLayout: boolean; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
+export interface LayerEntry {
+  key: string;
+  start: number;
+  end: number;
+  label: string;
+  kind: string;
+  z: number;
+  selected: boolean;
+  canReorder: boolean;
+}
+
+export function BooksInspector({ context, layout, freeLayout, selectionCount, onAlignSelection, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
   const role = context.role;
   const roleStyle = role ? layout.typography[role] : null;
   const activePreset = context.presentation?.styleId ? layout.paragraphStyles.find((preset) => preset.id === context.presentation?.styleId) ?? null : null;
   const editingStyle = activePreset?.style ?? roleStyle;
   const goalProgress = Math.min(100, Math.round((totalWords / Math.max(1, wordGoal)) * 100));
   const isText = context.kind === "paragraph" || context.kind === "heading" || context.kind === "quote";
+  const multiCount = selectionCount ?? 0;
+
+  if (multiCount > 1) {
+    return <aside className="books-editor-inspector design-inspector">
+      <div className="design-inspector-head">
+        <div><span className="design-overline"><SlidersHorizontal size={12} /> Design inspector</span><strong>{multiCount} objects selected</strong></div>
+        <span className="design-kind selection">selection</span>
+      </div>
+      <div className="design-inspector-body">
+        <InspectorSection icon={<Move size={14} />} title="Align & arrange" summary="Edge and center alignment" defaultOpen>
+          <div className="design-align-grid">
+            <button onClick={() => onAlignSelection?.("left")}><AlignStartVertical size={14} /> Left</button>
+            <button onClick={() => onAlignSelection?.("center")}><AlignCenterVertical size={14} /> Center</button>
+            <button onClick={() => onAlignSelection?.("right")}><AlignEndVertical size={14} /> Right</button>
+            <button onClick={() => onAlignSelection?.("top")}><AlignStartHorizontal size={14} /> Top</button>
+            <button onClick={() => onAlignSelection?.("middle")}><AlignCenterHorizontal size={14} /> Middle</button>
+            <button onClick={() => onAlignSelection?.("bottom")}><AlignEndHorizontal size={14} /> Bottom</button>
+          </div>
+          <p className="design-help">Shift-click objects to add or remove them from the selection. Drag any selected object to move the whole group.</p>
+          <button className="design-clear-selection" onClick={onClearSelection}><X size={13} /> Clear selection</button>
+        </InspectorSection>
+      </div>
+    </aside>;
+  }
 
   const patchStyle = (patch: Partial<BookTextStyle>) => {
     if (!role) return;
@@ -552,6 +608,20 @@ export function BooksInspector({ context, layout, freeLayout, onLayoutChange, on
           <div className="design-pulse"><strong>{chapterWords.toLocaleString()}</strong><span>words in this section</span><div className="design-goal-track"><span style={{ width: `${goalProgress}%` }} /></div><div className="design-goal-meta"><span>{totalWords.toLocaleString()} total</span><span>{goalProgress}% of goal</span></div></div>
         </InspectorSection>
       </>}
+      {layers && layers.length > 0 && <InspectorSection icon={<Layers size={14} />} title="Layers" summary={`${layers.length} objects`} defaultOpen={false}>
+        <div className="design-layer-list">
+          {layers.map((layer) => <div key={layer.key} className={`design-layer-row ${layer.selected ? "selected" : ""}`}>
+            <button className="design-layer-select" onClick={(event) => onSelectLayer?.(layer.start, layer.end, event.shiftKey || event.metaKey)} title={`Select ${layer.label}`}>
+              <span className={`design-layer-kind ${layer.kind}`}>{layer.kind === "text" ? <Type size={12} /> : layer.kind === "image" ? <ImagePlus size={12} /> : layer.kind === "table" ? <Table2 size={12} /> : layer.kind === "chart" ? <BarChart3 size={12} /> : <Quote size={12} />}</span>
+              <span className="design-layer-copy"><strong>{layer.label}</strong><small>{layer.kind === "text" ? "Text frame" : layer.kind === "image" ? "Artwork" : layer.kind}</small></span>
+            </button>
+            {layer.canReorder && <div className="design-layer-actions">
+              <button onClick={() => onLayerBack?.(layer.start, layer.end)} title="Send to back" aria-label={`Send ${layer.label} to back`}><ArrowDown size={12} /></button>
+              <button onClick={() => onLayerFront?.(layer.start, layer.end)} title="Bring to front" aria-label={`Bring ${layer.label} to front`}><ArrowUp size={12} /></button>
+            </div>}
+          </div>)}
+        </div>
+      </InspectorSection>}
     </div>
   </aside>;
 }

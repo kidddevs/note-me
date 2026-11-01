@@ -20,6 +20,7 @@ const {
   restyleCanvasTextSource,
   richPresentationLeft,
   richAlignForLeft,
+  alignedCanvasBox,
   wordCount,
   hasManuscriptContent,
   canvasParagraphBreak,
@@ -27,6 +28,7 @@ const {
   setChapterFreeLayout,
   EMPTY_CANVAS_PARAGRAPH,
 } = require("./.compiled/src/lib/bookPublishing.js");
+const { DEFAULT_BOOK_TYPOGRAPHY } = require("./.compiled/src/lib/bookLayout.js");
 
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
@@ -342,10 +344,44 @@ test("free layout positions and paragraph style references round trip", () => {
   assert.equal(chapterUsesFreeLayout(setChapterFreeLayout(free, false)), false);
 });
 
+test("canvas typography carries drop caps and nested openings into preview markup", () => {
+  const typography = {
+    ...DEFAULT_BOOK_TYPOGRAPHY,
+    paragraph: {
+      ...DEFAULT_BOOK_TYPOGRAPHY.paragraph,
+      dropCap: true,
+      nestedStyle: "small-caps",
+      nestedWords: 2,
+    },
+  };
+  const html = markdownToHtml("First light crossed the room.", undefined, typography);
+  assert.match(html, /class="book-paragraph has-drop-cap"/);
+  assert.match(html, /<span class="book-nested-style nested-small-caps">First<\/span> <span class="book-nested-style nested-small-caps">light<\/span>/);
+});
+
 test("inline underline and strikethrough survive Markdown rendering", () => {
   const html = markdownToHtml("A ~~struck~~ note with ++underlined++ words.");
   assert.match(html, /<s>struck<\/s>/);
   assert.match(html, /<u>underlined<\/u>/);
+});
+
+test("multi-object alignment resolves edge and center positions", () => {
+  const boxes = [
+    { left: 10, top: 5, width: 30, height: 10 },
+    { left: 50, top: 30, width: 20, height: 20 },
+  ];
+  const bounds = {
+    left: Math.min(...boxes.map((box) => box.left)),
+    right: Math.max(...boxes.map((box) => box.left + box.width)),
+    top: Math.min(...boxes.map((box) => box.top)),
+    bottom: Math.max(...boxes.map((box) => box.top + box.height)),
+  };
+  assert.deepEqual(alignedCanvasBox(boxes[0], bounds, "left"), { x: 10, y: 5 });
+  assert.deepEqual(alignedCanvasBox(boxes[0], bounds, "center"), { x: 25, y: 5 });
+  assert.deepEqual(alignedCanvasBox(boxes[0], bounds, "right"), { x: 40, y: 5 });
+  assert.deepEqual(alignedCanvasBox(boxes[0], bounds, "top"), { x: 10, y: 5 });
+  assert.deepEqual(alignedCanvasBox(boxes[0], bounds, "middle"), { x: 10, y: 22.5 });
+  assert.deepEqual(alignedCanvasBox(boxes[0], bounds, "bottom"), { x: 10, y: 40 });
 });
 
 test("artwork keeps the free horizontal offset in portable attributes", () => {
@@ -384,6 +420,44 @@ test("artwork keeps the free horizontal offset in portable attributes", () => {
     radius: "none", align: "right", width: 50, x: 999, aspect: "auto", fit: "contain", frame: "none", caption: "",
   }))[0];
   assert.equal(appended.presentation.x, 50);
+});
+
+test("artwork runaround and full bleed metadata round trip", () => {
+  const markdown = imageMarkdown("A wrapped figure", "https://example.com/art.png", {
+    radius: "soft",
+    align: "left",
+    width: 42,
+    aspect: "landscape",
+    fit: "cover",
+    frame: "hairline",
+    caption: "A wrapped caption",
+    wrap: "left",
+    wrapGap: 1.8,
+  });
+  assert.match(markdown, /wrap=left wrapgap=1.8/);
+  const block = canvasBlocks(markdown)[0];
+  assert.equal(block.image.presentation.wrap, "left");
+  assert.equal(block.image.presentation.wrapGap, 1.8);
+  assert.equal(block.image.presentation.bleed, undefined);
+  const html = markdownToHtml(markdown);
+  assert.match(html, /class="book-figure align-left wrap-left"/);
+  assert.match(html, /margin-right:1.8em/);
+
+  const bleed = imageMarkdown("A full bleed figure", "https://example.com/bleed.png", {
+    radius: "none",
+    align: "left",
+    width: 100,
+    aspect: "wide",
+    fit: "cover",
+    frame: "none",
+    caption: "",
+    bleed: true,
+  });
+  assert.match(bleed, /bleed=1/);
+  const bleedBlock = canvasBlocks(bleed)[0];
+  assert.equal(bleedBlock.image.presentation.bleed, true);
+  assert.doesNotMatch(bleed, /wrap=/);
+  assert.match(markdownToHtml(bleed), /class="book-figure align-left bleed"/);
 });
 
 test("artwork presentation metadata round trips into export markup", () => {

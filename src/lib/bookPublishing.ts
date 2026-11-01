@@ -295,6 +295,9 @@ export interface ImagePresentation {
   fit: "contain" | "cover";
   frame: ImageFrame;
   caption: string;
+  wrap?: "left" | "right";
+  wrapGap?: number;
+  bleed?: boolean;
   cornerRadius?: number;
   borderWidth?: number;
   borderColor?: string;
@@ -351,6 +354,27 @@ export function richPresentationLeft(presentation: RichPresentation) {
   return 0;
 }
 
+export type CanvasAlignMode = "left" | "center" | "right" | "top" | "middle" | "bottom";
+
+export interface CanvasBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export function alignedCanvasBox(box: CanvasBox, bounds: { left: number; top: number; right: number; bottom: number }, mode: CanvasAlignMode) {
+  let x = box.left;
+  let y = box.top;
+  if (mode === "left") x = bounds.left;
+  if (mode === "center") x = (bounds.left + bounds.right) / 2 - box.width / 2;
+  if (mode === "right") x = bounds.right - box.width;
+  if (mode === "top") y = bounds.top;
+  if (mode === "middle") y = (bounds.top + bounds.bottom) / 2 - box.height / 2;
+  if (mode === "bottom") y = bounds.bottom - box.height;
+  return { x, y };
+}
+
 export function richAlignForLeft(left: number, width: number): RichAlign {
   if (width >= 99.5) return "left";
   const maxLeft = Math.max(0, 100 - width);
@@ -387,6 +411,9 @@ function parseImageAttributes(value?: string): ImagePresentation {
     if (key === "aspect" && ["auto", "square", "portrait", "landscape", "wide"].includes(raw as string)) result.aspect = raw as ImageAspect;
     if (key === "fit" && ["contain", "cover"].includes(raw as string)) result.fit = raw as "contain" | "cover";
     if (key === "frame" && ["none", "hairline", "mat"].includes(raw as string)) result.frame = raw as ImageFrame;
+    if (key === "wrap" && ["left", "right"].includes(raw as string)) result.wrap = raw as "left" | "right";
+    if (key === "wrapgap" && raw) result.wrapGap = Math.min(6, Math.max(0, Number(raw) || 0));
+    if (key === "bleed" && ["1", "true", "yes"].includes(raw as string)) result.bleed = true;
     if (key === "caption" && raw) result.caption = decodeAttribute(raw).slice(0, 240);
     if (key === "corner" && raw) result.cornerRadius = Math.min(120, Math.max(0, Number(raw) || 0));
     if (key === "bw" && raw) result.borderWidth = Math.min(20, Math.max(0, Number(raw) || 0));
@@ -413,6 +440,9 @@ function imageAttributesText(presentation: ImagePresentation) {
     presentation.aspect !== "auto" ? `aspect=${presentation.aspect}` : "",
     presentation.fit !== "contain" ? `fit=${presentation.fit}` : "",
     presentation.frame !== "none" ? `frame=${presentation.frame}` : "",
+    presentation.wrap ? `wrap=${presentation.wrap}` : "",
+    presentation.wrap ? `wrapgap=${presentation.wrapGap ?? 1.4}` : "",
+    presentation.bleed ? "bleed=1" : "",
     presentation.caption ? `caption=${encodeURIComponent(presentation.caption)}` : "",
     presentation.cornerRadius !== undefined ? `corner=${presentation.cornerRadius}` : "",
     presentation.borderWidth !== undefined ? `bw=${presentation.borderWidth}` : "",
@@ -448,7 +478,9 @@ function inlineHtml(value: string) {
       if (!/^(?:https?:\/\/|data:image\/)/i.test(source)) return "";
       const presentation = parseImageAttributes(attributes);
       const frameClass = presentation.frame === "none" ? "" : ` frame-${presentation.frame}`;
-      return `<figure class="book-figure align-${presentation.align}" style="width:${presentation.width}%"><span class="book-image-frame radius-${presentation.radius} aspect-${presentation.aspect} fit-${presentation.fit}${frameClass}"><img class="book-image" src="${source}" alt="${escapeHtml(alt)}" loading="lazy" /></span>${presentation.caption ? `<figcaption>${escapeHtml(presentation.caption)}</figcaption>` : ""}</figure>`;
+      const flowClass = `${presentation.wrap ? ` wrap-${presentation.wrap}` : ""}${presentation.bleed ? " bleed" : ""}`;
+      const wrapStyle = presentation.wrap ? `;margin-${presentation.wrap === "left" ? "right" : "left"}:${presentation.wrapGap ?? 1.4}em` : "";
+      return `<figure class="book-figure align-${presentation.align}${flowClass}" style="width:${presentation.width}%${wrapStyle}"><span class="book-image-frame radius-${presentation.radius} aspect-${presentation.aspect} fit-${presentation.fit}${frameClass}"><img class="book-image" src="${source}" alt="${escapeHtml(alt)}" loading="lazy" /></span>${presentation.caption ? `<figcaption>${escapeHtml(presentation.caption)}</figcaption>` : ""}</figure>`;
     })
      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, source: string) => /^(?:https?:\/\/|mailto:|#)/i.test(source) ? `<a href="${source}">${label}</a>` : label);
 }
@@ -1711,7 +1743,7 @@ export function typographyCss(layout: BookLayout) {
 }
 
 export function imagePresentationCss() {
-  return ".book-figure{margin:1.4em auto;max-width:100%}.book-figure.align-left{margin-left:0;margin-right:auto}.book-figure.align-center{margin-left:auto;margin-right:auto}.book-figure.align-right{margin-left:auto;margin-right:0}.book-image-frame{display:block;width:100%;max-width:100%;overflow:hidden}.book-image-frame img{display:block;width:100%;height:auto;margin:0}.book-image-frame.radius-soft{border-radius:7px}.book-image-frame.radius-round{border-radius:18px}.book-image-frame.aspect-square{aspect-ratio:1/1}.book-image-frame.aspect-portrait{aspect-ratio:3/4}.book-image-frame.aspect-landscape{aspect-ratio:4/3}.book-image-frame.aspect-wide{aspect-ratio:16/9}.book-image-frame.fit-cover img{height:100%;object-fit:cover}.book-image-frame.fit-contain img{height:100%;object-fit:contain}.book-image-frame.frame-hairline{padding:5px;border:1px solid #c9c0b4}.book-image-frame.frame-mat{padding:11px;border:1px solid #d8cfc2;background:#f7f2ea}.book-figure figcaption{margin-top:.55em;color:#6f6259;font-size:.72em;font-style:italic;line-height:1.4;text-align:center}";
+  return ".book-figure{margin:1.4em auto;max-width:100%}.book-figure.align-left{margin-left:0;margin-right:auto}.book-figure.align-center{margin-left:auto;margin-right:auto}.book-figure.align-right{margin-left:auto;margin-right:0}.book-figure.wrap-left{float:left;margin:.4em 1.4em 1em 0}.book-figure.wrap-right{float:right;margin:.4em 0 1em 1.4em}.book-figure.bleed{width:100%;max-width:none;margin-right:0;margin-left:0}.book-image-frame{display:block;width:100%;max-width:100%;overflow:hidden}.book-image-frame img{display:block;width:100%;height:auto;margin:0}.book-image-frame.radius-soft{border-radius:7px}.book-image-frame.radius-round{border-radius:18px}.book-image-frame.aspect-square{aspect-ratio:1/1}.book-image-frame.aspect-portrait{aspect-ratio:3/4}.book-image-frame.aspect-landscape{aspect-ratio:4/3}.book-image-frame.aspect-wide{aspect-ratio:16/9}.book-image-frame.fit-cover img{height:100%;object-fit:cover}.book-image-frame.fit-contain img{height:100%;object-fit:contain}.book-image-frame.frame-hairline{padding:5px;border:1px solid #c9c0b4}.book-image-frame.frame-mat{padding:11px;border:1px solid #d8cfc2;background:#f7f2ea}.book-figure figcaption{margin-top:.55em;color:#6f6259;font-size:.72em;font-style:italic;line-height:1.4;text-align:center}";
 }
 
 export function bookChromeValues(book: Book, layout: BookLayout, key: string, section: string, band: PageBand, ordinal: number) {
