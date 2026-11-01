@@ -50,6 +50,7 @@ import { BOOK_GRAPHICS, BOOK_GRAPHIC_CATEGORIES, graphicDataUri, type BookGraphi
 import { layoutForBook, parseBookLayout, serializeBookLayout, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTypography } from "../lib/bookLayout";
 import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVars } from "../lib/bookStyles";
 import { api } from "../lib/api";
+import { htmlToMarkdown } from "../lib/richtext";
 import { useBooks } from "../store/books";
 import { notify } from "../store/toast";
 import { BooksInspector } from "./BooksStudioInspector";
@@ -71,7 +72,6 @@ import {
   markdownToHtml,
   bookInputFromBook,
   restyleCanvasTextSource,
-  canvasParagraphBreak,
   chapterUsesFreeLayout,
   setChapterFreeLayout,
   EMPTY_CANVAS_PARAGRAPH,
@@ -261,6 +261,49 @@ function canvasBlockStyle(width: number, left?: number, freeY?: number, moving =
   return frame;
 }
 
+function inlineEditorHtml(source: string, typography: BookTypography) {
+  const template = document.createElement("template");
+  template.innerHTML = markdownToHtml(source, undefined, typography);
+  const root = template.content.firstElementChild;
+  return root?.innerHTML ?? source;
+}
+
+function caretOffsetWithin(element: HTMLElement) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return 0;
+  const range = selection.getRangeAt(0);
+  if (!element.contains(range.endContainer)) return 0;
+  const prefix = range.cloneRange();
+  prefix.selectNodeContents(element);
+  prefix.setEnd(range.endContainer, range.endOffset);
+  return prefix.toString().length;
+}
+
+function placeCaretWithin(element: HTMLElement, offset: number) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let remaining = Math.max(0, offset);
+  let node = walker.nextNode();
+  while (node) {
+    const length = node.textContent?.length ?? 0;
+    if (remaining <= length) {
+      range.setStart(node, remaining);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    remaining -= length;
+    node = walker.nextNode();
+  }
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
 function CanvasMoveHandle({ label, onMoveStart }: { label: string; onMoveStart: (event: React.PointerEvent<HTMLButtonElement>) => void }) {
   return <button type="button" className="books-canvas-move-handle" onPointerDown={onMoveStart} aria-label={`Move ${label}`} title="Drag to move"><GripVertical size={12} /></button>;
 }
@@ -327,55 +370,101 @@ function CanvasRulers({ trimWidth, trimHeight }: { trimWidth: number; trimHeight
 
 
 
-function CanvasTextBlock({ block, index, width, left, freeY, layer, height, fullResize, selected, moving, resizing, typography, focusRequest, onFocusHandled, onTextChange, onTextSelection, onEditorKeyDown, onResizeStart, onMoveStart, onParagraphBreak }: { block: CanvasBlock; index: number; width: number; left?: number; freeY?: number; layer?: number; height?: number; fullResize?: boolean; selected: boolean; moving?: boolean; resizing?: boolean; typography: BookTypography; focusRequest?: { start: number; cursor: number } | null; onFocusHandled?: () => void; onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void; onTextSelection: (block: CanvasBlock, event: React.SyntheticEvent<HTMLTextAreaElement>) => void; onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: ResizeDirection) => void; onMoveStart: (event: React.PointerEvent<HTMLElement>, block: CanvasBlock) => void; onParagraphBreak: (block: CanvasBlock, selectionStart: number, selectionEnd: number) => void }) {
+function CanvasTextBlock({ block, index, width, left, freeY, layer, height, fullResize, selected, moving, resizing, typography, focusRequest, onFocusHandled, onTextChange, onTextSelection, onEditorKeyDown, onResizeStart, onMoveStart, onParagraphBreak }: { block: CanvasBlock; index: number; width: number; left?: number; freeY?: number; layer?: number; height?: number; fullResize?: boolean; selected: boolean; moving?: boolean; resizing?: boolean; typography: BookTypography; focusRequest?: { start: number; cursor: number } | null; onFocusHandled?: () => void; onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void; onTextSelection: (block: CanvasBlock, element: HTMLElement) => void; onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: ResizeDirection) => void; onMoveStart: (event: React.PointerEvent<HTMLElement>, block: CanvasBlock) => void; onParagraphBreak: (block: CanvasBlock, before: string, after: string) => void }) {
   const [editing, setEditing] = useState(false);
-  const editor = useRef<HTMLTextAreaElement>(null);
+  const editor = useRef<HTMLDivElement>(null);
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const style = block.role ? typography[block.role] : typography.paragraph;
   const className = block.role === "quote" ? "quote" : block.level ? `heading heading-${block.level}` : "paragraph";
   const label = block.role === "quote" ? "quote" : block.level ? `heading ${block.level}` : "paragraph";
   const empty = !block.display.replace(/\u200B/g, "").trim();
   const autoFocus = focusRequest?.start === block.start;
+  const normalizeMarkdown = (value: string) => value.replace(/\u200B/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  const commitEditor = (target: HTMLDivElement) => {
+    const markdown = normalizeMarkdown(htmlToMarkdown(target.innerHTML));
+    onTextChange(block, markdown || EMPTY_CANVAS_PARAGRAPH, caretOffsetWithin(target), caretOffsetWithin(target));
+  };
+  const splitAtCaret = (target: HTMLDivElement) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return { before: "", after: "" };
+    const range = selection.getRangeAt(0);
+    if (!target.contains(range.startContainer)) return { before: "", after: "" };
+    if (!range.collapsed) range.deleteContents();
+    const beforeRange = document.createRange();
+    beforeRange.selectNodeContents(target);
+    beforeRange.setEnd(range.startContainer, range.startOffset);
+    const afterRange = document.createRange();
+    afterRange.setStart(range.startContainer, range.startOffset);
+    afterRange.setEnd(target, target.childNodes.length);
+    const beforeWrap = document.createElement("div");
+    beforeWrap.appendChild(beforeRange.cloneContents());
+    const afterWrap = document.createElement("div");
+    afterWrap.appendChild(afterRange.cloneContents());
+    return { before: normalizeMarkdown(htmlToMarkdown(beforeWrap.innerHTML)), after: normalizeMarkdown(htmlToMarkdown(afterWrap.innerHTML)) };
+  };
   useEffect(() => {
     if (autoFocus) setEditing(true);
   }, [autoFocus]);
   useEffect(() => {
     if (!editing) return;
-    requestAnimationFrame(() => {
-      const target = editor.current;
-      if (!target) return;
-      target.focus();
-      if (autoFocus && focusRequest) {
-        const position = Math.min(target.value.length, Math.max(0, focusRequest.cursor));
-        target.setSelectionRange(position, position);
-        onFocusHandled?.();
-      } else if (!target.value.replace(/\u200B/g, "").trim()) {
-        target.setSelectionRange(0, target.value.length);
-      }
-    });
-  }, [editing]);
-  useEffect(() => {
-    if (!editing) return;
     const target = editor.current;
     if (!target) return;
-    target.style.height = "auto";
-    target.style.height = `${target.scrollHeight}px`;
-  });
+    target.innerHTML = empty ? "" : inlineEditorHtml(block.source, typography);
+    requestAnimationFrame(() => {
+      if (!target.isConnected) return;
+      target.focus();
+      const point = pointerRef.current;
+      pointerRef.current = null;
+      let placed = false;
+      if (point) {
+        const withCaret = document as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null };
+        const range = withCaret.caretRangeFromPoint?.(point.x, point.y);
+        if (range && target.contains(range.startContainer)) {
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+          placed = true;
+        }
+      }
+      if (!placed) {
+        const position = autoFocus && focusRequest ? focusRequest.cursor : target.textContent?.length ?? 0;
+        placeCaretWithin(target, empty ? 0 : position);
+      }
+      if (autoFocus) onFocusHandled?.();
+      onTextSelection(block, target);
+    });
+  }, [editing]);
   const beginEditing = () => setEditing(true);
   return <div className={`books-canvas-text-block align-${block.presentation.align} ${selected ? "selected" : ""} ${moving ? "is-moving" : ""} ${height !== undefined ? "fixed-height" : ""} ${textStyleClasses(style)}`} style={{ ...canvasBlockStyle(width, left, freeY, moving, layer, height), ...textStyleVars(style) }} data-canvas-block data-block-start={block.start} onPointerDown={(event) => {
     if ((event.target as HTMLElement).closest(".books-canvas-text-preview")) onMoveStart(event, block);
   }}>
     <CanvasMoveHandle label={label} onMoveStart={(event) => onMoveStart(event, block)} />
-    {editing ? <textarea ref={editor} className={`books-canvas-text ${className}`} style={{ textIndent: `${style.firstLineIndent}em`, marginTop: `${style.spaceBefore}em`, marginBottom: `${style.spaceAfter}em`, paddingLeft: `${style.leftIndent}em`, paddingRight: `${style.rightIndent}em`, textAlign: style.textAlign }} value={block.display} rows={1} onChange={(event) => onTextChange(block, event.target.value, event.target.selectionStart, event.target.selectionEnd)} onFocus={(event) => onTextSelection(block, event)} onSelect={(event) => onTextSelection(block, event)} onClick={(event) => onTextSelection(block, event)} onKeyUp={(event) => onTextSelection(block, event)} onBlur={() => setEditing(false)} onKeyDown={(event) => {
-      const target = event.currentTarget;
-      const lineStart = target.value.lastIndexOf("\n", Math.max(0, target.selectionStart - 1)) + 1;
-      const listLine = /^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(target.value.slice(lineStart, target.selectionStart));
-      if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && !listLine) {
-        event.preventDefault();
-        onParagraphBreak(block, target.selectionStart, target.selectionEnd);
-        return;
-      }
-      onEditorKeyDown(event);
-    }} placeholder={empty ? (index === 0 ? "Begin writing here…" : "Continue writing…") : undefined} spellCheck aria-label={`${label} text`} /> : <div className={`books-canvas-text-preview ${empty ? "empty" : ""}`} tabIndex={0} role="textbox" aria-label={`${label} text`} onClick={beginEditing} onKeyDown={(event) => { if (event.key === "Enter" || event.key === "F2") { event.preventDefault(); beginEditing(); } }} dangerouslySetInnerHTML={{ __html: empty ? "Begin writing here…" : applyGrepStyle(markdownToHtml(block.source, undefined, typography), style) }} />}
+    {editing ? <div
+      ref={editor}
+      className={`books-canvas-text books-canvas-text-editor ${className}`}
+      style={{ textIndent: `${style.firstLineIndent}em`, marginTop: `${style.spaceBefore}em`, marginBottom: `${style.spaceAfter}em`, paddingLeft: `${style.leftIndent}em`, paddingRight: `${style.rightIndent}em`, textAlign: style.textAlign }}
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      aria-label={`${label} text`}
+      data-placeholder={empty ? (index === 0 ? "Begin writing here…" : "Continue writing…") : undefined}
+      spellCheck
+      onInput={(event) => commitEditor(event.currentTarget)}
+      onFocus={(event) => onTextSelection(block, event.currentTarget)}
+      onMouseUp={(event) => onTextSelection(block, event.currentTarget)}
+      onKeyUp={(event) => onTextSelection(block, event.currentTarget)}
+      onClick={(event) => onTextSelection(block, event.currentTarget)}
+      onBlur={() => setEditing(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+          event.preventDefault();
+          const split = splitAtCaret(event.currentTarget);
+          onParagraphBreak(block, split.before, split.after);
+          return;
+        }
+        onEditorKeyDown(event);
+      }}
+    /> : <div className={`books-canvas-text-preview ${empty ? "empty" : ""}`} tabIndex={0} role="textbox" aria-label={`${label} text`} onClick={(event) => { pointerRef.current = { x: event.clientX, y: event.clientY }; beginEditing(); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === "F2") { event.preventDefault(); beginEditing(); } }} dangerouslySetInnerHTML={{ __html: empty ? "Begin writing here…" : applyGrepStyle(markdownToHtml(block.source, undefined, typography), style) }} />}
     {selected && <CanvasResizeHandles label={label} full={fullResize} onResizeStart={(event, direction) => onResizeStart(event, block, direction)} />}
     {resizing && <span className="books-canvas-resize-badge">{roundCanvasPercent(width)}% wide{height !== undefined ? ` · ${roundCanvasPercent(height)}% tall` : ""}</span>}
     {moving && <span className="books-canvas-move-badge">{roundCanvasPercent(richPresentationLeft({ ...block.presentation, width, x: left }))}% left · {roundCanvasPercent(width)}% wide</span>}
@@ -390,7 +479,7 @@ function ManuscriptCanvas({ content, selection, typography, paragraphStyles, fre
   freeLayout: boolean;
   onSelectVisual: (block: CanvasBlock) => void;
   onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void;
-  onTextSelection: (block: CanvasBlock, event: React.SyntheticEvent<HTMLTextAreaElement>) => void;
+  onTextSelection: (block: CanvasBlock, element: HTMLElement) => void;
   onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
   onEditorDragOver: (event: React.DragEvent<HTMLElement>) => void;
   onEditorDrop: (event: React.DragEvent<HTMLElement>) => void;
@@ -401,7 +490,7 @@ function ManuscriptCanvas({ content, selection, typography, paragraphStyles, fre
   onChangePresentation: (block: CanvasBlock, patch: Partial<RichPresentation>) => void;
   onMoveRange: (start: number, end: number, direction: -1 | 1) => void;
   onPlaceBlock: (block: CanvasBlock, patch: Partial<RichPresentation>, dropIndex: number | null) => void;
-  onParagraphBreak: (block: CanvasBlock, selectionStart: number, selectionEnd: number) => void;
+  onParagraphBreak: (block: CanvasBlock, before: string, after: string) => void;
   focusRequest: { start: number; cursor: number } | null;
   onFocusHandled: () => void;
   resizing: { start: number; width: number; x?: number; height?: number; y?: number } | null;
@@ -705,7 +794,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [sprintFinished, setSprintFinished] = useState(false);
   const [editorSelection, setEditorSelection] = useState({ start: 0, end: 0, titleFocused: false });
   const [inspectorLayout, setInspectorLayout] = useState(() => layoutForBook(book));
-  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const editorRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const pageEditorRef = useRef<HTMLDivElement>(null);
   const activeEditorMapRef = useRef({ sourceStart: 0, prefixLength: 0 });
@@ -1134,11 +1223,10 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [historyOpen]);
 
-  const syncCanvasSelection = (block: CanvasBlock, event: React.SyntheticEvent<HTMLTextAreaElement>) => {
-    const editor = event.currentTarget;
-    editorRef.current = editor;
+  const syncCanvasSelection = (block: CanvasBlock, element: HTMLElement) => {
+    editorRef.current = element;
     activeEditorMapRef.current = { sourceStart: block.start, prefixLength: block.editPrefix.length };
-    setEditorSelection({ start: block.start + block.editPrefix.length + editor.selectionStart, end: block.start + block.editPrefix.length + editor.selectionEnd, titleFocused: false });
+    setEditorSelection({ start: block.start, end: block.end, titleFocused: false });
   };
 
   const changeLayout = (change: (layout: BookLayout) => BookLayout) => {
@@ -1206,7 +1294,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     const replacementEnd = start + replacement.length;
     const cursor = start + Math.max(0, replacement.length - (replacement.startsWith(":::") ? 3 : 0));
     setEditorSelection({ start, end: replacementEnd, titleFocused: false });
-    if (focusEditor) requestAnimationFrame(() => { editorRef.current?.focus(); editorRef.current?.setSelectionRange(cursor, cursor); });
+    if (focusEditor) requestAnimationFrame(() => { const editor = editorRef.current; editor?.focus(); if (editor instanceof HTMLTextAreaElement) editor.setSelectionRange(cursor, cursor); });
   };
 
   const updateCanvasText = (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => {
@@ -1305,16 +1393,24 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     replaceContentRange(block.start, block.end, restyleCanvasTextSource(block.source, role, block.presentation));
   };
 
-  const breakCanvasParagraph = (block: CanvasBlock, selectionStart: number, selectionEnd: number) => {
+  const breakCanvasParagraph = (block: CanvasBlock, beforeMarkdown: string, afterMarkdown: string) => {
+    const before = beforeMarkdown.replace(/\u200B/g, "").trim();
+    const after = afterMarkdown.replace(/\u200B/g, "").trim();
+    if (!before && !after) return;
+    const role = block.role ?? "paragraph";
+    const nextRole: BookTextRole = block.level ? "paragraph" : role === "quote" ? "quote" : "paragraph";
+    const presentation = block.presentation;
     const canvasWidth = canvasRef.current?.querySelector<HTMLElement>(".books-manuscript-canvas")?.clientWidth ?? 1;
-    const heightPercent = ((editorRef.current?.scrollHeight ?? 24) / Math.max(1, canvasWidth)) * 100;
-    const afterY = freeLayout ? roundCanvasPercent((block.presentation.y ?? 0) + heightPercent + 1.5) : undefined;
-    const split = canvasParagraphBreak(block, selectionStart, selectionEnd, afterY !== undefined ? { y: afterY } : {});
-    if (!split) return;
-    const nextContent = content.slice(0, block.start) + split.source + content.slice(block.end);
+    const heightPercent = ((editorRef.current?.getBoundingClientRect().height ?? 24) / Math.max(1, canvasWidth)) * 100;
+    const afterY = freeLayout ? roundCanvasPercent((presentation.y ?? 0) + heightPercent + 1.5) : undefined;
+    const afterStyle = afterY !== undefined ? { ...presentation, y: afterY } : presentation;
+    const beforeSource = before ? restyleCanvasTextSource(before, role, presentation) : canvasTextSource(EMPTY_CANVAS_PARAGRAPH, presentation);
+    const afterSource = after ? restyleCanvasTextSource(after, nextRole, afterStyle) : canvasTextSource(EMPTY_CANVAS_PARAGRAPH, afterStyle);
+    const replacement = `${beforeSource}\n\n${afterSource}`;
+    const nextContent = content.slice(0, block.start) + replacement + content.slice(block.end);
     setContent(nextContent);
     markDraft({ content: nextContent });
-    const afterStart = block.start + split.afterOffset;
+    const afterStart = block.start + beforeSource.length + 2;
     setEditorSelection({ start: afterStart, end: afterStart, titleFocused: false });
     setPendingCanvasFocus({ start: afterStart, cursor: 0 });
   };
@@ -1460,28 +1556,15 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setEditorSelection({ start: start + selectionStart, end: start + selectionEnd, titleFocused: false });
     if (editor) requestAnimationFrame(() => {
       editor.focus();
-      const localStart = Math.max(0, start + selectionStart - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      const localEnd = Math.max(0, start + selectionEnd - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      editor.setSelectionRange(localStart, localEnd);
+      if (editor instanceof HTMLTextAreaElement) {
+        const localStart = Math.max(0, start + selectionStart - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
+        const localEnd = Math.max(0, start + selectionEnd - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
+        editor.setSelectionRange(localStart, localEnd);
+      }
     });
   };
 
-  const applyFormat = (prefix: string, suffix = "") => {
-    const editor = editorRef.current;
-    const start = editorSelection.titleFocused ? content.length : editorSelection.start;
-    const end = editorSelection.titleFocused ? content.length : editorSelection.end;
-    const selected = content.slice(start, end) || "your text";
-    const next = content.slice(0, start) + prefix + selected + suffix + content.slice(end);
-    setContent(next);
-    markDraft({ content: next });
-    setEditorSelection({ start: start + prefix.length, end: start + prefix.length + selected.length, titleFocused: false });
-    if (editor) requestAnimationFrame(() => {
-      editor.focus();
-      const localStart = Math.max(0, start + prefix.length - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      const localEnd = Math.max(0, start + prefix.length + selected.length - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      editor.setSelectionRange(localStart, localEnd);
-    });
-  };
+;
 
   const applyHeading = (level: number) => {
     if (selectedTextBlock) {
@@ -1502,9 +1585,11 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setEditorSelection({ start, end: start + nextLines.join("\n").length, titleFocused: false });
     if (editor) requestAnimationFrame(() => {
       editor.focus();
-      const localStart = Math.max(0, start - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      const localEnd = Math.max(0, start + nextLines.join("\n").length - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
-      editor.setSelectionRange(localStart, localEnd);
+      if (editor instanceof HTMLTextAreaElement) {
+        const localStart = Math.max(0, start - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
+        const localEnd = Math.max(0, start + nextLines.join("\n").length - activeEditorMapRef.current.sourceStart - activeEditorMapRef.current.prefixLength);
+        editor.setSelectionRange(localStart, localEnd);
+      }
     });
   };
 
@@ -1572,10 +1657,45 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   };
   const applyInlineFormat = (prefix: string, suffix = "") => {
     const editor = editorRef.current;
-    const editingSelectedBlock = Boolean(editor?.isConnected && selectedTextBlock && activeEditorMapRef.current.sourceStart === selectedTextBlock.start);
-    if (editingSelectedBlock) {
-      applyFormat(prefix, suffix);
+    const editingSelectedBlock = Boolean(editor?.isConnected && editor.isContentEditable && selectedTextBlock && activeEditorMapRef.current.sourceStart === selectedTextBlock.start);
+    if (selectedTextBlock && (prefix === "> " || prefix === "- " || prefix === "1. " || prefix === "`")) {
+      editor?.blur();
+      const presentation = selectedTextBlock.presentation;
+      if (prefix === "> ") {
+        replaceContentRange(selectedTextBlock.start, selectedTextBlock.end, restyleCanvasTextSource(selectedTextBlock.source, "quote", presentation));
+        return;
+      }
+      if (prefix === "`") {
+        const code = selectedTextBlock.display.replace(/^`+|`+$/g, "");
+        replaceContentRange(selectedTextBlock.start, selectedTextBlock.end, canvasTextSource(`\`${code}\``, presentation));
+        return;
+      }
+      const lines = selectedTextBlock.display.split(/\r?\n/);
+      const alreadyListed = lines.every((line) => /^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(line));
+      const nextLines = alreadyListed
+        ? lines.map((line) => line.replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+)/, ""))
+        : lines.map((line) => `${prefix}${line.replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+)/, "")}`);
+      replaceContentRange(selectedTextBlock.start, selectedTextBlock.end, canvasTextSource(nextLines.join("\n"), presentation));
       return;
+    }
+    if (editingSelectedBlock && editor) {
+      const command = prefix === "**" ? "bold" : prefix === "*" ? "italic" : prefix === "++" ? "underline" : prefix === "~~" ? "strikeThrough" : null;
+      if (command) {
+        document.execCommand("styleWithCSS", false, "false");
+        document.execCommand(command, false);
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+      }
+      if (prefix === "[") {
+        const url = window.prompt("Link URL", "https://");
+        if (url) {
+          document.execCommand("styleWithCSS", false, "false");
+          document.execCommand("createLink", false, url);
+          editor.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        return;
+      }
+      editor.blur();
     }
     if (!selectedTextBlock) return;
     const nextSource = restyleCanvasTextSource(`${prefix}${selectedTextBlock.display}${suffix}`, selectedTextBlock.role ?? "paragraph", selectedTextBlock.presentation);
@@ -1627,8 +1747,9 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       return;
     }
     requestAnimationFrame(() => {
-      editorRef.current?.focus();
-      editorRef.current?.setSelectionRange(match.start, match.end);
+      const editor = editorRef.current;
+      editor?.focus();
+      if (editor instanceof HTMLTextAreaElement) editor.setSelectionRange(match.start, match.end);
     });
   };
 
@@ -1771,12 +1892,12 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       void saveNow();
       return;
     }
-    if (modifier && event.key.toLowerCase() === "b") { event.preventDefault(); applyFormat("**", "**"); return; }
-    if (modifier && event.key.toLowerCase() === "i") { event.preventDefault(); applyFormat("*", "*"); return; }
-    if (modifier && event.key.toLowerCase() === "u") { event.preventDefault(); applyFormat("++", "++"); return; }
-    if (modifier && event.shiftKey && event.key.toLowerCase() === "x") { event.preventDefault(); applyFormat("~~", "~~"); return; }
+    if (modifier && event.key.toLowerCase() === "b") { event.preventDefault(); applyInlineFormat("**", "**"); return; }
+    if (modifier && event.key.toLowerCase() === "i") { event.preventDefault(); applyInlineFormat("*", "*"); return; }
+    if (modifier && event.key.toLowerCase() === "u") { event.preventDefault(); applyInlineFormat("++", "++"); return; }
+    if (modifier && event.shiftKey && event.key.toLowerCase() === "x") { event.preventDefault(); applyInlineFormat("~~", "~~"); return; }
     const editor = editorRef.current;
-    if (event.key === "Enter" && editor && editorSelection.start === editorSelection.end) {
+    if (event.key === "Enter" && editor instanceof HTMLTextAreaElement && editorSelection.start === editorSelection.end) {
       const cursor = editorSelection.start;
       const lineStart = content.lastIndexOf("\n", cursor - 1) + 1;
       const line = content.slice(lineStart, cursor);
@@ -1790,7 +1911,12 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     }
     if (event.key === "Tab") {
       event.preventDefault();
-      replaceSelection("  ", 2, 2);
+      if (editorRef.current?.isContentEditable) {
+        document.execCommand("insertText", false, "  ");
+        editorRef.current.dispatchEvent(new Event("input", { bubbles: true }));
+      } else {
+        replaceSelection("  ", 2, 2);
+      }
     }
   };
 

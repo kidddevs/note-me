@@ -144,7 +144,7 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
       <span>{preset ? <>Editing paragraph style <strong>{preset.name}</strong></> : <>Editing base role style</>}</span>
       {preset && <div className="design-editing-actions"><button onClick={onDuplicate} title="Duplicate style"><Copy size={12} /></button><button className="danger" onClick={onDelete} title="Delete style"><Trash2 size={12} /></button></div>}
     </div>
-    {(showInlineFormatting || headingLevel !== null) && <div className="design-inline-format" role="toolbar" aria-label="Text formatting">
+    {(showInlineFormatting || headingLevel !== null) && <div className="design-inline-format" role="toolbar" aria-label="Text formatting" onMouseDown={(event) => event.preventDefault()}>
       {showInlineFormatting && <>
         <button onClick={() => onInlineFormat?.("**", "**")} title="Bold (⌘B)" aria-label="Bold"><strong>B</strong></button>
         <button onClick={() => onInlineFormat?.("*", "*")} title="Italic (⌘I)" aria-label="Italic"><em>I</em></button>

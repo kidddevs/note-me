@@ -35,6 +35,14 @@ function getTurndown(): TurndownService {
     filter: "input",
     replacement: () => "",
   });
+  td.addRule("underline", {
+    filter: ["u"],
+    replacement: (content) => `++${content}++`,
+  });
+  td.addRule("strike", {
+    filter: (node) => ["S", "DEL", "STRIKE"].includes(node.nodeName),
+    replacement: (content) => `~~${content}~~`,
+  });
   turndown = td;
   return td;
 }
