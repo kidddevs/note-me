@@ -409,7 +409,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="form-row" style={{ marginBottom: 0 }}>
         <label>About</label>
         <div style={{ fontSize: 12, color: "var(--text-2)" }}>
-          NoteMe v0.1.0 · Fast, local-first notes for macOS. All data is securely stored locally on your device in SQLite.
+          NoteMe v0.2.0 · Fast, local-first notes for macOS. All data is securely stored locally on your device in SQLite.
         </div>
       </div>
     </Modal>
