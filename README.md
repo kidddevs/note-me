@@ -1,77 +1,93 @@
-# NoteMe
+<div align="center">
+  <img src="public/note-me.png" alt="NoteMe app icon" width="112" />
+  <h1>NoteMe</h1>
+  <p><strong>A quiet, local-first home for your notes and manuscripts.</strong></p>
+  <p>Think clearly. Write deeply. Keep everything on your machine.</p>
 
-> A fast, private notes workspace for people who want their thinking close at hand and their data under their control.
+  <p>
+    <a href="https://github.com/kidddevs/note-me/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/kidddevs/note-me?label=release&color=a56b3e"></a>
+    <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-2b2b2b">
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-4f8b6f">
+    <img alt="Built with Tauri" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white">
+    <img alt="React 18" src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white">
+  </p>
 
-NoteMe is an open-source, local-first desktop notes app for macOS, Windows, and Linux. It combines a calm writing surface with browser-style tabs, Markdown and rich text, quick capture, task views, clipboard history, and a native desktop shell.
+  <p>
+    <a href="#install">Install</a> ·
+    <a href="#notes">Notes</a> ·
+    <a href="#books-studio">Books Studio</a> ·
+    <a href="#build-from-source">Build</a> ·
+    <a href="#data-and-privacy">Privacy</a>
+  </p>
+</div>
 
-There is no account, cloud dependency, tracking, or required sync service. Notes are stored in a local SQLite database and stay on your machine.
+---
+
+NoteMe is an open-source desktop app for notes and long-form writing. It pairs a fast Markdown workspace with **Books Studio**, a full page-design surface for manuscripts — all in one native app. There is no account, cloud dependency, tracking, or required sync service. Your work lives in a local SQLite database and stays on your machine.
+
+## A look inside
+
+<p align="center">
+  <img src="docs/screenshots/notes.png" alt="NoteMe notes workspace showing a rich text note, sidebar, and note inspector" width="100%" />
+</p>
+<p align="center"><em><strong>Notes.</strong> Markdown and rich text, browser-style tabs, categories, tags, tasks, and a live document inspector.</em></p>
+
+<p align="center">
+  <img src="docs/screenshots/books-studio.png" alt="NoteMe Books Studio showing a manuscript canvas, section rail, and design inspector" width="100%" />
+</p>
+<p align="center"><em><strong>Books Studio.</strong> A direct-manipulation manuscript canvas with typography, page layout, and publishing tools.</em></p>
 
 ## Why NoteMe
 
-- **Private by default:** local storage, no telemetry, and no server account.
-- **Fast to open:** a focused note-taker window with a keyboard-first workflow.
-- **Built for depth:** Markdown, rich text, attachments, tasks, tags, categories, and search in one workspace.
-- **At home on your OS:** native macOS traffic lights and menus, persistent window state, global quick capture, and platform-aware window controls.
-- **Small surface area:** your notes remain usable as plain Markdown instead of being trapped in a proprietary format.
+- **Private by default.** Notes are stored locally in SQLite; attachments stay on disk. No telemetry, no account, no server round-trips.
+- **Fast enough to stay out of the way.** A keyboard-first interface, browser-style tabs, instant search, and a command palette for everything.
+- **Built for depth.** Markdown, rich text, tasks, categories, tags, attachments, clipboard history, and full-text search in one workspace.
+- **A real writing studio.** Books Studio adds structured manuscripts, custom page geometry, editorial typography, and reader-ready export.
+- **At home on your desktop.** Native menus, window state, global Quick Capture, system themes, and a Tauri 2 shell on macOS, Windows, and Linux.
+- **Your data stays portable.** Notes remain usable as plain Markdown instead of being trapped in a proprietary format.
 
-## Features
+## Notes
 
-### Writing
+The notes workspace is designed for the way thoughts actually arrive: quickly, in fragments, and often while you are doing something else.
 
-- Markdown write, split, and preview modes.
-- Rich text editing with headings, emphasis, underline, lists, task lists, quotes, code blocks, and links.
-- Lossless Markdown conversion when switching between editing modes.
-- Debounced auto-save, automatic titles, word count, character count, and reading time.
-- Paste or drag images into notes; attachments are stored locally.
+- **Write your way.** Markdown edit, split, and preview modes; rich text editing with headings, emphasis, lists, task lists, quotes, code, and links. Switching modes preserves the Markdown source.
+- **Organize lightly.** All Notes, Favorites, Tasks, Archive, and Trash views; color-coded categories; tags with live counts; full-text search and command-palette navigation.
+- **Keep moving.** Browser-style tabs with drag-to-reorder and middle-click close; pin, favorite, archive, restore, duplicate, and batch-manage notes.
+- **Capture anything.** Global Quick Capture with `Cmd+Shift+N`, clipboard history with `Cmd+Shift+V`, and Daily Note, Meeting, and Journal templates.
+- **Attach without friction.** Paste or drag images into a note; files are copied into local storage and referenced from Markdown.
+- **Take it with you.** Import `.md`, `.markdown`, and `.txt` files, export Markdown/HTML/plain text, or print through the native flow.
 
-### Organization
+## Books Studio
 
-- Browser-style tabs with drag-to-reorder, middle-click close, and relative tab navigation.
-- All Notes, Favorites, Tasks, Archive, and Trash views.
-- Color-coded categories and tags with live counts.
-- Full-text search and command palette navigation.
-- Pin, favorite, archive, restore, permanently delete, duplicate, and batch-manage notes.
+Books Studio is a second workspace in the same app, opened from the titlebar book icon or **View → Books Studio**. Manuscript data is kept separate from your notes, and each book remembers its own place in the manuscript.
 
-### Desktop workflow
+### Structure and writing
 
-- Native macOS application menu with About NoteMe and release update checking.
-- Global Quick Capture with `Cmd+Shift+N` and `Cmd+Enter` to save.
-- Clipboard history with `Cmd+Shift+V` and one-click note creation.
-- Daily Note, Meeting, and Journal templates.
-- System, Light, and Dark themes with persisted preferences.
-- Import `.md`, `.markdown`, and `.txt` files by dropping them into the app.
-- Print and PDF export through the native print flow.
+- Dedicated library, shelf, section rail, outline, book settings, and export screens.
+- Typed manuscript sections — title page, dedication, epigraph, copyright, prologue, chapter, interlude, appendix, acknowledgements, about the author, and more.
+- Front matter, story, and closing pages can be reordered, hidden from the table of contents, and managed from the rail or context menu.
+- Distraction-reduced writing surface with H1–H6 formatting, focus mode, section statistics, find and replace, writing sprints, and automatic local saves.
+- Section-level undo and redo, plus automatic and manual version checkpoints you can preview, restore, or delete.
+- Reader metadata for title, subtitle, author, genre, description, status, cover color, trim size, and word goal.
 
-### Books Studio
+### Design canvas
 
-Books Studio is a second workspace in the same app, switched from the titlebar book icon or **View > Books Studio**. Notes remains the default workspace; switching does not mix manuscript data with note tabs or note navigation.
+- InDesign-style **Flow** and **Free** layout modes. Flow keeps text in document order; Free turns the content area into an artboard.
+- Text boxes, artwork, tables, charts, and callouts can be positioned freely, resized from eight handles, snapped to margins, layered front/back, and arranged with edge or center alignment.
+- Shift-click multi-selection, group dragging, alignment guides, zero-height insertion previews, zoom, rulers, margin guides, and fit-to-width.
+- A contextual design inspector with role typography, paragraph presets, character controls, hyphenation, columns, tabs, drop caps, nested openings, rules, borders, shading, bullets, numbering, and GREP styling.
+- Paper patterns and presets: blank, ruled, dot grid, graph, and planner pages with configurable rule color and spacing, plus one-click Manuscript, Journal, Notebook, Planner, and Sketchbook setups.
+- A searchable artwork drawer with local images and recolorable editorial artwork — ornaments, dividers, botanicals, symbols, frames, lines, shapes, arrows, and a dedicated Journal set with cards, trackers, labels, washi tape, pockets, stamps, and photo corners. Artwork inserts at a sensible width for its role instead of always filling the column.
+- Portable rich blocks for GFM tables, configurable tables, bar / line / area / donut / stat charts, callouts, and graph fences — all embedded in the manuscript Markdown.
 
-- Dedicated manuscript library, shelf, section rail, outline, settings, and export screens.
-- Restores the last open manuscript and Books sidebar state after relaunch; each manuscript remembers its own last active section when you switch between books.
-- First-class books and chapters stored in SQLite, separate from the notes tables.
-- Distraction-reduced writing surface with H1-H6 Markdown formatting, preview mode, focus mode, section statistics, keyboard save, list continuation, and local auto-save.
-- Find and replace inside a section, plus optional timed writing sprints that track the words written during each session.
-- Auto-saved reader metadata for title, subtitle, author, genre, description, draft status, cover color, and a configurable word goal.
-- Structured manuscript sections with typed title pages, prologues, chapters, interludes, appendices, front matter, and back matter. Add and classify sections from the left rail or their trackpad context menu.
-- Optional dedication, epigraph, copyright, and acknowledgements pages are editable from the outline and included in exports.
-- Custom trim sizes: 5 x 8, 5.25 x 8, 6 x 9, A5, A4, and US Letter.
-- Paragraph style presets with character, paragraph, indent, spacing, tab, rule, border, shading, hyphenation, justification, drop cap, nested opening, GREP, bullet, numbering, color, underline, strikethrough, column, and role formatting controls. Presets are stored with the book layout, can be created, renamed, duplicated, deleted, and applied to any text box; edits to a preset update every text box using it.
-- Custom role typography for titles, H1-H6 headings, paragraphs, and quotes, including font stacks, size, weight, italic, alignment, line height, and letter spacing. Page-level font size, line height, paragraph spacing, and margins remain available in Book settings.
-- Artwork drawer for local images plus categorized, searchable, recolorable built-in SVG ornaments, dividers, botanical marks, symbols, geometric devices, borders, frames, lines, shapes, and arrows. Artwork can be dragged from the drawer onto the page or selected and reshaped with crop presets, fit modes, frames, corner treatments, captions, alignment, width, runaround, full-bleed placement, and direct replacement. Images can also be pasted or dropped directly into the manuscript; inserted artwork is embedded in the manuscript Markdown for portable exports.
-- InDesign-style design canvas with Flow and Free layout modes. Flow keeps text in document order; Free turns the safe content area into an artboard where text boxes, artwork, tables, charts, and callouts can be positioned freely in X and Y, resized from either edge, snapped to margins, layered front/back, and reordered. Pointer direct manipulation, an eight-handle transform box with vertical frame resizing, double-click text-box creation, Shift-click multi-selection, group dragging, edge/center alignment, a Photoshop-style Layers list, live position/size badges, thin page-margin lines aligned to the inch rulers, alignment guides that snap to page edges and sibling objects, zero-height insertion previews, zoom, rulers, guides, and fit-to-width make the page feel like a desktop publishing surface. The canvas itself stays free of floating control rails; selected-object controls live in the right rail.
-- Page appearance settings separate the paper background (default white) and document accent color from the cover color. The editor chrome follows the app appearance accent, while page typography and document accents remain part of the book design. The manuscript breadcrumb bar is gone; its status and settings controls now live in the chapter bar, and canvas tools and page controls share one compact toolbar.
-- Redesigned contextual design inspector for the selected object. Text boxes expose paragraph style presets, character controls, paragraph rhythm, hyphenation, columns, tabs, drop caps, nested openings, paragraph rules, border, shading, bullets, numbering, and GREP styling. Artwork exposes crop shape, fit, width, height, free position, corner radius, border, shadow, opacity, rotation, caption, alt text, alignment, runaround, full bleed, and replacement. Tables, charts, and callouts keep their data and presentation controls in the same inspector, and empty selections reveal document-wide styles and role typography.
-- Page-style canvas with trim-size rulers, per-edge page margins, margin guides, zoom controls, a fit-to-width action, and a freeform page surface. Add a text frame from the toolbar or by double-clicking the page in Design mode; text boxes edit as rich text with no visible Markdown markers. Enter creates a new paragraph frame, Shift+Enter adds a hard line break, and inline character formatting covers bold, italic, underline, strikethrough, links, quotes, lists, and scene breaks. Multi-column text, drop caps, nested openings, paragraph rules, and fixed-height frames support editorial page compositions. Source and Preview modes have been removed; Export Studio remains the place to inspect final reader output.
-- Outline workbench with manuscript statistics, reading time, section word-weight bars, drag-to-reorder manuscript order, hidden and empty section health checks, and a curated generated-contents preview.
-- Section-level undo and redo with grouped typing history, plus local version checkpoints captured automatically while writing, on manual save, and before every restore. Checkpoints can be previewed, restored, or deleted from the editor.
-- Portable rich data blocks for GFM tables, configurable tables, bar / line / area / donut / stat charts, callouts, and graph fences. The contextual inspector exposes only the controls for the selected title, text, image, table, chart, or callout.
-- Running headers and footers with left, center, and right slots. Use `{{title}}`, `{{author}}`, `{{section}}`, and `{{page}}` tokens.
-- Flexible page numbering with automatic sequences or manual section range starts, Arabic or Roman styles, custom formats, configurable placement and starting section, plus per-section style overrides.
-- Generated contents with configurable title, H1-H6 depth, legacy matter inclusion, per-section visibility, and individual heading visibility controls.
-- Export to EPUB 3, DOCX, styled HTML, Markdown, and plain text. Print / Save as PDF uses the selected trim size and page styling.
-- Export preview includes separate cover and interior views plus an actionable preflight for reader metadata, empty sections, contents, repeated titles, page numbering, and embedded artwork.
-- Browser-style book tabs with a Library home tab, drag-to-reorder, middle-click close, relative navigation, and the same titlebar controls as the Notes workspace.
-- Keyboard-complete tabs, command search, section menus, and accessible in-app confirmation dialogs keep manuscript navigation and destructive actions inside the Studio workflow.
+### Publishing
+
+- Custom trim sizes: 5 × 8, 5.25 × 8, 6 × 9, A5, A4, and US Letter.
+- Running headers and footers with `{{title}}`, `{{author}}`, `{{section}}`, and `{{page}}` tokens.
+- Flexible page numbering with automatic sequences or manual range starts, Arabic or Roman styles, custom formats, placement, and per-section overrides.
+- Generated contents with configurable title, H1–H6 depth, matter inclusion, and per-heading visibility.
+- Export to **EPUB 3, DOCX, styled HTML, Markdown, and plain text**, or print / save as PDF with the selected trim size and page styling.
+- Export preview with separate cover and interior views plus a preflight for metadata, empty sections, contents, repeated titles, page numbering, and artwork.
 
 ## Install
 
@@ -79,9 +95,9 @@ Books Studio is a second workspace in the same app, switched from the titlebar b
 
 Download the latest Apple Silicon DMG from the [GitHub Releases](https://github.com/kidddevs/note-me/releases) page, open it, and drag NoteMe into Applications.
 
-The Apple Silicon release artifact is built as `NoteMe_0.1.1_aarch64.dmg`. Intel and other platform installers can be produced from source with the Tauri build command below.
+Release artifacts follow the pattern `NoteMe_<version>_aarch64.dmg`. Intel and other platform installers can be produced from source with the Tauri build command below.
 
-To check for a newer release inside the app, use **NoteMe > Check for Updates...**. NoteMe only shows a download action when the GitHub release is newer than the installed version.
+To check for updates inside the app, use **NoteMe → Check for Updates…**. NoteMe only offers a download action when a GitHub release is newer than the installed version.
 
 ### Build from source
 
@@ -89,7 +105,7 @@ Requirements:
 
 - Node.js 20 or newer
 - Rust stable and Cargo
-- Platform prerequisites listed in the [Tauri v2 prerequisites guide](https://v2.tauri.app/start/prerequisites/)
+- Platform prerequisites from the [Tauri v2 prerequisites guide](https://v2.tauri.app/start/prerequisites/)
 
 ```bash
 npm install
@@ -137,17 +153,17 @@ NoteMe uses SQLite with WAL journaling. On macOS, the database lives at:
 ~/Library/Application Support/com.dakid.noteme/
 ```
 
-The app does not upload notes or attachments. The only network request made by the update checker is to the public GitHub Releases API when you explicitly choose **Check for Updates...**.
+The app does not upload notes or attachments. The only network request made by the update checker is to the public GitHub Releases API when you explicitly choose **Check for Updates…**.
 
 ## Technology
 
-- Tauri 2 and Rust for the desktop shell
-- React 18, TypeScript, and Vite for the interface
-- SQLite via `rusqlite` for durable local storage
-- Zustand for application state
+- **Tauri 2** and Rust for the desktop shell and persistence boundary
+- **React 18**, TypeScript, and Vite for the interface
+- **SQLite** via `rusqlite` for durable local storage
+- **Zustand** for application state
 - `react-markdown`, `remark-gfm`, and `turndown` for Markdown and rich text
 
-The codebase is intentionally split between a small React UI layer and explicit Rust commands for persistence and OS integration. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data flow and command boundary.
+The codebase is split between a small React UI layer and explicit Rust commands for persistence and OS integration. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data flow and command boundary.
 
 ## Project map
 
@@ -162,6 +178,8 @@ src-tauri/               Rust desktop shell and persistence layer
   src/commands.rs        Note, book, chapter, category, tag, task, clipboard, and settings commands
   src/db.rs              SQLite schema and initialization
   capabilities/          Tauri permissions
+public/                  App icon and static assets
+docs/                    Architecture notes and README screenshots
 ```
 
 ## Contributing
@@ -169,9 +187,9 @@ src-tauri/               Rust desktop shell and persistence layer
 1. Fork the repository and create a focused branch.
 2. Run `npm install` and `npm run tauri dev`.
 3. Keep data local and preserve the Markdown data model.
-4. Before opening a pull request, run `npm test` and `npm run build`. `npm test` covers TypeScript, publishing utilities, SQLite migrations, and Rust command validation.
+4. Before opening a pull request, run `npm test` and `npm run build`.
 
-Bug reports and focused pull requests are welcome. Please do not include local databases, build output, screenshots, or machine-specific configuration in commits.
+`npm test` covers TypeScript, publishing utilities, SQLite migrations, and Rust command validation. Bug reports and focused pull requests are welcome. Please do not include local databases, build output, or machine-specific configuration in commits.
 
 ## License
 
