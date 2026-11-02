@@ -75,6 +75,7 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 
 - InDesign-style **Flow** and **Free** layout modes. Flow keeps text in document order; Free turns the content area into an artboard.
 - Text boxes, artwork, tables, charts, and callouts can be positioned freely, resized from eight handles, snapped to margins, layered front/back, and arranged with edge or center alignment.
+- One-click editorial inserts for kickers, standfirsts, bylines, pull quotes, captions, section labels, cover lines, folios, and contributor bios, with the editorial style kit added automatically when needed.
 - Shift-click multi-selection, group dragging, alignment guides, zero-height insertion previews, rulers, margin guides, fit-to-width, and stable canvas zoom from 25–200% with buttons, keyboard shortcuts, trackpad pinch, or `Cmd`/`Ctrl`-scroll.
 - Right-click any text frame, artwork, table, chart, or callout for contextual editing, duplication, layering, movement, deletion, and full-bleed commands. Right-click the page for canvas tools.
 - A contextual design inspector with role typography, paragraph presets, character controls, hyphenation, columns, tabs, drop caps, nested openings, rules, borders, shading, bullets, numbering, and GREP styling.
@@ -89,7 +90,7 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 ### Publishing
 
 - Custom trim sizes for trade books, digest and zine formats, newsstand magazines, catalogues, portfolios, A4, and US Letter.
-- Running headers and footers with `{{title}}`, `{{author}}`, `{{section}}`, and `{{page}}` tokens.
+- Running headers and footers with `{{title}}`, `{{author}}`, `{{section}}`, `{{page}}`, `{{volume}}`, `{{issue}}`, `{{season}}`, `{{year}}`, and `{{issueLine}}` tokens.
 - Flexible page numbering with automatic sequences or manual range starts, Arabic or Roman styles, custom formats, placement, and per-section overrides.
 - Generated contents with configurable title, H1–H6 depth, matter inclusion, and per-heading visibility.
 - Export to **EPUB 3, DOCX, styled HTML, Markdown, and plain text**, or print / save as PDF with the selected trim size and page styling. Named paragraph styles, drop caps, nested openings, rules, shading, and custom widths travel into HTML, EPUB, and print output.
