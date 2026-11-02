@@ -55,7 +55,7 @@ import {
 import type * as React from "react";
 import type { Book, Chapter, ChapterKind, ChapterSnapshot, ChapterSnapshotReason } from "../lib/types";
 import { BOOK_GRAPHICS, BOOK_GRAPHIC_CATEGORIES, graphicDataUri, type BookGraphic, type BookGraphicVariant } from "../lib/bookAssets";
-import { layoutForBook, parseBookLayout, serializeBookLayout, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTypography } from "../lib/bookLayout";
+import { layoutForBook, mergeEditorialStyles, parseBookLayout, serializeBookLayout, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTypography } from "../lib/bookLayout";
 import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVars } from "../lib/bookStyles";
 import { api } from "../lib/api";
 import { htmlToMarkdown } from "../lib/richtext";
@@ -102,6 +102,18 @@ import {
 import { handleTabListKeyDown, manuscriptStyle, useConfirmationDialog } from "./BooksStudio";
 
 const SPRINT_PRESETS = [15, 25, 45] as const;
+
+const EDITORIAL_INSERTS = [
+  { styleId: "editorial-kicker", label: "Kicker / eyebrow", text: "A small line above the story" },
+  { styleId: "editorial-standfirst", label: "Standfirst / deck", text: "A short introduction that sets up the feature." },
+  { styleId: "editorial-byline", label: "Byline", text: "Words by Your Name" },
+  { styleId: "pull-quote", label: "Pull quote", text: "A sentence worth pulling out of the story." },
+  { styleId: "caption", label: "Caption", text: "A caption for the artwork above." },
+  { styleId: "editorial-section-label", label: "Section label", text: "Field Notes" },
+  { styleId: "editorial-cover-line", label: "Cover line", text: "A line for the cover" },
+  { styleId: "editorial-folio", label: "Folio", text: "Issue 04 · Page 12" },
+  { styleId: "editorial-contributor", label: "Contributor bio", text: "Your Name writes about place, memory, and the everyday." },
+] as const;
 const CANVAS_PREFS_KEY = "note-me.books.canvas.v2";
 const MIN_CANVAS_ZOOM = 25;
 const MAX_CANVAS_ZOOM = 200;
@@ -2006,6 +2018,24 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const insertTable = () => insertRichBlock(tableBlockText(["| Measure | Current | Target |", "| :--- | ---: | ---: |", "| Example | 42 | 60 |"], { caption: "A clear comparison", align: "left", striped: true, compact: false, width: 100 }));
   const insertChart = () => insertRichBlock(chartBlockText(defaultChartData()));
   const insertCallout = () => insertRichBlock(calloutBlockText("A note for the reader", "note", "Use this space for context, a caveat, or a memorable detail."));
+  const insertEditorialBlock = (styleId: string, text: string) => {
+    if (!inspectorLayoutRef.current.paragraphStyles.some((preset) => preset.id === styleId)) {
+      changeLayout((current) => ({ ...current, paragraphStyles: mergeEditorialStyles(current.paragraphStyles) }));
+    }
+    const source = withFreeY(canvasTextSource(text, { width: 100, align: "left", styleId }), freeInsertionY(editorSelection.start)).trim();
+    const start = editorSelection.titleFocused ? content.length : editorSelection.start;
+    const end = editorSelection.titleFocused ? content.length : editorSelection.end;
+    const before = content.slice(0, start);
+    const after = content.slice(end);
+    const prefix = before && !/\n\s*$/.test(before) ? "\n\n" : "";
+    const suffix = after && !/^\s*\n/.test(after) ? "\n\n" : "";
+    const nextContent = `${before}${prefix}${source}${suffix}${after}`;
+    const sourceStart = start + prefix.length;
+    setContent(nextContent);
+    markDraft({ content: nextContent });
+    setEditorSelection({ start: sourceStart, end: sourceStart + source.length, titleFocused: false });
+    setPendingCanvasFocus({ start: sourceStart, cursor: 0 });
+  };
 
   const addTextBlock = (xPercent?: number, yPercent?: number) => {
     const existing = canvasBlocks(content);
@@ -2497,6 +2527,15 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 </div>
                 <div className="design-tool-group" aria-label="Insert block">
                   <button onClick={() => insertRichBlock("---")} title="Insert scene break" aria-label="Insert scene break"><Minus size={14} /></button>
+                </div>
+                <div className="design-tool-group design-insert-group" aria-label="Editorial blocks">
+                  <label className="design-insert-control" title="Insert a styled editorial block">
+                    <Type size={14} />
+                    <select aria-label="Insert editorial block" defaultValue="" onChange={(event) => { const next = EDITORIAL_INSERTS.find((item) => item.styleId === event.target.value); if (next) insertEditorialBlock(next.styleId, next.text); event.target.value = ""; }}>
+                      <option value="" disabled>Editorial…</option>
+                      {EDITORIAL_INSERTS.map((item) => <option key={item.styleId} value={item.styleId}>{item.label}</option>)}
+                    </select>
+                  </label>
                 </div>
                 <div className="design-tool-group books-canvas-toggles" aria-label="Canvas overlays">
                   <button className={showRulers ? "active" : ""} onClick={() => setShowRulers((value) => !value)} title={showRulers ? "Hide rulers" : "Show rulers"} aria-pressed={showRulers}><Ruler size={13} /> Rulers</button>

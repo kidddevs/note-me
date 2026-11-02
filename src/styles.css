@@ -5517,6 +5517,9 @@ kbd {
    New manuscript templates and editorial style kit
    ========================================================================== */
 
+.design-insert-control { display: flex; height: 28px; align-items: center; gap: 5px; padding: 0 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-3); }
+.design-insert-control:hover { border-color: color-mix(in srgb, var(--editor-accent) 42%, var(--border)); color: var(--editor-accent); }
+.design-insert-control select { max-width: 105px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; font-size: 9.5px; cursor: pointer; }
 .books-baseline-snap { margin-top: 10px; }
 .books-page-margins-settings .books-toggle-row { margin-top: 4px; }
 .books-new-overlay { align-items: flex-start; padding: 7vh 20px 24px; overflow-y: auto; }

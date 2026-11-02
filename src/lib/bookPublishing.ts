@@ -1513,7 +1513,7 @@ function docxTextParagraph(line: string, layout: BookLayout) {
 function docxChromeXml(book: Book, layout: BookLayout, kind: "header" | "footer") {
   const pageMarker = docxPageMarker(layout);
   const chrome = kind === "header" ? layout.header : layout.footer;
-  const values = [chrome.left, chrome.center, chrome.right].map((value) => layoutTokenText(value, book, "", layout.pageNumbering.enabled ? pageMarker : ""));
+  const values = [chrome.left, chrome.center, chrome.right].map((value) => layoutTokenText(value, book, "", layout.pageNumbering.enabled ? pageMarker : "", layout.publication));
   if (kind === "footer" && layout.pageNumbering.enabled && !layout.footer[layout.pageNumbering.placement].includes("{{page}}")) {
     const placementIndex = layout.pageNumbering.placement === "left" ? 0 : layout.pageNumbering.placement === "center" ? 1 : 2;
     values[placementIndex] = [values[placementIndex], pageMarker].filter(Boolean).join(" · ");
@@ -1879,7 +1879,7 @@ export function imagePresentationCss() {
 
 export function bookChromeValues(book: Book, layout: BookLayout, key: string, section: string, band: PageBand, ordinal: number) {
   const page = pageNumberForSection(layout, key, band, ordinal);
-  const resolve = (value: string) => layoutTokenText(value, book, section, page ?? "");
+  const resolve = (value: string) => layoutTokenText(value, book, section, page ?? "", layout.publication);
   const header = [layout.header.left, layout.header.center, layout.header.right].map(resolve);
   const footer = [layout.footer.left, layout.footer.center, layout.footer.right].map(resolve);
   if (page && !layout.footer[layout.pageNumbering.placement].includes("{{page}}")) {

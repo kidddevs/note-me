@@ -96,6 +96,8 @@ test("editorial presets carry magazine paragraph styles into the serialized layo
   assert.equal(layout.typography.paragraph.fontSize, 10.5);
   assert.equal(layout.accentColor, "#b04a31");
   assert.equal(layout.pageMargins.top, 0.55);
+  assert.equal(layout.publication.issue, "04");
+  assert.equal(layout.publication.season, "Summer");
 });
 
 test("opening pages sort before story and closing sections in every template", () => {

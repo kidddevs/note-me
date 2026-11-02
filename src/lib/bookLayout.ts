@@ -149,6 +149,13 @@ export interface BookBaselineGrid {
   color: string;
 }
 
+export interface BookPublication {
+  volume: string;
+  issue: string;
+  season: string;
+  year: string;
+}
+
 export interface BookLayout {
   header: BookChrome;
   footer: BookChrome;
@@ -160,6 +167,7 @@ export interface BookLayout {
   pagePatternColor: string;
   pagePatternSpacing: number;
   baselineGrid: BookBaselineGrid;
+  publication: BookPublication;
   freeMargins: boolean;
   typography: BookTypography;
   paragraphStyles: BookParagraphStyle[];
@@ -455,6 +463,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   pagePatternColor: "#c9c0b4",
   pagePatternSpacing: 0.28,
   baselineGrid: { enabled: false, spacing: 0.167, color: "#c9c0b4" },
+  publication: { volume: "", issue: "", season: "", year: "" },
   freeMargins: false,
   typography: DEFAULT_BOOK_TYPOGRAPHY,
   paragraphStyles: DEFAULT_PARAGRAPH_STYLES,
@@ -655,6 +664,16 @@ function baselineGrid(value: unknown, fallback: BookBaselineGrid): BookBaselineG
   };
 }
 
+function publication(value: unknown, fallback: BookPublication): BookPublication {
+  const source = isRecord(value) ? value : {};
+  return {
+    volume: text(source.volume).slice(0, 40) || fallback.volume,
+    issue: text(source.issue).slice(0, 40) || fallback.issue,
+    season: text(source.season).slice(0, 60) || fallback.season,
+    year: text(source.year).slice(0, 20) || fallback.year,
+  };
+}
+
 function textStyle(value: unknown, fallback: BookTextStyle): BookTextStyle {
   const source = isRecord(value) ? value : {};
   return {
@@ -767,6 +786,7 @@ export function parseBookLayout(value?: string, typographyFallback: BookTypograp
     pagePatternColor: color(source.pagePatternColor, DEFAULT_BOOK_LAYOUT.pagePatternColor),
     pagePatternSpacing: decimal(source.pagePatternSpacing, DEFAULT_BOOK_LAYOUT.pagePatternSpacing, 0.15, 0.6),
     baselineGrid: baselineGrid(source.baselineGrid, DEFAULT_BOOK_LAYOUT.baselineGrid),
+    publication: publication(source.publication, DEFAULT_BOOK_LAYOUT.publication),
     freeMargins: boolean(source.freeMargins, DEFAULT_BOOK_LAYOUT.freeMargins),
     typography: Object.fromEntries((Object.keys(typographyFallback) as BookTextRole[]).map((role) => [role, textStyle(sourceTypography[role], typographyFallback[role])])) as BookTypography,
     paragraphStyles: paragraphStyles(source.paragraphStyles),
@@ -839,10 +859,16 @@ export function layoutSectionKey(kind: "opening" | "contents" | "story" | "closi
   return id === undefined ? kind : `${kind}:${id}`;
 }
 
-export function layoutTokenText(value: string, book: Book, section: string, pageNumber: string) {
+export function layoutTokenText(value: string, book: Book, section: string, pageNumber: string, publication: BookPublication = DEFAULT_BOOK_LAYOUT.publication) {
+  const issueLine = [publication.volume ? `Volume ${publication.volume}` : "", publication.issue ? `Issue ${publication.issue}` : ""].filter(Boolean).join(" · ");
   return value
     .replace(/\{\{title\}\}/gi, book.title || "Untitled manuscript")
     .replace(/\{\{author\}\}/gi, book.author || "")
     .replace(/\{\{section\}\}/gi, section)
-    .replace(/\{\{page\}\}/gi, pageNumber);
+    .replace(/\{\{page\}\}/gi, pageNumber)
+    .replace(/\{\{volume\}\}/gi, publication.volume)
+    .replace(/\{\{issue\}\}/gi, publication.issue)
+    .replace(/\{\{season\}\}/gi, publication.season)
+    .replace(/\{\{year\}\}/gi, publication.year)
+    .replace(/\{\{issueLine\}\}/gi, issueLine);
 }

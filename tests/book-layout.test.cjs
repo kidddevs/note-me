@@ -2,9 +2,13 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   DEFAULT_BOOK_LAYOUT,
+  EDITORIAL_PARAGRAPH_STYLES,
+  hasEditorialStyles,
+  mergeEditorialStyles,
   pageNumberForSection,
   pageNumberText,
   parseBookLayout,
+  layoutTokenText,
 } = require("./.compiled/src/lib/bookLayout.js");
 
 test("invalid layouts normalize to safe publishing defaults", () => {
@@ -119,6 +123,9 @@ test("magazine typography controls normalize for print and EPUB", () => {
   assert.equal(parsed.typography.paragraph.hangingPunctuation, true);
   assert.equal(parsed.typography.paragraph.lastLineAlign, "left");
 
+  const issue = parseBookLayout(JSON.stringify({ publication: { volume: "02", issue: "04", season: "Summer", year: "2026" } }));
+  assert.deepEqual(issue.publication, { volume: "02", issue: "04", season: "Summer", year: "2026" });
+
   const fallback = parseBookLayout(JSON.stringify({ baselineGrid: { spacing: 9 }, typography: { paragraph: { widows: 99, ligatures: "invalid" } } }));
   assert.equal(fallback.baselineGrid.spacing, 0.6);
   assert.equal(fallback.typography.paragraph.widows, 5);
@@ -130,6 +137,25 @@ test("missing paragraph style libraries fall back to the built-in presets", () =
   assert.ok(parsed.paragraphStyles.length >= 6);
   assert.ok(parsed.paragraphStyles.some((preset) => preset.id === "body-classic"));
   assert.ok(parsed.paragraphStyles.every((preset) => preset.style.ruleAbove && preset.style.border && preset.style.bullets));
+});
+
+test("the editorial style kit merges once and is idempotent", () => {
+  const once = mergeEditorialStyles(DEFAULT_BOOK_LAYOUT.paragraphStyles);
+  assert.equal(once.length, DEFAULT_BOOK_LAYOUT.paragraphStyles.length + EDITORIAL_PARAGRAPH_STYLES.length);
+  assert.equal(hasEditorialStyles(once), true);
+  assert.equal(mergeEditorialStyles(once).length, once.length);
+  const kicker = once.find((style) => style.id === "editorial-kicker");
+  assert.equal(kicker.style.textCase, "uppercase");
+  assert.equal(kicker.style.color, "accent");
+  assert.equal(kicker.style.fontFamily, "sans");
+});
+
+test("issue tokens resolve in running heads and footers", () => {
+  const book = { title: "Field Notes", author: "A. Editor" };
+  const publication = { volume: "02", issue: "04", season: "Summer", year: "2026" };
+  const resolved = layoutTokenText("{{issueLine}} · {{season}} {{year}} · {{page}}", book, "Feature", "12", publication);
+  assert.equal(resolved, "Volume 02 · Issue 04 · Summer 2026 · 12");
+  assert.equal(layoutTokenText("{{volume}}/{{issue}}", book, "", "", publication), "02/04");
 });
 
 test("page numbering honors start bands, overrides, and roman/custom styles", () => {

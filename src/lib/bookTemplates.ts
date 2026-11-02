@@ -4,6 +4,7 @@ import {
   paperPresetLayout,
   serializeBookLayout,
   type BookPaperPreset,
+  type BookPublication,
 } from "./bookLayout";
 import type { BookInput, ChapterKind } from "./types";
 
@@ -31,6 +32,7 @@ export interface BookTemplate {
   tocTitle: string;
   tocEnabled: boolean;
   coverColor: string;
+  publication?: Partial<BookPublication>;
   chapters: BookTemplateChapter[];
 }
 
@@ -92,6 +94,7 @@ export const BOOK_TEMPLATES: BookTemplate[] = [
     tocTitle: "In this issue",
     tocEnabled: true,
     coverColor: "#b04a31",
+    publication: { volume: "02", issue: "04", season: "Summer", year: "2026" },
     chapters: [
       {
         kind: "cover",
@@ -205,6 +208,7 @@ export function bookTemplateLayout(template: BookTemplate) {
   return {
     ...layout,
     pageMargins: preset ? { top: preset.margin, right: preset.margin, bottom: preset.margin, left: preset.margin } : layout.pageMargins,
+    publication: { ...layout.publication, ...(template.publication ?? {}) },
   };
 }
 
