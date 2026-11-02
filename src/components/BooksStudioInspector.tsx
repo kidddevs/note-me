@@ -43,7 +43,7 @@ import {
   Underline,
   X,
 } from "lucide-react";
-import { DEFAULT_BOOK_TYPOGRAPHY, type BookBulletType, type BookGrepStyle, type BookLayout, type BookNestedStyle, type BookParagraphStyle, type BookRuleStyle, type BookTextAlign, type BookTextCase, type BookTextRole, type BookTextStyle } from "../lib/bookLayout";
+import { DEFAULT_BOOK_TYPOGRAPHY, hasEditorialStyles, mergeEditorialStyles, type BookBulletType, type BookGrepStyle, type BookLayout, type BookNestedStyle, type BookParagraphStyle, type BookRuleStyle, type BookTextAlign, type BookTextCase, type BookTextRole, type BookTextStyle } from "../lib/bookLayout";
 import {
   addTableColumn,
   addTableRow,
@@ -513,6 +513,7 @@ function DocumentPanel({ layout, onLayoutChange }: { layout: BookLayout; onLayou
       <div className="design-style-list compact">
         {styles.map((preset) => <div key={preset.id} className="design-style-card static"><span className="design-style-aa" style={{ fontFamily: fontCss(preset.style.fontFamily), fontWeight: preset.style.fontWeight, fontStyle: preset.style.fontStyle }}>Aa</span><span><strong>{preset.name}</strong><small>{preset.style.fontFamily} · {preset.style.fontSize}pt</small></span></div>)}
       </div>
+      {!hasEditorialStyles(styles) && <button className="design-style-set" onClick={() => onLayoutChange((current) => ({ ...current, paragraphStyles: mergeEditorialStyles(current.paragraphStyles) }))}><Sparkles size={13} /> Add editorial style kit<small>Kickers, standfirsts, bylines, folios &amp; more</small></button>}
       <p className="design-help">Apply a style to a text box from the floating quick bar or the style library above. Style edits are shared by every text box using that preset.</p>
     </InspectorSection>
     <InspectorSection icon={<BookOpen size={14} />} title="Role typography" summary="Fallback styles for each text role">

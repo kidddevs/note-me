@@ -15,7 +15,7 @@ import type { Book, Chapter } from "../lib/types";
 import { bookExportChecks } from "../lib/bookExport";
 import { layoutForBook, layoutSectionKey } from "../lib/bookLayout";
 import { backMatterSections, buildBookToc, frontMatterSections, matterAnchorId, orderBookChapters, sectionAnchorId, type TocEntry } from "../lib/bookToc";
-import { chapterBandOrdinal, chapterDisplayLabel, chapterHasDistinctTitle, chapterPageBand, chapterTitleHeading, EXPORT_OPTIONS, markdownToHtml, tocTitle, TRIM_SIZES, wordCount } from "../lib/bookPublishing";
+import { chapterBandOrdinal, chapterDisplayLabel, chapterHasDistinctTitle, chapterIsOpeningPage, chapterPageBand, chapterTitleHeading, EXPORT_OPTIONS, markdownToHtml, tocTitle, TRIM_SIZES, wordCount } from "../lib/bookPublishing";
 import { notify } from "../store/toast";
 import {
   BooksPageChrome,
@@ -43,7 +43,7 @@ export function ContentsPreview({ book, entries }: { book: Book; entries: TocEnt
 
 export function InteriorPreview({ book, chapters, chapterId }: { book: Book; chapters: Chapter[]; chapterId: number | null }) {
   const orderedChapters = orderBookChapters(chapters);
-  const chapter = orderedChapters.find((item) => item.id === chapterId && item.chapter_kind !== "title_page") ?? orderedChapters.find((item) => item.chapter_kind !== "title_page") ?? null;
+  const chapter = orderedChapters.find((item) => item.id === chapterId && !chapterIsOpeningPage(item.chapter_kind)) ?? orderedChapters.find((item) => !chapterIsOpeningPage(item.chapter_kind)) ?? null;
   if (!chapter) return <div className="books-preview-empty-state"><BookOpen size={20} /><strong>Add a section to preview the interior.</strong><span>The cover preview will use your book metadata.</span></div>;
   const chapterIndex = orderedChapters.indexOf(chapter);
   const band = chapterPageBand(chapter);
@@ -63,7 +63,8 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: { bo
   const toc = useMemo(() => buildBookToc(book, chapters), [book, chapters]);
   const preflight = useMemo(() => bookExportChecks(book, chapters), [book, chapters]);
   const attentionCount = preflight.filter((check) => check.severity !== "info").length;
-  const interiorChapters = orderBookChapters(chapters).filter((chapter) => chapter.chapter_kind !== "title_page");
+  const interiorChapters = orderBookChapters(chapters).filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind));
+  const coverChapter = orderBookChapters(chapters).find((chapter) => chapter.chapter_kind === "cover") ?? null;
   const selectedPreviewChapterId = interiorChapters.some((chapter) => chapter.id === previewChapterId) ? previewChapterId : (interiorChapters[0]?.id ?? null);
   const handleExport = async () => { setBusy(true); try { await exportBook(book, chapters, format); } catch (error) { notify("error", "Export failed", String(error)); } finally { setBusy(false); } };
   const openPreflightItem = (check: (typeof preflight)[number]) => {
@@ -91,7 +92,7 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: { bo
          </div>
          <div className="books-export-preview">
             <div className="books-preview-toolbar"><span>Output preview</span><div className="books-preview-toolbar-actions"><div className="books-preview-mode" role="tablist" aria-label="Preview page" onKeyDown={handleTabListKeyDown}><button className={previewMode === "cover" ? "active" : ""} onClick={() => setPreviewMode("cover")} role="tab" aria-selected={previewMode === "cover"} tabIndex={previewMode === "cover" ? 0 : -1}>Cover</button><button className={previewMode === "interior" ? "active" : ""} onClick={() => setPreviewMode("interior")} role="tab" aria-selected={previewMode === "interior"} tabIndex={previewMode === "interior" ? 0 : -1}>Interior</button></div>{previewMode === "interior" && interiorChapters.length > 0 && <label className="books-preview-section-picker"><span>Section</span><select aria-label="Preview section" value={selectedPreviewChapterId ?? ""} onChange={(event) => setPreviewChapterId(Number(event.target.value))}>{interiorChapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.title || chapterDisplayLabel(chapter, interiorChapters.indexOf(chapter), interiorChapters)}</option>)}</select></label>}<span>{TRIM_SIZES.find((size) => size.value === book.trim_size)?.label ?? book.trim_size} / {totalWords.toLocaleString()} words</span></div></div>
-            {previewMode === "cover" ? <div className="books-preview-page" style={manuscriptStyle(book)}><BooksPageChrome book={book} keyName="story" section="Chapter 1" band="story" ordinal={0} /><span className="books-preview-kicker">{book.genre || "Manuscript"}</span><h2 className="book-title">{book.title || "Untitled manuscript"}</h2>{book.subtitle && <p className="books-preview-subtitle">{book.subtitle}</p>}<span className="books-preview-author">{book.author || "Author"}</span><div className="books-preview-rule" /><p>{book.description || "Your book description will appear in the front matter and metadata of exported copies."}</p><ContentsPreview book={book} entries={toc} /></div> : <InteriorPreview book={book} chapters={chapters} chapterId={selectedPreviewChapterId} />}
+            {previewMode === "cover" ? (coverChapter ? <div className="books-preview-page books-preview-cover-chapter" style={manuscriptStyle(book)}><BooksPageChrome book={book} keyName="opening" section={coverChapter.title || "Cover"} band="opening" ordinal={0} /><span className="books-preview-kicker">{book.genre || "Magazine"}</span><h2 className="book-title">{coverChapter.title || book.title || "Untitled magazine"}</h2><article dangerouslySetInnerHTML={{ __html: markdownToHtml(coverChapter.content, sectionAnchorId(coverChapter.id), layoutForBook(book).typography) }} /></div> : <div className="books-preview-page" style={manuscriptStyle(book)}><BooksPageChrome book={book} keyName="story" section="Chapter 1" band="story" ordinal={0} /><span className="books-preview-kicker">{book.genre || "Manuscript"}</span><h2 className="book-title">{book.title || "Untitled manuscript"}</h2>{book.subtitle && <p className="books-preview-subtitle">{book.subtitle}</p>}<span className="books-preview-author">{book.author || "Author"}</span><div className="books-preview-rule" /><p>{book.description || "Your book description will appear in the front matter and metadata of exported copies."}</p><ContentsPreview book={book} entries={toc} /></div>) : <InteriorPreview book={book} chapters={chapters} chapterId={selectedPreviewChapterId} />}
          </div>
        </div>
     </div>
@@ -101,9 +102,9 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: { bo
 export function PrintBook({ book, chapters, toc }: { book: Book; chapters: Chapter[]; toc: TocEntry[] }) {
   const layout = layoutForBook(book);
   const orderedChapters = orderBookChapters(chapters);
-  const titlePage = orderedChapters.find((chapter) => chapter.chapter_kind === "title_page");
+  const titlePage = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   const front = frontMatterSections(book, chapters);
-  const contentChapters = orderedChapters.filter((chapter) => chapter.chapter_kind !== "title_page");
+  const contentChapters = orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind));
   const back = backMatterSections(book, chapters);
   return (
     <div className="book-print-root" style={manuscriptStyle(book)}>

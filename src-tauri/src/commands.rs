@@ -399,19 +399,45 @@ pub fn delete_note_forever(app: AppHandle, state: State<Db>, id: i64) -> Result<
 // ---------- books ----------
 
 const BOOK_STATUSES: [&str; 4] = ["draft", "revising", "ready", "published"];
-const BOOK_TRIM_SIZES: [&str; 6] = ["5x8", "5.25x8", "6x9", "5.83x8.27", "8.27x11.69", "8.5x11"];
+const BOOK_TRIM_SIZES: [&str; 10] = [
+    "5x8",
+    "5.25x8",
+    "5.5x8.5",
+    "6x9",
+    "5.83x8.27",
+    "7.5x9.75",
+    "8x10",
+    "8.27x11.69",
+    "8.5x11",
+    "9x12",
+];
 const BOOK_FONT_FAMILIES: [&str; 4] = ["serif", "humanist", "sans", "mono"];
-const CHAPTER_KINDS: [&str; 10] = [
+const CHAPTER_KINDS: [&str; 25] = [
     "title_page",
+    "cover",
+    "masthead",
+    "contents_page",
     "dedication",
     "epigraph",
     "copyright",
+    "editorial",
     "prologue",
     "chapter",
+    "feature",
+    "department",
+    "column",
+    "profile",
+    "interview",
+    "review",
+    "photo_essay",
+    "recipe",
+    "listing",
     "interlude",
     "appendix",
     "acknowledgements",
     "about_author",
+    "advertisement",
+    "colophon",
 ];
 
 fn validate_text_length(label: &str, value: &str, maximum: usize) -> Result<(), String> {
@@ -1609,6 +1635,15 @@ mod tests {
     }
 
     #[test]
+    fn accepts_magazine_trim_sizes() {
+        let result = validate_book_fields(
+            "Field Notes", "", "", "", "", "draft", "7.5x9.75", "serif", 10.5, 1.45, 0.35, 0.55,
+            12_000, "#b04a31", "In this issue", 3, "{}",
+        );
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
     fn rejects_invalid_publishing_values() {
         let result = validate_book_fields(
             "Book", "", "", "", "", "unknown", "6x9", "serif", 12.0, 1.5, 0.0, 1.0, 50_000,
@@ -1629,6 +1664,11 @@ mod tests {
     #[test]
     fn validates_section_kinds_and_normalizes_heading_exclusions() {
         assert_eq!(validate_chapter_fields("chapter", "A beginning"), Ok(()));
+        assert_eq!(validate_chapter_fields("cover", "The Slow Issue"), Ok(()));
+        assert_eq!(
+            validate_chapter_fields("photo_essay", "Rooms in Light"),
+            Ok(())
+        );
         assert_eq!(
             validate_chapter_fields("unknown", "A beginning"),
             Err("invalid section type".to_string())

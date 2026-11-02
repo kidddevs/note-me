@@ -1,4 +1,5 @@
 import type { Book, BookInput, Chapter, ChapterKind } from "./types";
+import { chapterGroup, chapterIsOpeningPage, chapterKindLabel } from "./chapterKinds";
 import {
   DEFAULT_BOOK_TYPOGRAPHY,
   layoutForBook,
@@ -31,10 +32,14 @@ export type PageBand = "opening" | "contents" | "story" | "closing";
 export const TRIM_SIZES = [
   { value: "5x8", label: "5 x 8 in", description: "Compact trade" },
   { value: "5.25x8", label: "5.25 x 8 in", description: "Classic paperback" },
+  { value: "5.5x8.5", label: "5.5 x 8.5 in", description: "Digest / zine" },
   { value: "6x9", label: "6 x 9 in", description: "Standard novel" },
   { value: "5.83x8.27", label: "A5", description: "International trade" },
-  { value: "8.27x11.69", label: "A4", description: "Workbook / proof" },
-  { value: "8.5x11", label: "US Letter", description: "Manuscript / print" },
+  { value: "7.5x9.75", label: "7.5 x 9.75 in", description: "Newsstand magazine" },
+  { value: "8x10", label: "8 x 10 in", description: "Annual / catalogue" },
+  { value: "8.27x11.69", label: "A4", description: "Workbook / newsletter" },
+  { value: "8.5x11", label: "US Letter", description: "Magazine / print" },
+  { value: "9x12", label: "9 x 12 in", description: "Portfolio / art book" },
 ];
 
 export const FONT_OPTIONS = [
@@ -51,18 +56,7 @@ export const STATUS_OPTIONS = [
   { value: "published", label: "Published" },
 ];
 
-export const CHAPTER_KIND_OPTIONS: { value: ChapterKind; label: string; group: "front" | "story" | "back" }[] = [
-  { value: "title_page", label: "Title page", group: "front" },
-  { value: "dedication", label: "Dedication", group: "front" },
-  { value: "epigraph", label: "Epigraph", group: "front" },
-  { value: "copyright", label: "Copyright", group: "front" },
-  { value: "prologue", label: "Prologue", group: "story" },
-  { value: "chapter", label: "Chapter", group: "story" },
-  { value: "interlude", label: "Interlude", group: "story" },
-  { value: "appendix", label: "Appendix", group: "back" },
-  { value: "acknowledgements", label: "Acknowledgements", group: "back" },
-  { value: "about_author", label: "About the author", group: "back" },
-];
+export { CHAPTER_KIND_OPTIONS, chapterGroup, chapterKindLabel, chapterIsOpeningPage } from "./chapterKinds";
 
 export const EXPORT_OPTIONS: { value: ExportFormat; label: string; description: string; extension: string }[] = [
   { value: "epub", label: "EPUB 3", description: "Reflowable ebook for Kindle apps, Apple Books, Kobo, and readers", extension: ".epub" },
@@ -183,14 +177,6 @@ export function findOccurrences(text: string, query: string) {
     start = match + Math.max(1, normalizedQuery.length);
   }
   return matches;
-}
-
-export function chapterKindLabel(kind: string) {
-  return CHAPTER_KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Chapter";
-}
-
-export function chapterGroup(kind: ChapterKind) {
-  return CHAPTER_KIND_OPTIONS.find((option) => option.value === kind)?.group ?? "story";
 }
 
 export function chapterPageBand(chapter: Chapter) {
@@ -1339,8 +1325,8 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
   const orderedChapters = orderBookChapters(chapters);
   const subtitle = book.subtitle ? `<p class="subtitle">${escapeHtml(book.subtitle)}</p>` : "";
   const author = book.author ? `<p class="author">${escapeHtml(book.author)}</p>` : "";
-  const titlePageChapter = orderedChapters.find((chapter) => chapter.chapter_kind === "title_page");
-  const contentChapters = orderedChapters.filter((chapter) => chapter.chapter_kind !== "title_page");
+  const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
+  const contentChapters = orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind));
   const titlePageHtml = titlePageChapter
      ? `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${markdownToHtml(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), layout.typography)}</section>`
     : `<section class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening"), "Title page", "opening", 0)}<h1 class="book-title">${title}</h1>${subtitle}${author}</section>`;
@@ -1607,10 +1593,14 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
   const pageSizes: Record<string, { width: number; height: number }> = {
     "5x8": { width: 7200, height: 11520 },
     "5.25x8": { width: 7560, height: 11520 },
+    "5.5x8.5": { width: 7920, height: 12240 },
     "6x9": { width: 8640, height: 12960 },
     "5.83x8.27": { width: 8395, height: 11909 },
+    "7.5x9.75": { width: 10800, height: 14040 },
+    "8x10": { width: 11520, height: 14400 },
     "8.27x11.69": { width: 11909, height: 16834 },
     "8.5x11": { width: 12240, height: 15840 },
+    "9x12": { width: 12960, height: 17280 },
   };
   const pageSize = pageSizes[book.trim_size] ?? pageSizes["6x9"];
   const toc = buildBookToc(book, chapters);
@@ -1619,7 +1609,7 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
     `<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:pageBreakBefore/></w:pPr><w:r><w:t>${docxXml(tocTitle(book))}</w:t></w:r></w:p>`,
     ...toc.map((entry) => `<w:p><w:pPr><w:ind w:left="${Math.max(0, entry.level - 1) * 360}"/></w:pPr><w:r><w:t>${docxXml(entry.label)}</w:t></w:r></w:p>`),
   ] : [];
-  const titlePageChapter = orderedChapters.find((chapter) => chapter.chapter_kind === "title_page");
+  const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   const titleParagraphs = titlePageChapter
     ? [
         `<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${docxXml(titlePageChapter.title || book.title)}</w:t></w:r></w:p>`,
@@ -1637,7 +1627,7 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
       `<w:p><w:pPr><w:pageBreakBefore/><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>${docxXml(section.title)}</w:t></w:r></w:p>`,
         ...docxContentParagraphs(section.content, assets, layout),
     ]),
-     ...orderedChapters.filter((chapter) => chapter.chapter_kind !== "title_page").flatMap((chapter) => [
+     ...orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind)).flatMap((chapter) => [
        (() => {
          const index = orderedChapters.indexOf(chapter);
          const pageBreak = "<w:pageBreakBefore/>";
@@ -1694,7 +1684,7 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
     spine.push(`<itemref idref="${id}"/>`);
     chapterFiles[file] = strToU8(`<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${escapeHtml(title)}</title><style>${epubCss}</style></head><body>${embedImages(body)}</body></html>`);
   };
-  const titlePageChapter = orderedChapters.find((chapter) => chapter.chapter_kind === "title_page");
+  const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   if (titlePageChapter) {
      addSection("title-page", titlePageChapter.title || book.title || "Untitled manuscript", `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${markdownToHtml(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), layout.typography)}</section>`);
   } else {
@@ -1702,7 +1692,7 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   }
   const front = frontMatterSections(book, chapters);
    if (front.length) addSection("front-matter", "Front matter", `<section class="matter">${front.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "opening", section.title, "opening", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${markdownToHtml(section.content, matterAnchorId(section.key), layout.typography)}</section>`).join("")}</section>`);
-  orderedChapters.filter((chapter) => chapter.chapter_kind !== "title_page").forEach((chapter) => {
+  orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind)).forEach((chapter) => {
     const index = orderedChapters.indexOf(chapter);
     const id = `chapter-${chapter.id}`;
     const band = chapterPageBand(chapter);

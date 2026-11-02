@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { BookOpen, Check, FileText, LayoutList, NotebookPen, Ruler, Settings2, Sparkles } from "lucide-react";
 import type { Book, BookInput, Chapter } from "../lib/types";
-import { BOOK_PAPER_PRESETS, layoutForBook, layoutSectionKey, pageRuleFor, serializeBookLayout, type BookLayout, type BookPageNumberStyle, type BookTextRole } from "../lib/bookLayout";
+import { BOOK_PAPER_PRESETS, layoutForBook, layoutSectionKey, pageRuleFor, paperPresetLayout, serializeBookLayout, type BookLayout, type BookPageNumberStyle, type BookTextRole } from "../lib/bookLayout";
 import { MEASUREMENT_UNITS, measurementRange, measurementToInches, measurementUnitShort, measurementValue, trimSizeLabel } from "../lib/measurements";
 import { orderBookChapters } from "../lib/bookToc";
 import { chapterKindLabel, chapterPageBand, FONT_OPTIONS, PAGE_NUMBER_STYLE_OPTIONS, PAGE_START_OPTIONS, STATUS_OPTIONS, TRIM_SIZES, type PageBand } from "../lib/bookPublishing";
@@ -87,12 +87,12 @@ export function SettingsScreen({ book, chapters, focus }: { book: Book; chapters
   };
   const applyPaperPreset = (preset: (typeof BOOK_PAPER_PRESETS)[number]) => {
     set("trimSize", preset.trimSize);
-    setLayout({
-      ...layout,
-      pagePattern: preset.pagePattern,
-      pageColor: preset.pageColor,
-      pageMargins: { top: preset.margin, right: preset.margin, bottom: preset.margin, left: preset.margin },
-    });
+    if (preset.fontFamily) set("fontFamily", preset.fontFamily);
+    if (preset.fontSize) set("fontSize", preset.fontSize);
+    if (preset.lineHeight) set("lineHeight", preset.lineHeight);
+    if (preset.paragraphSpacing !== undefined) set("paragraphSpacing", preset.paragraphSpacing);
+    if (preset.margin) set("margin", preset.margin);
+    setLayout(paperPresetLayout(layout, preset));
   };
   const setChrome = (kind: "header" | "footer", side: "left" | "center" | "right", value: string) => setLayout({ ...layout, [kind]: { ...layout[kind], [side]: value } });
   const setNumbering = (next: Partial<BookLayout["pageNumbering"]>) => setLayout({ ...layout, pageNumbering: { ...layout.pageNumbering, ...next } });

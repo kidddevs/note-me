@@ -14,7 +14,7 @@ export interface BookExportCheck {
   chapterId?: number;
 }
 
-const STORY_KINDS = new Set(["prologue", "chapter", "interlude"]);
+const STORY_KINDS = new Set(["editorial", "prologue", "chapter", "feature", "department", "column", "profile", "interview", "review", "photo_essay", "recipe", "listing", "interlude"]);
 
 export function bookExportChecks(book: Book, chapters: Chapter[]): BookExportCheck[] {
   const checks: BookExportCheck[] = [];
@@ -56,7 +56,7 @@ export function bookExportChecks(book: Book, chapters: Chapter[]): BookExportChe
     checks.push({ id: "duplicate-titles", label: "Review repeated section titles", detail: "Repeated titles can make the contents and reader navigation ambiguous.", severity: "info", target: "outline" });
   }
 
-  if (!chapters.some((chapter) => chapter.chapter_kind === "title_page")) {
+  if (!chapters.some((chapter) => chapter.chapter_kind === "title_page" || chapter.chapter_kind === "cover")) {
     checks.push({ id: "title-page", label: "Consider a title page", detail: "A dedicated title page gives print and editable exports a finished opening.", severity: "info", target: "outline" });
   }
 

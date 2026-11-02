@@ -39,7 +39,7 @@ import type { MatterFocus } from "./BooksStudio";
 
 const SECTION_GROUP_LABELS: Record<"front" | "story" | "back", string> = {
   front: "Opening pages",
-  story: "Story",
+  story: "Story & features",
   back: "Closing pages",
 };
 
@@ -425,7 +425,7 @@ export function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOp
                 const previousGroup = index > 0 ? chapterGroup(orderedChapters[index - 1].chapter_kind) : null;
                 return (
                   <Fragment key={chapter.id}>
-                    {previousGroup !== group && <div className={`books-outline-band-label ${group}`}><span>{group === "front" ? "Opening pages" : group === "story" ? "Story" : "Closing pages"}</span><span>{chapters.filter((item) => chapterGroup(item.chapter_kind) === group).length}</span></div>}
+                    {previousGroup !== group && <div className={`books-outline-band-label ${group}`}><span>{group === "front" ? "Opening pages" : group === "story" ? "Story & features" : "Closing pages"}</span><span>{chapters.filter((item) => chapterGroup(item.chapter_kind) === group).length}</span></div>}
                     <div
                       className={`books-outline-row ${dragChapterId === chapter.id ? "dragging" : ""} ${dragOverChapterId === chapter.id ? `drop-target ${dragOverAfter ? "drop-after" : "drop-before"}` : ""}`}
                       draggable

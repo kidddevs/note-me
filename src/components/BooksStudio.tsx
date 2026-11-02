@@ -2,6 +2,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSPrope
 import {
   ArrowLeft,
   BookOpen,
+  Camera,
+  ChefHat,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -9,12 +11,14 @@ import {
   LayoutList,
   Library,
   MoreHorizontal,
+  Newspaper,
   NotebookPen,
   Plus,
   Search,
   Settings2,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import type { Book, Chapter, ChapterKind } from "../lib/types";
 import { layoutForBook } from "../lib/bookLayout";
@@ -31,6 +35,7 @@ import {
   filenameFor,
   formatUpdated,
   fontCss,
+  TRIM_SIZES,
 } from "../lib/bookPublishing";
 export * from "../lib/bookPublishing";
 import type { BookExportFormat, PageBand } from "../lib/bookPublishing";
@@ -39,6 +44,7 @@ import { useBookTabs } from "../store/bookTabs";
 import { useWorkspace } from "../store/workspace";
 import { notify } from "../store/toast";
 import { createNewBook } from "../lib/actions";
+import { BOOK_TEMPLATES, bookTemplate, type BookTemplate, type BookTemplateIcon, type BookTemplateId } from "../lib/bookTemplates";
 import { ManuscriptScreen } from "./BooksStudioEditor";
 import { OutlineScreen, SectionsRail } from "./BooksStudioOutline";
 import { ExportScreen, PrintBook } from "./BooksStudioExport";
@@ -373,6 +379,80 @@ function BooksCommandPalette({ open, bookTitle, chapters, onClose, onNavigate, o
   );
 }
 
+function templateIcon(icon: BookTemplateIcon) {
+  if (icon === "magazine") return <Newspaper size={17} />;
+  if (icon === "newsletter") return <LayoutList size={17} />;
+  if (icon === "photo") return <Camera size={17} />;
+  if (icon === "recipe") return <ChefHat size={17} />;
+  if (icon === "nonfiction") return <NotebookPen size={17} />;
+  return <BookOpen size={17} />;
+}
+
+function NewManuscriptDialog({ open, creating, onClose, onCreate }: { open: boolean; creating: boolean; onClose: () => void; onCreate: (template: BookTemplateId, title: string) => void }) {
+  const [selectedId, setSelectedId] = useState<BookTemplateId>("novel");
+  const [title, setTitle] = useState("Untitled novel");
+  const titleRef = useRef<HTMLInputElement>(null);
+  const creatingRef = useRef(creating);
+  const closeRef = useRef(onClose);
+  creatingRef.current = creating;
+  closeRef.current = onClose;
+  const selected = bookTemplate(selectedId);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedId("novel");
+    setTitle("Untitled novel");
+    const focus = requestAnimationFrame(() => titleRef.current?.select());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !creatingRef.current) closeRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      cancelAnimationFrame(focus);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  const choose = (template: BookTemplate) => {
+    setSelectedId(template.id);
+    setTitle((current) => !current.trim() || BOOK_TEMPLATES.some((item) => item.title === current) ? template.title : current);
+  };
+
+  return (
+    <div className="modal-overlay books-new-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget && !creating) onClose(); }}>
+      <section className="books-new-dialog" role="dialog" aria-modal="true" aria-labelledby="books-new-title">
+        <div className="books-new-head">
+          <div>
+            <span className="books-eyebrow"><Sparkles size={13} /> New manuscript</span>
+            <h2 id="books-new-title">What are you making?</h2>
+            <p>Start with a real-world page system. Every section stays editable as portable Markdown.</p>
+          </div>
+          <button className="books-new-close" onClick={onClose} disabled={creating} aria-label="Close new manuscript dialog"><X size={15} /></button>
+        </div>
+        <label className="books-new-title-field"><span>Working title</span><input ref={titleRef} value={title} onChange={(event) => setTitle(event.target.value)} disabled={creating} /></label>
+        <div className="books-template-grid" role="radiogroup" aria-label="Manuscript template">
+          {BOOK_TEMPLATES.map((template) => {
+            const templateTrim = TRIM_SIZES.find((size) => size.value === template.trimSize);
+            return <button key={template.id} role="radio" aria-checked={selectedId === template.id} className={`books-template-card ${selectedId === template.id ? "active" : ""}`} onClick={() => choose(template)} onDoubleClick={() => onCreate(template.id, title)} disabled={creating}>
+              <span className="books-template-icon">{templateIcon(template.icon)}</span>
+              <span className="books-template-copy"><strong>{template.label}</strong><small>{template.description}</small><em>{templateTrim?.label ?? template.trimSize} · {template.chapters.length} sections</em></span>
+            </button>;
+          })}
+        </div>
+        <div className="books-new-foot">
+          <span>{selected.chapters.map((chapter) => chapter.title).slice(0, 3).join(" · ")}{selected.chapters.length > 3 ? " · …" : ""}</span>
+          <div>
+            <button className="books-new-cancel" onClick={onClose} disabled={creating}>Cancel</button>
+            <button className="books-primary-action" onClick={() => onCreate(selectedId, title)} disabled={creating || !title.trim()}><Plus size={14} /> {creating ? "Creating…" : `Create ${selected.label}`}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function LibraryScreen({ books, creating, deletingBookId, onNew, onOpen, onDelete }: { books: Book[]; creating: boolean; deletingBookId: number | null; onNew: () => void; onOpen: (id: number) => void; onDelete: (book: Book) => void }) {
   const [menuBookId, setMenuBookId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -467,6 +547,7 @@ export function BooksStudio() {
   const [screen, setScreen] = useState<StudioScreen>("library");
   const [settingsFocus, setSettingsFocus] = useState<MatterFocus | undefined>();
   const [commandOpen, setCommandOpen] = useState(false);
+  const [newBookOpen, setNewBookOpen] = useState(false);
   const [creatingBook, setCreatingBook] = useState(false);
   const [deletingBookId, setDeletingBookId] = useState<number | null>(null);
   const [shelfOpen, setShelfOpen] = useState(true);
@@ -508,11 +589,16 @@ export function BooksStudio() {
     if (tab?.kind === "book" && tab.screen !== screen) state.setScreen(tab.id, screen);
   }, [screen, loaded]);
 
-  const newBook = async () => {
+  const newBook = () => {
+    if (creatingBook) return;
+    setNewBookOpen(true);
+  };
+  const createBook = async (template: BookTemplateId, title: string) => {
     if (creatingBook) return;
     setCreatingBook(true);
     try {
-      await createNewBook();
+      await createNewBook(template, title);
+      setNewBookOpen(false);
       setScreen("manuscript");
     } catch (error) {
       notify("error", "Manuscript could not be created", String(error));
@@ -638,6 +724,7 @@ export function BooksStudio() {
           </main>
           {selectedBook && <PrintBook book={selectedBook} chapters={chapters} toc={selectedToc} />}
            <BooksCommandPalette open={commandOpen} bookTitle={selectedBook ? (selectedBook.title || "Untitled manuscript") : undefined} chapters={orderedChapters} onClose={() => setCommandOpen(false)} onNavigate={switchScreen} onNewChapter={(kind) => void newChapter(kind)} onOpenChapter={openChapter} />
+           <NewManuscriptDialog open={newBookOpen} creating={creatingBook} onClose={() => setNewBookOpen(false)} onCreate={(template, title) => void createBook(template, title)} />
            {confirmation.dialog}
      </div>
   );

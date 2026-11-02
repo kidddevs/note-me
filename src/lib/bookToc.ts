@@ -1,4 +1,5 @@
 import type { Book, Chapter } from "./types";
+import { chapterGroup as groupForKind, chapterKindLabel } from "./chapterKinds";
 
 export type TocEntrySource = "section" | "heading" | "matter";
 
@@ -21,22 +22,12 @@ export interface BookMatterSection {
   group: "front" | "back";
 }
 
-const KIND_LABELS: Record<string, string> = {
-  title_page: "Title page",
-  dedication: "Dedication",
-  epigraph: "Epigraph",
-  copyright: "Copyright",
-  prologue: "Prologue",
-  chapter: "Chapter",
-  interlude: "Interlude",
-  appendix: "Appendix",
-  acknowledgements: "Acknowledgements",
-  about_author: "About the author",
-};
+function kindLabel(kind: string) {
+  return chapterKindLabel(kind);
+}
 
 export function orderBookChapters(chapters: Chapter[]) {
   const groupOrder: Record<"front" | "story" | "back", number> = { front: 0, story: 1, back: 2 };
-  const groupForKind = (kind: string) => kind === "title_page" || kind === "dedication" || kind === "epigraph" || kind === "copyright" ? "front" : kind === "appendix" || kind === "acknowledgements" || kind === "about_author" ? "back" : "story";
   return chapters
     .map((chapter, index) => ({ chapter, index }))
     .sort((left, right) => groupOrder[groupForKind(left.chapter.chapter_kind)] - groupOrder[groupForKind(right.chapter.chapter_kind)] || left.index - right.index)
@@ -150,7 +141,7 @@ function chapterLabel(chapter: Chapter, chapterNumber: number) {
   if (title) return title;
   return chapter.chapter_kind === "chapter"
     ? `Chapter ${chapterNumber}`
-    : KIND_LABELS[chapter.chapter_kind] ?? "Untitled section";
+    : kindLabel(chapter.chapter_kind) || "Untitled section";
 }
 
 function addSectionEntries(

@@ -162,6 +162,14 @@ export interface BookPaperPreset {
   margin: number;
   pagePattern: BookPagePattern;
   pageColor: string;
+  accentColor?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  lineHeight?: number;
+  paragraphSpacing?: number;
+  bodyColumns?: number;
+  columnGap?: number;
+  editorial?: boolean;
 }
 
 export const BOOK_PAPER_PRESETS: BookPaperPreset[] = [
@@ -170,6 +178,12 @@ export const BOOK_PAPER_PRESETS: BookPaperPreset[] = [
   { id: "notebook", label: "Notebook", description: "5 × 8 ruled paper for everyday notes", trimSize: "5x8", margin: 0.6, pagePattern: "ruled", pageColor: "#fffaf3" },
   { id: "planner", label: "Planner", description: "US Letter weekly columns for spreads and trackers", trimSize: "8.5x11", margin: 0.5, pagePattern: "planner", pageColor: "#ffffff" },
   { id: "sketchbook", label: "Sketchbook", description: "A5 graph paper for diagrams and visual notes", trimSize: "5.83x8.27", margin: 0.6, pagePattern: "grid", pageColor: "#ffffff" },
+  { id: "magazine", label: "Magazine", description: "Letter-size editorial pages with tight margins and magazine type", trimSize: "8.5x11", margin: 0.55, pagePattern: "blank", pageColor: "#ffffff", accentColor: "#b04a31", fontFamily: "serif", fontSize: 10.5, lineHeight: 1.45, paragraphSpacing: 0.35, editorial: true },
+  { id: "newsletter", label: "Newsletter", description: "A4/Letter bulletin with airy sans-serif hierarchy", trimSize: "8.5x11", margin: 0.5, pagePattern: "blank", pageColor: "#fffdf8", accentColor: "#356b5b", fontFamily: "sans", fontSize: 10, lineHeight: 1.55, paragraphSpacing: 0.5, editorial: true },
+  { id: "lookbook", label: "Lookbook", description: "9 × 12 portfolio pages with gallery margins", trimSize: "9x12", margin: 0.65, pagePattern: "blank", pageColor: "#ffffff", accentColor: "#29231e", fontFamily: "sans", fontSize: 10, lineHeight: 1.5, paragraphSpacing: 0.6, editorial: true },
+  { id: "zine", label: "Zine", description: "5.5 × 8.5 folded pages for independent publishing", trimSize: "5.5x8.5", margin: 0.45, pagePattern: "blank", pageColor: "#fffaf3", accentColor: "#874e47", fontFamily: "serif", fontSize: 10.5, lineHeight: 1.4, paragraphSpacing: 0.4, editorial: true },
+  { id: "annual", label: "Annual report", description: "8 × 10 report pages with confident sans-serif type", trimSize: "8x10", margin: 0.6, pagePattern: "blank", pageColor: "#ffffff", accentColor: "#486777", fontFamily: "sans", fontSize: 10, lineHeight: 1.5, paragraphSpacing: 0.6, editorial: true },
+  { id: "recipe", label: "Recipe book", description: "8 × 10 recipe pages with generous step spacing", trimSize: "8x10", margin: 0.6, pagePattern: "blank", pageColor: "#fffdf8", accentColor: "#b04a31", fontFamily: "serif", fontSize: 11, lineHeight: 1.5, paragraphSpacing: 0.5, editorial: true },
 ];
 
 export const DEFAULT_BOOK_PAGE_MARGINS: BookPageMargins = {
@@ -295,6 +309,104 @@ export const DEFAULT_PARAGRAPH_STYLES: BookParagraphStyle[] = [
     },
   },
 ];
+
+function editorialStyle(overrides: Partial<BookTextStyle>): BookTextStyle {
+  return {
+    ...DEFAULT_BOOK_TYPOGRAPHY.paragraph,
+    ...overrides,
+    ruleAbove: { ...DEFAULT_BOOK_TYPOGRAPHY.paragraph.ruleAbove, ...overrides.ruleAbove },
+    ruleBelow: { ...DEFAULT_BOOK_TYPOGRAPHY.paragraph.ruleBelow, ...overrides.ruleBelow },
+    border: { ...DEFAULT_BOOK_TYPOGRAPHY.paragraph.border, ...overrides.border },
+    shading: { ...DEFAULT_BOOK_TYPOGRAPHY.paragraph.shading, ...overrides.shading },
+    bullets: { ...DEFAULT_BOOK_TYPOGRAPHY.paragraph.bullets, ...overrides.bullets },
+    grep: { ...DEFAULT_BOOK_TYPOGRAPHY.paragraph.grep, ...overrides.grep },
+    tabs: overrides.tabs ?? [],
+  };
+}
+
+/**
+ * Magazine-ready paragraph styles. They are opt-in so existing manuscripts keep
+ * their own edited library, while new magazine templates start with a full
+ * editorial kit.
+ */
+export const EDITORIAL_PARAGRAPH_STYLES: BookParagraphStyle[] = [
+  {
+    id: "editorial-kicker",
+    name: "Kicker / Eyebrow",
+    style: editorialStyle({ fontFamily: "sans", fontSize: 8.5, fontWeight: 700, textAlign: "left", lineHeight: 1.2, letterSpacing: 0.14, spaceAfter: 0.45, textCase: "uppercase", color: "accent" }),
+  },
+  {
+    id: "editorial-standfirst",
+    name: "Standfirst / Deck",
+    style: editorialStyle({ fontFamily: "serif", fontSize: 14, lineHeight: 1.45, textAlign: "left", firstLineIndent: 0, spaceAfter: 1, color: "#5f574e" }),
+  },
+  {
+    id: "editorial-byline",
+    name: "Byline",
+    style: editorialStyle({ fontFamily: "sans", fontSize: 9, fontWeight: 600, lineHeight: 1.35, textAlign: "left", firstLineIndent: 0, spaceAfter: 0.9, letterSpacing: 0.08, textCase: "uppercase", color: "#6f6259" }),
+  },
+  {
+    id: "editorial-section-label",
+    name: "Section label",
+    style: editorialStyle({ fontFamily: "sans", fontSize: 9, fontWeight: 700, lineHeight: 1.3, textAlign: "left", firstLineIndent: 0, spaceAfter: 0.6, letterSpacing: 0.16, textCase: "uppercase", color: "accent", ruleBelow: { enabled: true, width: 1, color: "accent", style: "solid", offset: 0.45 } }),
+  },
+  {
+    id: "editorial-cover-line",
+    name: "Cover line",
+    style: editorialStyle({ fontFamily: "sans", fontSize: 11, fontWeight: 700, lineHeight: 1.25, textAlign: "left", firstLineIndent: 0, spaceAfter: 0.35, textCase: "uppercase", letterSpacing: 0.03 }),
+  },
+  {
+    id: "editorial-folio",
+    name: "Folio",
+    style: editorialStyle({ fontFamily: "sans", fontSize: 8, fontWeight: 600, lineHeight: 1.2, textAlign: "center", firstLineIndent: 0, spaceAfter: 0, letterSpacing: 0.12, textCase: "uppercase", color: "#6f6259" }),
+  },
+  {
+    id: "editorial-contributor",
+    name: "Contributor bio",
+    style: editorialStyle({ fontFamily: "sans", fontSize: 8.5, lineHeight: 1.45, textAlign: "left", firstLineIndent: 0, spaceAfter: 0.3, color: "#6f6259" }),
+  },
+  {
+    id: "editorial-contents-entry",
+    name: "Contents entry",
+    style: editorialStyle({ fontFamily: "serif", fontSize: 11, lineHeight: 1.4, textAlign: "left", firstLineIndent: 0, spaceAfter: 0.2, tabs: [{ position: 4, align: "right" }] }),
+  },
+];
+
+export function mergeEditorialStyles(styles: BookParagraphStyle[]): BookParagraphStyle[] {
+  const existing = new Set(styles.map((style) => style.id));
+  const additions = EDITORIAL_PARAGRAPH_STYLES
+    .filter((style) => !existing.has(style.id))
+    .map((style) => ({ ...style, style: editorialStyle(style.style) }));
+  return additions.length ? [...styles, ...additions] : styles;
+}
+
+export function hasEditorialStyles(styles: BookParagraphStyle[]) {
+  return EDITORIAL_PARAGRAPH_STYLES.every((preset) => styles.some((style) => style.id === preset.id));
+}
+
+export function paperPresetLayout(layout: BookLayout, preset: BookPaperPreset): BookLayout {
+  const roles = Object.keys(layout.typography) as BookTextRole[];
+  const typography = Object.fromEntries(roles.map((role) => {
+    const current = layout.typography[role];
+    const appliesBodyType = role === "paragraph" || role === "quote";
+    return [role, {
+      ...current,
+      ...(preset.fontFamily ? { fontFamily: preset.fontFamily } : {}),
+      ...(appliesBodyType && preset.fontSize ? { fontSize: preset.fontSize } : {}),
+      ...(appliesBodyType && preset.lineHeight ? { lineHeight: preset.lineHeight } : {}),
+      ...(role === "paragraph" && preset.bodyColumns ? { columns: preset.bodyColumns, columnGap: preset.columnGap ?? current.columnGap } : {}),
+    }];
+  })) as BookTypography;
+  return {
+    ...layout,
+    pagePattern: preset.pagePattern,
+    pageColor: preset.pageColor,
+    accentColor: preset.accentColor ?? layout.accentColor,
+    pageMargins: { top: preset.margin, right: preset.margin, bottom: preset.margin, left: preset.margin },
+    typography,
+    paragraphStyles: preset.editorial ? mergeEditorialStyles(layout.paragraphStyles) : layout.paragraphStyles,
+  };
+}
 
 export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   header: { left: "", center: "", right: "" },

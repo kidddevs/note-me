@@ -15,7 +15,9 @@
     "src/lib/bookPublishing.ts",
     "src/lib/bookExport.ts",
     "src/lib/bookSession.ts",
+    "src/lib/bookTemplates.ts",
     "src/lib/bookToc.ts",
+    "src/lib/chapterKinds.ts",
     "src/lib/measurements.ts",
     "src/lib/types.ts"
   ]

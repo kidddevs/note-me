@@ -81,15 +81,30 @@ export interface BookInput {
 
 export type ChapterKind =
   | "title_page"
+  | "cover"
+  | "masthead"
+  | "contents_page"
   | "dedication"
   | "epigraph"
   | "copyright"
+  | "editorial"
   | "prologue"
   | "chapter"
+  | "feature"
+  | "department"
+  | "column"
+  | "profile"
+  | "interview"
+  | "review"
+  | "photo_essay"
+  | "recipe"
+  | "listing"
   | "interlude"
   | "appendix"
   | "acknowledgements"
-  | "about_author";
+  | "about_author"
+  | "advertisement"
+  | "colophon";
 
 export interface Chapter {
   id: number;

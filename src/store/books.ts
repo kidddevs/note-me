@@ -62,7 +62,7 @@ interface BooksState {
   createBook: (input?: Partial<BookInput>) => Promise<Book>;
   updateBook: (id: number, input: BookInput) => Promise<void>;
   deleteBook: (id: number) => Promise<void>;
-  createChapter: (bookId: number, title?: string, chapterKind?: ChapterKind) => Promise<Chapter>;
+  createChapter: (bookId: number, title?: string, chapterKind?: ChapterKind, content?: string) => Promise<Chapter>;
   updateChapter: (id: number, title: string, content: string, chapterKind?: ChapterKind, tocInclude?: boolean, tocHeadingExclusions?: string[]) => Promise<void>;
   deleteChapter: (id: number) => Promise<void>;
   reorderChapters: (ids: number[]) => Promise<void>;
@@ -194,8 +194,8 @@ export const useBooks = create<BooksState>((set, get) => ({
     }
   },
 
-  createChapter: async (bookId, title = "New chapter", chapterKind = "chapter") => {
-    const chapter = await api.createChapter(bookId, { title, content: "", chapterKind, tocInclude: true, tocHeadingExclusions: [] });
+  createChapter: async (bookId, title = "New chapter", chapterKind = "chapter", content = "") => {
+    const chapter = await api.createChapter(bookId, { title, content, chapterKind, tocInclude: true, tocHeadingExclusions: [] });
     const chapters = await api.listChapters(bookId);
     set({ chapters, activeChapterId: chapter.id });
     persistSelection(bookId, chapter.id);

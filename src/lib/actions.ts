@@ -4,13 +4,20 @@ import { useTabs } from "../store/tabs";
 import { useBooks } from "../store/books";
 import { useBookTabs } from "../store/bookTabs";
 import { notify } from "../store/toast";
+import { bookTemplate, bookTemplateInput, type BookTemplateId } from "./bookTemplates";
 
-export async function createNewBook() {
+export async function createNewBook(templateId: BookTemplateId = "novel", title?: string) {
+  const template = bookTemplate(templateId);
   const books = useBooks.getState();
-  const book = await books.createBook({ title: "Untitled manuscript" });
-  await books.createChapter(book.id, "Chapter 1", "chapter");
+  const book = await books.createBook(bookTemplateInput(template, title));
+  let openingChapterId: number | null = null;
+  for (const chapter of template.chapters) {
+    const created = await books.createChapter(book.id, chapter.title, chapter.kind, chapter.content);
+    openingChapterId ??= created.id;
+  }
+  if (openingChapterId !== null) books.selectChapter(openingChapterId);
   useBookTabs.getState().openBook(book.id, book.title || "Untitled manuscript");
-  notify("success", "New manuscript created", book.title || "Untitled manuscript");
+  notify("success", "New manuscript created", `${book.title || "Untitled manuscript"} · ${template.label}`);
   return book;
 }
 

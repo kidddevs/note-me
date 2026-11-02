@@ -64,7 +64,8 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 ### Structure and writing
 
 - Dedicated library, shelf, section rail, outline, book settings, and export screens.
-- Typed manuscript sections — title page, dedication, epigraph, copyright, prologue, chapter, interlude, appendix, acknowledgements, about the author, and more.
+- Starter templates for novels, nonfiction, magazine issues, newsletters, photo books, and recipe collections, each with a real section sequence and page system.
+- Typed manuscript sections — title page, cover, masthead, contents page, editor's letter, feature, department, column, profile, interview, review, photo essay, recipe, listing, advertisement, colophon, and traditional book matter.
 - Front matter, story, and closing pages can be reordered, hidden from the table of contents, and managed from the rail or context menu.
 - Distraction-reduced writing surface with H1–H6 formatting, focus mode, section statistics, find and replace, writing sprints, and automatic local saves.
 - Section-level undo and redo, plus automatic and manual version checkpoints you can preview, restore, or delete.
@@ -81,11 +82,12 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 - **Free margins** unlock full-bleed text and artwork beyond the content margins. Individual objects can opt into full bleed, and artwork can carry its own background color to override the page background.
 - Measurement units are switchable between **inches, centimeters, and pixels** across page sizes, margins, rulers, pattern spacing, and settings while staying stored in print-safe inches.
 - A searchable artwork drawer with local images and recolorable editorial artwork — ornaments, dividers, botanicals, symbols, frames, lines, shapes, arrows, and a dedicated Journal set with cards, trackers, labels, washi tape, pockets, stamps, and photo corners. Artwork inserts at a sensible width for its role, and an existing artwork can be replaced directly from the collection.
+- Editorial page systems for magazines, newsletters, lookbooks, zines, annual reports, and recipe books, plus an opt-in editorial style kit with kickers, standfirsts, bylines, section labels, cover lines, folios, contributor bios, and contents entries.
 - Portable rich blocks for GFM tables, configurable tables, bar / line / area / donut / stat charts, callouts, and graph fences — all embedded in the manuscript Markdown.
 
 ### Publishing
 
-- Custom trim sizes: 5 × 8, 5.25 × 8, 6 × 9, A5, A4, and US Letter.
+- Custom trim sizes for trade books, digest and zine formats, newsstand magazines, catalogues, portfolios, A4, and US Letter.
 - Running headers and footers with `{{title}}`, `{{author}}`, `{{section}}`, and `{{page}}` tokens.
 - Flexible page numbering with automatic sequences or manual range starts, Arabic or Roman styles, custom formats, placement, and per-section overrides.
 - Generated contents with configurable title, H1–H6 depth, matter inclusion, and per-heading visibility.
