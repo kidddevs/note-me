@@ -91,6 +91,40 @@ test("paragraph style presets preserve advanced publication controls", () => {
   assert.equal(style.style.tabs[0].position, 1.5);
   assert.ok(parsed.paragraphStyles.some((preset) => preset.id !== "magazine-feature") === false);
 });
+test("magazine typography controls normalize for print and EPUB", () => {
+  const parsed = parseBookLayout(JSON.stringify({
+    baselineGrid: { enabled: true, spacing: 0.12, color: "#6f7f6d" },
+    typography: {
+      paragraph: {
+        keepLines: true,
+        breakBefore: true,
+        widows: 3,
+        orphans: 4,
+        ligatures: "none",
+        figureStyle: "oldstyle",
+        hangingPunctuation: true,
+        lastLineAlign: "left",
+      },
+    },
+  }));
+  assert.equal(parsed.baselineGrid.enabled, true);
+  assert.equal(parsed.baselineGrid.spacing, 0.12);
+  assert.equal(parsed.baselineGrid.color, "#6f7f6d");
+  assert.equal(parsed.typography.paragraph.keepLines, true);
+  assert.equal(parsed.typography.paragraph.breakBefore, true);
+  assert.equal(parsed.typography.paragraph.widows, 3);
+  assert.equal(parsed.typography.paragraph.orphans, 4);
+  assert.equal(parsed.typography.paragraph.ligatures, "none");
+  assert.equal(parsed.typography.paragraph.figureStyle, "oldstyle");
+  assert.equal(parsed.typography.paragraph.hangingPunctuation, true);
+  assert.equal(parsed.typography.paragraph.lastLineAlign, "left");
+
+  const fallback = parseBookLayout(JSON.stringify({ baselineGrid: { spacing: 9 }, typography: { paragraph: { widows: 99, ligatures: "invalid" } } }));
+  assert.equal(fallback.baselineGrid.spacing, 0.6);
+  assert.equal(fallback.typography.paragraph.widows, 5);
+  assert.equal(fallback.typography.paragraph.ligatures, "normal");
+});
+
 test("missing paragraph style libraries fall back to the built-in presets", () => {
   const parsed = parseBookLayout("{}");
   assert.ok(parsed.paragraphStyles.length >= 6);

@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowUp,
   BarChart3,
+  Baseline,
   BookOpen,
   BringToFront,
   ChevronRight,
@@ -2500,6 +2501,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 <div className="design-tool-group books-canvas-toggles" aria-label="Canvas overlays">
                   <button className={showRulers ? "active" : ""} onClick={() => setShowRulers((value) => !value)} title={showRulers ? "Hide rulers" : "Show rulers"} aria-pressed={showRulers}><Ruler size={13} /> Rulers</button>
                   <button className={showGuides ? "active" : ""} onClick={() => setShowGuides((value) => !value)} title={showGuides ? "Hide margin guides" : "Show margin guides"} aria-pressed={showGuides}><Grid3X3 size={13} /> Guides</button>
+                  <button className={inspectorLayout.baselineGrid.enabled ? "active" : ""} onClick={() => changeLayout((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, enabled: !current.baselineGrid.enabled } }))} title={inspectorLayout.baselineGrid.enabled ? "Hide the baseline grid" : "Show the baseline grid"} aria-pressed={inspectorLayout.baselineGrid.enabled}><Baseline size={13} /> Baseline</button>
                   <button className={inspectorLayout.freeMargins ? "active" : ""} onClick={() => changeLayout((current) => ({ ...current, freeMargins: !current.freeMargins }))} title={inspectorLayout.freeMargins ? "Lock elements back inside the margins" : "Free margins: allow full-bleed text and artwork"} aria-pressed={inspectorLayout.freeMargins}>{inspectorLayout.freeMargins ? <Unlock size={13} /> : <Lock size={13} />} Margins</button>
                 </div>
                 <div className="design-toolbar-end">
@@ -2515,7 +2517,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 <div className="books-page-zoom-shell" style={{ width: frameSize.width * (canvasZoom / 100), height: frameSize.height * (canvasZoom / 100) }}>
                 <div ref={pageFrameRef} className={`books-page-frame ${showRulers ? "with-rulers" : ""}`} style={{ transform: `scale(${canvasZoom / 100})`, transformOrigin: "top left" }}>
                   {showRulers && <CanvasRulers trimWidth={trimWidth} trimHeight={trimHeight} />}
-                  <div ref={pageSheetRef} className={`books-page-sheet paper-${inspectorLayout.pagePattern} ${showGuides ? "show-guides" : ""} ${freeLayout ? "free-layout" : ""} ${inspectorLayout.freeMargins ? "free-margins" : ""}`} style={{ ...(freeLayout ? { minHeight: `calc(${Math.max(0.2, trimHeight / Math.max(0.2, trimWidth))} * 100cqw)` } : {}), "--page-pattern-color": inspectorLayout.pagePatternColor, "--page-pattern-step": `calc(var(--page-inch) * ${inspectorLayout.pagePatternSpacing})`, "--bleed-left": `${pagePadding.left}px`, "--bleed-right": `${pagePadding.right}px` } as CSSProperties} onPointerDown={(event) => {
+                  <div ref={pageSheetRef} className={`books-page-sheet paper-${inspectorLayout.pagePattern} ${showGuides ? "show-guides" : ""} ${inspectorLayout.baselineGrid.enabled ? "show-baseline-grid" : ""} ${freeLayout ? "free-layout" : ""} ${inspectorLayout.freeMargins ? "free-margins" : ""}`} style={{ ...(freeLayout ? { minHeight: `calc(${Math.max(0.2, trimHeight / Math.max(0.2, trimWidth))} * 100cqw)` } : {}), "--page-pattern-color": inspectorLayout.pagePatternColor, "--page-pattern-step": `calc(var(--page-inch) * ${inspectorLayout.pagePatternSpacing})`, "--baseline-color": inspectorLayout.baselineGrid.color, "--baseline-step": `calc(var(--page-inch) * ${inspectorLayout.baselineGrid.spacing})`, "--bleed-left": `${pagePadding.left}px`, "--bleed-right": `${pagePadding.right}px` } as CSSProperties} onPointerDown={(event) => {
                     const target = event.target as HTMLElement;
                     if (!target.closest("[data-canvas-block], input, textarea, button, select, .books-chapter-heading-row")) { setEditorSelection({ start: -1, end: -1, titleFocused: false }); setSelectedStarts([]); }
                   }} onContextMenu={(event) => {

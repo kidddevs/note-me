@@ -13,6 +13,7 @@ import {
   ArrowDown,
   ArrowUp,
   BarChart3,
+  Baseline,
   BookOpen,
   BringToFront,
   CaseUpper,
@@ -179,12 +180,15 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
         <Field label="Leading"><NumberField value={style.lineHeight} min={0.8} max={3} step={0.05} onChange={(lineHeight) => onPatch({ lineHeight })} /></Field>
         <Field label="Tracking"><NumberField value={style.letterSpacing} min={-0.2} max={1} step={0.01} onChange={(letterSpacing) => onPatch({ letterSpacing })} suffix="em" /></Field>
         <Field label="Case"><select value={style.textCase} onChange={(event) => onPatch({ textCase: event.target.value as BookTextCase })}><option value="none">None</option><option value="uppercase">Uppercase</option><option value="lowercase">Lowercase</option><option value="small-caps">Small caps</option></select></Field>
+        <Field label="Figures"><select value={style.figureStyle} onChange={(event) => onPatch({ figureStyle: event.target.value as BookTextStyle["figureStyle"] })}><option value="normal">Default</option><option value="lining">Lining</option><option value="oldstyle">Oldstyle</option><option value="tabular">Tabular</option></select></Field>
+        <Field label="Ligatures"><select value={style.ligatures} onChange={(event) => onPatch({ ligatures: event.target.value as BookTextStyle["ligatures"] })}><option value="normal">On</option><option value="none">Off</option></select></Field>
         <Field label="Color" wide><ColorField value={style.color} onChange={(color) => onPatch({ color })} /></Field>
       </div>
       <div className="design-inline-row">
         <Toggle checked={style.fontStyle === "italic"} onChange={(checked) => onPatch({ fontStyle: checked ? "italic" : "normal" })} label="Italic" />
         <Toggle checked={style.underline} onChange={(underline) => onPatch({ underline })} label="Underline" />
         <Toggle checked={style.strikethrough} onChange={(strikethrough) => onPatch({ strikethrough })} label="Strike" />
+        <Toggle checked={style.hangingPunctuation} onChange={(hangingPunctuation) => onPatch({ hangingPunctuation })} label="Hanging punctuation" />
       </div>
       <div className="design-icon-row">
         <span className="design-mini-label">Alignment</span>
@@ -205,10 +209,18 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
       <div className="design-inline-row">
         <Toggle checked={style.hyphenation} onChange={(hyphenation) => onPatch({ hyphenation })} label="Hyphenation" />
         <Toggle checked={style.keepWithNext} onChange={(keepWithNext) => onPatch({ keepWithNext })} label="Keep with next" />
+        <Toggle checked={style.keepLines} onChange={(keepLines) => onPatch({ keepLines })} label="Keep lines" />
       </div>
       <div className="design-grid">
+        <Field label="Last line"><select value={style.lastLineAlign} onChange={(event) => onPatch({ lastLineAlign: event.target.value as BookTextStyle["lastLineAlign"] })}><option value="auto">Automatic</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></Field>
+        <Field label="Widows"><NumberField value={style.widows} min={0} max={5} onChange={(widows) => onPatch({ widows })} /></Field>
+        <Field label="Orphans"><NumberField value={style.orphans} min={0} max={5} onChange={(orphans) => onPatch({ orphans })} /></Field>
         <Field label="Columns"><NumberField value={style.columns} min={1} max={4} onChange={(columns) => onPatch({ columns })} /></Field>
         <Field label="Column gap"><NumberField value={style.columnGap} min={0} max={4} step={0.1} onChange={(columnGap) => onPatch({ columnGap })} suffix="em" /></Field>
+      </div>
+      <div className="design-inline-row">
+        <Toggle checked={style.breakBefore} onChange={(breakBefore) => onPatch({ breakBefore })} label="Break before" />
+        <Toggle checked={style.breakAfter} onChange={(breakAfter) => onPatch({ breakAfter })} label="Break after" />
       </div>
       {style.columns > 1 && <p className="design-help">Columns fill the frame height set in Frame &amp; position. Select the frame to see its column guides.</p>}
       <div className="design-subgroup">
@@ -508,6 +520,25 @@ function DocumentPanel({ layout, onLayoutChange }: { layout: BookLayout; onLayou
       <div className="design-margin-presets" role="group" aria-label="Page margin presets">
         {([["Tight", 0.5], ["Standard", 1], ["Wide", 1.5]] as const).map(([label, value]) => <button key={label} onClick={() => onLayoutChange((current) => ({ ...current, pageMargins: { top: value, right: value, bottom: value, left: value } }))}>{label}<small>{measurementText(value, unit)}</small></button>)}
       </div>
+    </InspectorSection>
+    <InspectorSection icon={<Baseline size={14} />} title="Baseline grid" summary={layout.baselineGrid.enabled ? `${measurementText(layout.baselineGrid.spacing, unit)} rhythm` : "Off"}>
+      <div className="design-inline-row"><Toggle checked={layout.baselineGrid.enabled} onChange={(enabled) => onLayoutChange((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, enabled } }))} label="Show baseline grid" /></div>
+      <div className="design-grid">
+        <Field label="Baseline spacing"><NumberField value={measurementValue(layout.baselineGrid.spacing, unit)} min={measurementRange(0.08, 0.6, unit).min} max={measurementRange(0.08, 0.6, unit).max} step={measurementRange(0.08, 0.6, unit).step} onChange={(value) => onLayoutChange((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, spacing: measurementToInches(value, unit) } }))} suffix={measurementUnitShort(unit)} /></Field>
+        <Field label="Grid color"><ColorField value={layout.baselineGrid.color} onChange={(color) => onLayoutChange((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, color } }))} /></Field>
+      </div>
+      <button className="design-style-set" onClick={() => onLayoutChange((current) => {
+        const leading = (spacing: number) => Math.min(3, Math.max(0.8, Math.round(((spacing * 72) / Math.max(6, current.typography.paragraph.fontSize)) * 1000) / 1000));
+        return {
+          ...current,
+          typography: {
+            ...current.typography,
+            paragraph: { ...current.typography.paragraph, lineHeight: leading(current.baselineGrid.spacing) },
+            quote: { ...current.typography.quote, lineHeight: leading(current.baselineGrid.spacing) },
+          },
+        };
+      })}><Baseline size={13} /> Snap body leading to baseline<small>Round the body and quote line height to the grid</small></button>
+      <p className="design-help">The baseline grid is a design aid; it never prints. Use it to keep body text, captions, and sidebars on a shared vertical rhythm.</p>
     </InspectorSection>
     <InspectorSection icon={<Palette size={14} />} title="Document styles" summary={`${styles.length} paragraph presets`} defaultOpen>
       <div className="design-style-list compact">

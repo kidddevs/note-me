@@ -29,6 +29,11 @@ export function textStyleClasses(style: BookTextStyle | null) {
   if (style.bullets.enabled) classes.push("styled-bullets", style.bullets.type === "number" ? "styled-bullets-number" : "styled-bullets-marker");
   if (style.textCase === "small-caps") classes.push("styled-small-caps");
   if (style.tabs.length > 0) classes.push("styled-tabs");
+  if (style.keepLines) classes.push("styled-keep-lines");
+  if (style.keepWithNext) classes.push("styled-keep-next");
+  if (style.breakBefore) classes.push("styled-break-before");
+  if (style.breakAfter) classes.push("styled-break-after");
+  if (style.hangingPunctuation) classes.push("styled-hanging-punctuation");
   return classes.join(" ");
 }
 
@@ -59,6 +64,12 @@ export function textStyleVars(style: BookTextStyle | null): CSSProperties {
     "--block-decoration": [style.underline ? "underline" : "", style.strikethrough ? "line-through" : ""].filter(Boolean).join(" ") || "none",
     "--block-text-case": style.textCase === "uppercase" ? "uppercase" : style.textCase === "lowercase" ? "lowercase" : "none",
     "--block-hyphens": style.hyphenation ? "auto" : "manual",
+    "--block-widows": String(style.widows),
+    "--block-orphans": String(style.orphans),
+    "--block-last-line-align": style.lastLineAlign,
+    "--block-ligatures": style.ligatures === "none" ? "no-common-ligatures" : "common-ligatures",
+    "--block-figures": style.figureStyle === "oldstyle" ? "oldstyle-nums" : style.figureStyle === "lining" ? "lining-nums" : style.figureStyle === "tabular" ? "tabular-nums" : "normal",
+    "--block-hanging": style.hangingPunctuation ? "first last" : "none",
     "--block-columns": String(style.columns),
     "--block-column-gap": `${style.columnGap}em`,
     "--block-border-width": `${style.border.width}px`,

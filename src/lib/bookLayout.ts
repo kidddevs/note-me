@@ -12,6 +12,9 @@ export type BookTextCase = "none" | "uppercase" | "lowercase" | "small-caps";
 export type BookRuleStyle = "solid" | "dashed" | "dotted" | "double";
 export type BookGrepStyle = "none" | "bold" | "italic" | "accent" | "small-caps";
 export type BookBulletType = "bullet" | "number";
+export type BookFigureStyle = "normal" | "lining" | "oldstyle" | "tabular";
+export type BookLastLineAlign = "auto" | "left" | "center" | "right";
+export type BookLigatures = "normal" | "none";
 
 export interface BookChrome {
   left: string;
@@ -105,6 +108,15 @@ export interface BookTextStyle {
   textCase: BookTextCase;
   hyphenation: boolean;
   keepWithNext: boolean;
+  keepLines: boolean;
+  breakBefore: boolean;
+  breakAfter: boolean;
+  widows: number;
+  orphans: number;
+  ligatures: BookLigatures;
+  figureStyle: BookFigureStyle;
+  hangingPunctuation: boolean;
+  lastLineAlign: BookLastLineAlign;
   columns: number;
   columnGap: number;
   ruleAbove: BookParagraphRule;
@@ -131,6 +143,12 @@ export interface BookPageMargins {
   left: number;
 }
 
+export interface BookBaselineGrid {
+  enabled: boolean;
+  spacing: number;
+  color: string;
+}
+
 export interface BookLayout {
   header: BookChrome;
   footer: BookChrome;
@@ -141,6 +159,7 @@ export interface BookLayout {
   pagePattern: BookPagePattern;
   pagePatternColor: string;
   pagePatternSpacing: number;
+  baselineGrid: BookBaselineGrid;
   freeMargins: boolean;
   typography: BookTypography;
   paragraphStyles: BookParagraphStyle[];
@@ -221,6 +240,15 @@ const DEFAULT_STYLE: BookTextStyle = {
   textCase: "none",
   hyphenation: false,
   keepWithNext: false,
+  keepLines: false,
+  breakBefore: false,
+  breakAfter: false,
+  widows: 2,
+  orphans: 2,
+  ligatures: "normal",
+  figureStyle: "normal",
+  hangingPunctuation: false,
+  lastLineAlign: "auto",
   columns: 1,
   columnGap: 2,
   ruleAbove: { enabled: false, width: 1, color: "accent", style: "solid", offset: 0 },
@@ -426,6 +454,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   pagePattern: "blank",
   pagePatternColor: "#c9c0b4",
   pagePatternSpacing: 0.28,
+  baselineGrid: { enabled: false, spacing: 0.167, color: "#c9c0b4" },
   freeMargins: false,
   typography: DEFAULT_BOOK_TYPOGRAPHY,
   paragraphStyles: DEFAULT_PARAGRAPH_STYLES,
@@ -486,6 +515,18 @@ function boolean(value: unknown, fallback: boolean) {
 
 function nestedStyle(value: unknown, fallback: BookNestedStyle) {
   return ["none", "small-caps", "bold", "italic", "accent"].includes(value as string) ? value as BookNestedStyle : fallback;
+}
+
+function figureStyle(value: unknown, fallback: BookFigureStyle) {
+  return ["normal", "lining", "oldstyle", "tabular"].includes(value as string) ? value as BookFigureStyle : fallback;
+}
+
+function lastLineAlign(value: unknown, fallback: BookLastLineAlign) {
+  return ["auto", "left", "center", "right"].includes(value as string) ? value as BookLastLineAlign : fallback;
+}
+
+function ligatures(value: unknown, fallback: BookLigatures) {
+  return value === "none" || value === "normal" ? value : fallback;
 }
 
 function color(value: unknown, fallback: string) {
@@ -605,6 +646,15 @@ function pageMargins(value: unknown, fallback: BookPageMargins): BookPageMargins
   };
 }
 
+function baselineGrid(value: unknown, fallback: BookBaselineGrid): BookBaselineGrid {
+  const source = isRecord(value) ? value : {};
+  return {
+    enabled: boolean(source.enabled, fallback.enabled),
+    spacing: decimal(source.spacing, fallback.spacing, 0.08, 0.6),
+    color: color(source.color, fallback.color),
+  };
+}
+
 function textStyle(value: unknown, fallback: BookTextStyle): BookTextStyle {
   const source = isRecord(value) ? value : {};
   return {
@@ -635,6 +685,15 @@ function textStyle(value: unknown, fallback: BookTextStyle): BookTextStyle {
     textCase: textCase(source.textCase, fallback.textCase),
     hyphenation: boolean(source.hyphenation, fallback.hyphenation),
     keepWithNext: boolean(source.keepWithNext, fallback.keepWithNext),
+    keepLines: boolean(source.keepLines, fallback.keepLines),
+    breakBefore: boolean(source.breakBefore, fallback.breakBefore),
+    breakAfter: boolean(source.breakAfter, fallback.breakAfter),
+    widows: whole(source.widows, fallback.widows, 0, 5),
+    orphans: whole(source.orphans, fallback.orphans, 0, 5),
+    ligatures: ligatures(source.ligatures, fallback.ligatures),
+    figureStyle: figureStyle(source.figureStyle, fallback.figureStyle),
+    hangingPunctuation: boolean(source.hangingPunctuation, fallback.hangingPunctuation),
+    lastLineAlign: lastLineAlign(source.lastLineAlign, fallback.lastLineAlign),
     columns: whole(source.columns, fallback.columns, 1, 4),
     columnGap: decimal(source.columnGap, fallback.columnGap, 0, 4),
     ruleAbove: paragraphRule(source.ruleAbove, fallback.ruleAbove),
@@ -707,6 +766,7 @@ export function parseBookLayout(value?: string, typographyFallback: BookTypograp
     pagePattern: pagePattern(source.pagePattern, DEFAULT_BOOK_LAYOUT.pagePattern),
     pagePatternColor: color(source.pagePatternColor, DEFAULT_BOOK_LAYOUT.pagePatternColor),
     pagePatternSpacing: decimal(source.pagePatternSpacing, DEFAULT_BOOK_LAYOUT.pagePatternSpacing, 0.15, 0.6),
+    baselineGrid: baselineGrid(source.baselineGrid, DEFAULT_BOOK_LAYOUT.baselineGrid),
     freeMargins: boolean(source.freeMargins, DEFAULT_BOOK_LAYOUT.freeMargins),
     typography: Object.fromEntries((Object.keys(typographyFallback) as BookTextRole[]).map((role) => [role, textStyle(sourceTypography[role], typographyFallback[role])])) as BookTypography,
     paragraphStyles: paragraphStyles(source.paragraphStyles),

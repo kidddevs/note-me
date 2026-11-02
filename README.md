@@ -78,6 +78,7 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 - Shift-click multi-selection, group dragging, alignment guides, zero-height insertion previews, rulers, margin guides, fit-to-width, and stable canvas zoom from 25–200% with buttons, keyboard shortcuts, trackpad pinch, or `Cmd`/`Ctrl`-scroll.
 - Right-click any text frame, artwork, table, chart, or callout for contextual editing, duplication, layering, movement, deletion, and full-bleed commands. Right-click the page for canvas tools.
 - A contextual design inspector with role typography, paragraph presets, character controls, hyphenation, columns, tabs, drop caps, nested openings, rules, borders, shading, bullets, numbering, and GREP styling.
+- Editorial typography controls for ligatures, oldstyle/lining/tabular figures, hanging punctuation, last-line alignment, widows and orphans, keep-lines, page breaks, and a non-printing baseline grid with one-click leading snap.
 - Paper patterns and presets: blank, ruled, dot grid, graph, and planner pages with configurable rule color and spacing, plus one-click Manuscript, Journal, Notebook, Planner, and Sketchbook setups.
 - **Free margins** unlock full-bleed text and artwork beyond the content margins. Individual objects can opt into full bleed, and artwork can carry its own background color to override the page background.
 - Measurement units are switchable between **inches, centimeters, and pixels** across page sizes, margins, rulers, pattern spacing, and settings while staying stored in print-safe inches.
@@ -91,7 +92,7 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 - Running headers and footers with `{{title}}`, `{{author}}`, `{{section}}`, and `{{page}}` tokens.
 - Flexible page numbering with automatic sequences or manual range starts, Arabic or Roman styles, custom formats, placement, and per-section overrides.
 - Generated contents with configurable title, H1–H6 depth, matter inclusion, and per-heading visibility.
-- Export to **EPUB 3, DOCX, styled HTML, Markdown, and plain text**, or print / save as PDF with the selected trim size and page styling.
+- Export to **EPUB 3, DOCX, styled HTML, Markdown, and plain text**, or print / save as PDF with the selected trim size and page styling. Named paragraph styles, drop caps, nested openings, rules, shading, and custom widths travel into HTML, EPUB, and print output.
 - Export preview with separate cover and interior views plus a preflight for metadata, empty sections, contents, repeated titles, page numbering, and artwork.
 
 ## Install

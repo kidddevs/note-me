@@ -9,6 +9,54 @@ const {
 const { CHAPTER_KIND_OPTIONS, chapterIsOpeningPage } = require("./.compiled/src/lib/chapterKinds.js");
 const { parseBookLayout } = require("./.compiled/src/lib/bookLayout.js");
 const { orderBookChapters } = require("./.compiled/src/lib/bookToc.js");
+const { bookHtml } = require("./.compiled/src/lib/bookPublishing.js");
+
+function bookFromInput(input) {
+  return {
+    id: 1,
+    title: input.title,
+    subtitle: input.subtitle,
+    author: input.author,
+    description: input.description,
+    genre: input.genre,
+    status: input.status,
+    trim_size: input.trimSize,
+    font_family: input.fontFamily,
+    font_size: input.fontSize,
+    line_height: input.lineHeight,
+    paragraph_spacing: input.paragraphSpacing,
+    margin: input.margin,
+    word_goal: input.wordGoal,
+    cover_color: input.coverColor,
+    dedication: input.dedication,
+    epigraph: input.epigraph,
+    copyright_text: input.copyrightText,
+    acknowledgements: input.acknowledgements,
+    toc_enabled: input.tocEnabled,
+    toc_title: input.tocTitle,
+    toc_depth: input.tocDepth,
+    toc_include_front_matter: input.tocIncludeFrontMatter,
+    toc_include_back_matter: input.tocIncludeBackMatter,
+    layout_json: input.layoutJson,
+    created_at: "",
+    updated_at: "",
+  };
+}
+
+function chaptersForTemplate(template) {
+  return template.chapters.map((chapter, index) => ({
+    id: index + 1,
+    book_id: 1,
+    chapter_kind: chapter.kind,
+    title: chapter.title,
+    content: chapter.content,
+    position: index,
+    toc_include: true,
+    toc_heading_exclusions: [],
+    created_at: "",
+    updated_at: "",
+  }));
+}
 
 test("every starter template uses the shared section vocabulary", () => {
   const validKinds = new Set(CHAPTER_KIND_OPTIONS.map((option) => option.value));
@@ -77,4 +125,16 @@ test("covers behave like title pages for opening-page detection", () => {
   assert.equal(chapterIsOpeningPage("title_page"), true);
   assert.equal(chapterIsOpeningPage("feature"), false);
   assert.ok(bookTemplateLayout(bookTemplate("photo-book")).typography);
+});
+
+test("a magazine template exports a cover-led issue with editorial CSS", () => {
+  const template = bookTemplate("magazine");
+  const input = bookTemplateInput(template, "Field Notes");
+  const html = bookHtml(bookFromInput(input), chaptersForTemplate(template));
+  assert.match(html, /@page \{ size: 8\.5in 11in/);
+  assert.match(html, /The Slow Issue/);
+  assert.match(html, /Masthead/);
+  assert.match(html, /book-style-editorial-kicker/);
+  assert.match(html, /--document-accent: #b04a31/);
+  assert.match(html, /class="title-page"/);
 });

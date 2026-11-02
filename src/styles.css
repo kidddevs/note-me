@@ -3862,6 +3862,17 @@ textarea:focus-visible,
 .books-page-zoom-shell { position: relative; flex-shrink: 0; margin: 0 auto; }
 .books-page-frame { position: absolute; top: 0; left: 0; width: 780px; transform-origin: top left; container-type: inline-size; }
 .books-page-frame.with-rulers { padding: 20px 0 0 20px; }
+.books-page-sheet.show-baseline-grid::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--baseline-step, .167in) - 1px), color-mix(in srgb, var(--baseline-color, #c9c0b4) 52%, transparent) calc(var(--baseline-step, .167in) - 1px), color-mix(in srgb, var(--baseline-color, #c9c0b4) 52%, transparent) var(--baseline-step, .167in));
+  background-size: 100% var(--baseline-step, .167in);
+  content: "";
+  pointer-events: none;
+}
+.books-page-sheet.show-baseline-grid > .books-chapter-heading-row,
+.books-page-sheet.show-baseline-grid > .books-canvas-host { position: relative; z-index: 1; }
 .books-page-sheet {
   --page-inch: calc(100cqw / var(--book-trim-width, 6));
   --page-pad-top: clamp(22px, calc(var(--book-margin-top, 1) * var(--page-inch)), 240px);
@@ -5105,7 +5116,46 @@ kbd {
   text-transform: var(--block-text-case, none);
   hyphens: var(--block-hyphens, manual);
   -webkit-hyphens: var(--block-hyphens, manual);
+  widows: var(--block-widows, 2);
+  orphans: var(--block-orphans, 2);
+  text-align-last: var(--block-last-line-align, auto);
+  hanging-punctuation: var(--block-hanging, none);
+  font-variant-ligatures: var(--block-ligatures, common-ligatures);
+  font-variant-numeric: var(--block-figures, normal);
 }
+.books-styled-text.styled-keep-lines .book-paragraph,
+.books-styled-text.styled-keep-lines .book-heading-1,
+.books-styled-text.styled-keep-lines .book-heading-2,
+.books-styled-text.styled-keep-lines .book-heading-3,
+.books-styled-text.styled-keep-lines .book-heading-4,
+.books-styled-text.styled-keep-lines .book-heading-5,
+.books-styled-text.styled-keep-lines .book-heading-6,
+.books-styled-text.styled-keep-lines .book-quote,
+.books-styled-text.styled-keep-lines .books-canvas-text { break-inside: avoid; }
+.books-styled-text.styled-keep-next .book-paragraph,
+.books-styled-text.styled-keep-next .book-heading-1,
+.books-styled-text.styled-keep-next .book-heading-2,
+.books-styled-text.styled-keep-next .book-heading-3,
+.books-styled-text.styled-keep-next .book-heading-4,
+.books-styled-text.styled-keep-next .book-heading-5,
+.books-styled-text.styled-keep-next .book-heading-6,
+.books-styled-text.styled-keep-next .book-quote { break-after: avoid; }
+.books-styled-text.styled-break-before .book-paragraph,
+.books-styled-text.styled-break-before .book-heading-1,
+.books-styled-text.styled-break-before .book-heading-2,
+.books-styled-text.styled-break-before .book-heading-3,
+.books-styled-text.styled-break-before .book-heading-4,
+.books-styled-text.styled-break-before .book-heading-5,
+.books-styled-text.styled-break-before .book-heading-6,
+.books-styled-text.styled-break-before .book-quote { break-before: page; }
+.books-styled-text.styled-break-after .book-paragraph,
+.books-styled-text.styled-break-after .book-heading-1,
+.books-styled-text.styled-break-after .book-heading-2,
+.books-styled-text.styled-break-after .book-heading-3,
+.books-styled-text.styled-break-after .book-heading-4,
+.books-styled-text.styled-break-after .book-heading-5,
+.books-styled-text.styled-break-after .book-heading-6,
+.books-styled-text.styled-break-after .book-quote { break-after: page; }
 .books-styled-text.styled-small-caps { font-variant-caps: small-caps; }
 .books-styled-text .book-paragraph,
 .books-styled-text .book-quote { text-indent: var(--block-first-indent, var(--book-paragraph-first-line-indent, 0)); padding-left: var(--block-left-indent, var(--book-paragraph-left-indent, 0)); padding-right: var(--block-right-indent, var(--book-paragraph-right-indent, 0)); margin-top: var(--block-space-before, var(--book-paragraph-space-before, 0)); margin-bottom: var(--block-space-after, var(--book-paragraph-space-after, 0)); }
@@ -5467,6 +5517,8 @@ kbd {
    New manuscript templates and editorial style kit
    ========================================================================== */
 
+.books-baseline-snap { margin-top: 10px; }
+.books-page-margins-settings .books-toggle-row { margin-top: 4px; }
 .books-new-overlay { align-items: flex-start; padding: 7vh 20px 24px; overflow-y: auto; }
 .books-new-dialog { width: min(820px, 100%); padding: 22px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-modal); box-shadow: var(--shadow-lg); }
 .books-new-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 17px; }

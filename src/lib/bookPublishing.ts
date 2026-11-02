@@ -9,6 +9,7 @@ import {
   pagePatternBackgroundCss,
   type BookLayout,
   type BookPageNumberStyle,
+  type BookParagraphStyle,
   type BookTextRole,
   type BookTextStyle,
   type BookTypography,
@@ -776,14 +777,44 @@ function renderRichBlock(kind: RichBlockKind, body: string, typography: BookTypo
   return renderTable(lines, options);
 }
 
-export function markdownToHtml(markdown: string, anchorPrefix?: string, typography: BookTypography = DEFAULT_BOOK_TYPOGRAPHY) {
-  const lines = stripCanvasModeMarkers(markdown).replace(/\r\n/g, "\n").replace(CANVAS_LAYOUT_COMMENT_PATTERN, "").split("\n");
+export function markdownToHtml(markdown: string, anchorPrefix?: string, typography: BookTypography = DEFAULT_BOOK_TYPOGRAPHY, paragraphStyles: BookParagraphStyle[] = []) {
+  const parsedLines = stripCanvasModeMarkers(markdown)
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => canvasLayoutFromSource(line));
+  const lines = parsedLines.map((line) => line.clean);
+  const presentations = parsedLines.map((line) => line.presentation);
   const html: string[] = [];
   let list: "ul" | "ol" | null = null;
   let paragraph: string[] = [];
+  let paragraphPresentation: RichPresentation = DEFAULT_RICH_PRESENTATION;
   let fencedCode: string[] | null = null;
   let richBlock: { kind: RichBlockKind; lines: string[]; closing: string } | null = null;
   let headingOrdinal = 0;
+
+  const presetFor = (presentation: RichPresentation) => {
+    if (!presentation.styleId) return null;
+    return paragraphStyles.find((preset) => preset.id === presentation.styleId) ?? null;
+  };
+  const styledClass = (base: string, preset: ReturnType<typeof presetFor>, style: BookTextStyle) => [
+    base,
+    style.dropCap ? "has-drop-cap" : "",
+    preset ? `book-style-${preset.id}` : "",
+  ].filter(Boolean).join(" ");
+  const styledAttributes = (presentation: RichPresentation) => {
+    const styles: string[] = [];
+    if (presentation.width !== 100 || presentation.bleed) styles.push(`width:${presentation.bleed ? 100 : presentation.width}%`);
+    if (presentation.x !== undefined) {
+      styles.push(`margin-left:${richPresentationLeft(presentation)}%`, "margin-right:auto");
+    } else if (presentation.align === "center") {
+      styles.push("margin-left:auto", "margin-right:auto");
+    } else if (presentation.align === "right") {
+      styles.push("margin-left:auto", "margin-right:0");
+    } else if (presentation.width !== 100 || presentation.bleed) {
+      styles.push("margin-left:0", "margin-right:auto");
+    }
+    return styles.length ? ` style="${styles.join(";")}"` : "";
+  };
 
   const closeList = () => {
     if (list) {
@@ -793,10 +824,14 @@ export function markdownToHtml(markdown: string, anchorPrefix?: string, typograp
   };
   const flushParagraph = () => {
     if (paragraph.length) {
-      const style = typography.paragraph;
-      const classes = ["book-paragraph", style.dropCap ? "has-drop-cap" : ""].filter(Boolean).join(" ");
-      html.push(`<p class="${classes}">${paragraphInlineHtml(paragraph.join(" "), style)}</p>`);
+      const preset = presetFor(paragraphPresentation);
+      const style = preset?.style ?? typography.paragraph;
+      const classes = styledClass("book-paragraph", preset, style);
+      if (paragraph.join("").replace(/\u200B/g, "").trim()) {
+        html.push(`<p class="${classes}"${styledAttributes(paragraphPresentation)}>${paragraphInlineHtml(paragraph.join(" "), style)}</p>`);
+      }
       paragraph = [];
+      paragraphPresentation = DEFAULT_RICH_PRESENTATION;
     }
   };
 
@@ -860,7 +895,10 @@ export function markdownToHtml(markdown: string, anchorPrefix?: string, typograp
       const level = Math.min(heading[1].length, 6);
       headingOrdinal += 1;
       const id = anchorPrefix ? ` id="${headingAnchorId(anchorPrefix, headingOrdinal)}"` : "";
-      html.push(`<h${level} class="book-heading-${level}"${id}>${inlineHtml(heading[2])}</h${level}>`);
+      const headingRole = `heading${level}` as BookTextRole;
+      const preset = presetFor(presentations[lineIndex]);
+      const style = preset?.style ?? typography[headingRole];
+      html.push(`<h${level} class="${styledClass(`book-heading-${level}`, preset, style)}"${id}${styledAttributes(presentations[lineIndex])}>${paragraphInlineHtml(heading[2], style)}</h${level}>`);
     } else if (/^(---|\*\*\*)$/.test(trimmed)) {
       flushParagraph();
       closeList();
@@ -881,8 +919,11 @@ export function markdownToHtml(markdown: string, anchorPrefix?: string, typograp
     } else if (trimmed.startsWith(">")) {
       flushParagraph();
       closeList();
-      html.push(`<blockquote class="book-quote">${inlineHtml(trimmed.replace(/^>\s?/, ""))}</blockquote>`);
+      const preset = presetFor(presentations[lineIndex]);
+      const style = preset?.style ?? typography.quote;
+      html.push(`<blockquote class="${styledClass("book-quote", preset, style)}"${styledAttributes(presentations[lineIndex])}>${paragraphInlineHtml(trimmed.replace(/^>\s?/, ""), style)}</blockquote>`);
     } else {
+      if (presentations[lineIndex].styleId) paragraphPresentation = presentations[lineIndex];
       paragraph.push(trimmed);
     }
   }
@@ -1014,7 +1055,6 @@ export function calloutBlockText(title: string, tone: string, content: string, p
 }
 
 const CANVAS_LAYOUT_PATTERN = /\s*<!--\s*note-me:layout\s+([^>]*?)\s*-->\s*$/i;
-const CANVAS_LAYOUT_COMMENT_PATTERN = /\s*<!--\s*note-me:layout\s+[^>]*?-->/gi;
 
 function layoutAttributes(value: string) {
   const attributes = new Map<string, string>();
@@ -1322,25 +1362,26 @@ export function bookMarkdown(book: Book, chapters: Chapter[]) {
 export function bookHtml(book: Book, chapters: Chapter[]) {
   const title = escapeHtml(book.title || "Untitled manuscript");
   const layout = layoutForBook(book);
+  const renderMarkdown = (value: string, prefix?: string) => markdownToHtml(value, prefix, layout.typography, layout.paragraphStyles);
   const orderedChapters = orderBookChapters(chapters);
   const subtitle = book.subtitle ? `<p class="subtitle">${escapeHtml(book.subtitle)}</p>` : "";
   const author = book.author ? `<p class="author">${escapeHtml(book.author)}</p>` : "";
   const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   const contentChapters = orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind));
   const titlePageHtml = titlePageChapter
-     ? `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${markdownToHtml(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), layout.typography)}</section>`
+     ? `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id))}</section>`
     : `<section class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening"), "Title page", "opening", 0)}<h1 class="book-title">${title}</h1>${subtitle}${author}</section>`;
   const frontMatterHtml = frontMatterSections(book, chapters).map((section, index) => `
     <section id="${matterAnchorId(section.key)}" class="book-matter page-break">
        ${bookChromeHtml(book, layout, "opening", section.title, "opening", index)}
         <h2 class="book-heading-1">${escapeHtml(section.title)}</h2>
-        ${markdownToHtml(section.content, matterAnchorId(section.key), layout.typography)}
+        ${renderMarkdown(section.content, matterAnchorId(section.key))}
      </section>`).join("\n");
   const backMatterHtml = backMatterSections(book, chapters).map((section, index) => `
     <section id="${matterAnchorId(section.key)}" class="book-matter page-break">
        ${bookChromeHtml(book, layout, "closing", section.title, "closing", index)}
         <h2 class="book-heading-1">${escapeHtml(section.title)}</h2>
-        ${markdownToHtml(section.content, matterAnchorId(section.key), layout.typography)}
+        ${renderMarkdown(section.content, matterAnchorId(section.key))}
      </section>`).join("\n");
   const chaptersHtml = contentChapters.map((chapter, index) => {
     const orderedIndex = orderedChapters.indexOf(chapter);
@@ -1352,7 +1393,7 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
         ${bookChromeHtml(book, layout, layoutSectionKey(band, chapter.id), label, band, chapterBandOrdinal(orderedChapters, orderedIndex))}
         ${showKicker ? `<p class="chapter-kicker">${chapterDisplayLabel(chapter, orderedIndex, orderedChapters)}</p>` : ""}
         <h2 class="book-heading-1">${escapeHtml(label)}</h2>
-         ${markdownToHtml(chapter.content, sectionAnchorId(chapter.id), layout.typography)}
+         ${renderMarkdown(chapter.content, sectionAnchorId(chapter.id))}
       </section>`;
   }).join("\n");
   const contentsHtml = tocEntriesHtml(book, chapters);
@@ -1362,7 +1403,7 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
 <style>
 @page { size: ${trimCssSize(book.trim_size)}; margin: ${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in; }
 * { box-sizing: border-box; }
- body { margin: 0; color: #24211e; background-color: ${layout.pageColor}; ${pagePatternBackgroundCss(layout)} print-color-adjust: exact; -webkit-print-color-adjust: exact; font-family: ${fontCss(book.font_family)}; font-size: ${book.font_size}pt; line-height: ${book.line_height}; } ${typographyCss(layout)}${imagePresentationCss()}
+ body { --document-accent: ${layout.accentColor}; margin: 0; color: #24211e; background-color: ${layout.pageColor}; ${pagePatternBackgroundCss(layout)} print-color-adjust: exact; -webkit-print-color-adjust: exact; font-family: ${fontCss(book.font_family)}; font-size: ${book.font_size}pt; line-height: ${book.line_height}; } ${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}
 .title-page { min-height: 70vh; display: flex; flex-direction: column; justify-content: center; text-align: center; page-break-after: always; }
 h1 { margin: 0; font-size: 2.6em; line-height: 1.05; } .subtitle { margin: 1.3em 0 0; font-size: 1.15em; } .author { margin-top: 5em; font-size: .9em; text-transform: uppercase; letter-spacing: .16em; }
  .chapter, .book-matter { max-width: 100%; } .page-break { page-break-before: always; } .chapter-kicker { color: #8b6a43; font-size: .7em; letter-spacing: .18em; text-transform: uppercase; } h2 { margin: .45em 0 1.6em; font-size: 1.8em; } p { margin: 0 0 ${book.paragraph_spacing}em; text-align: justify; } img { display: block; max-width: 100%; height: auto; margin: 1.4em auto; } blockquote { margin: 1.4em 2em; font-style: italic; } .scene-break { margin: 1.8em 0; text-align: center; letter-spacing: .6em; } .book-toc { page-break-after: always; } .book-toc li { margin: .35em 0; margin-left: calc(var(--toc-indent) * 1.2em); list-style: none; } .book-chrome { margin: 0 0 2em; font-size: .68em; letter-spacing: .08em; text-transform: uppercase; } .book-chrome-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1em; min-height: 1.4em; } .book-chrome-row span:nth-child(2) { text-align: center; } .book-chrome-row span:last-child { text-align: right; } .book-chrome-row.footer { margin-top: .7em; color: #6f6259; }
@@ -1456,7 +1497,7 @@ function docxStyleXml(styleId: string, name: string, style: BookTextStyle, after
   const left = Math.round(style.leftIndent * style.fontSize * 20);
   const right = Math.round(style.rightIndent * style.fontSize * 20);
   const indent = firstLine || left || right ? `<w:ind${firstLine ? ` w:firstLine="${firstLine}"` : ""}${left ? ` w:left="${left}"` : ""}${right ? ` w:right="${right}"` : ""}/>` : "";
-  return `<w:style w:type="paragraph" w:styleId="${styleId}"><w:name w:val="${name}"/>${basedOn ? `<w:basedOn w:val="${basedOn}"/>` : ""}<w:pPr><w:jc w:val="${alignment}"/><w:spacing w:line="${lineHeight}" w:lineRule="auto"${before ? ` w:before="${before}"` : ""}${after ? ` w:after="${after}"` : ""}/>${indent}</w:pPr><w:rPr><w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/>${style.fontWeight >= 600 ? "<w:b/>" : ""}${style.fontStyle === "italic" ? "<w:i/>" : ""}${letterSpacing ? `<w:spacing w:val="${letterSpacing}"/>` : ""}</w:rPr></w:style>`;
+  return `<w:style w:type="paragraph" w:styleId="${styleId}"><w:name w:val="${name}"/>${basedOn ? `<w:basedOn w:val="${basedOn}"/>` : ""}<w:pPr>${style.keepWithNext ? "<w:keepNext/>" : ""}${style.keepLines ? "<w:keepLines/>" : ""}${style.breakBefore ? "<w:pageBreakBefore/>" : ""}<w:widowControl/><w:jc w:val="${alignment}"/><w:spacing w:line="${lineHeight}" w:lineRule="auto"${before ? ` w:before="${before}"` : ""}${after ? ` w:after="${after}"` : ""}/>${indent}</w:pPr><w:rPr><w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/>${style.fontWeight >= 600 ? "<w:b/>" : ""}${style.fontStyle === "italic" ? "<w:i/>" : ""}${style.textCase === "small-caps" ? "<w:smallCaps/>" : ""}${style.textCase === "uppercase" ? "<w:caps/>" : ""}${style.underline ? "<w:u w:val=\"single\"/>" : ""}${style.strikethrough ? "<w:strike/>" : ""}${letterSpacing ? `<w:spacing w:val="${letterSpacing}"/>` : ""}</w:rPr></w:style>`;
 }
 
 function docxTextParagraph(line: string, layout: BookLayout) {
@@ -1661,12 +1702,13 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   const { zipSync, strToU8 } = await import("fflate");
   const bookId = `noteme-book-${book.id}`;
   const layout = layoutForBook(book);
+  const renderMarkdown = (value: string, prefix?: string) => markdownToHtml(value, prefix, layout.typography, layout.paragraphStyles);
   const orderedChapters = orderBookChapters(chapters);
   const chapterFiles: Record<string, Uint8Array> = {};
   const epubImages = new Map<string, string>();
   const manifest: string[] = [];
   const spine: string[] = [];
-  const epubCss = `body{font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;background-color:${layout.pageColor};${pagePatternBackgroundCss(layout)}}${typographyCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}`;
+  const epubCss = `body{--document-accent:${layout.accentColor};font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;background-color:${layout.pageColor};${pagePatternBackgroundCss(layout)}}${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}`;
   const embedImages = (body: string) => body.replace(/src="(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+))"/gi, (_match, dataUri: string, mime: string, encoded: string) => {
     const existingPath = epubImages.get(dataUri);
     if (existingPath) return `src="${existingPath}"`;
@@ -1686,22 +1728,22 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   };
   const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   if (titlePageChapter) {
-     addSection("title-page", titlePageChapter.title || book.title || "Untitled manuscript", `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${markdownToHtml(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), layout.typography)}</section>`);
+     addSection("title-page", titlePageChapter.title || book.title || "Untitled manuscript", `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id))}</section>`);
   } else {
     addSection("title-page", book.title || "Untitled manuscript", `<section class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening"), "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(book.title || "Untitled manuscript")}</h1>${book.subtitle ? `<p class="book-paragraph">${escapeHtml(book.subtitle)}</p>` : ""}${book.author ? `<p class="book-paragraph">${escapeHtml(book.author)}</p>` : ""}</section>`);
   }
   const front = frontMatterSections(book, chapters);
-   if (front.length) addSection("front-matter", "Front matter", `<section class="matter">${front.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "opening", section.title, "opening", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${markdownToHtml(section.content, matterAnchorId(section.key), layout.typography)}</section>`).join("")}</section>`);
+   if (front.length) addSection("front-matter", "Front matter", `<section class="matter">${front.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "opening", section.title, "opening", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${renderMarkdown(section.content, matterAnchorId(section.key))}</section>`).join("")}</section>`);
   orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind)).forEach((chapter) => {
     const index = orderedChapters.indexOf(chapter);
     const id = `chapter-${chapter.id}`;
     const band = chapterPageBand(chapter);
     const label = chapterTitleHeading(chapter, index, orderedChapters);
     const showKicker = band === "story" && chapterHasDistinctTitle(chapter, index, orderedChapters);
-     addSection(id, label, `<section id="${sectionAnchorId(chapter.id)}">${bookChromeHtml(book, layout, layoutSectionKey(band, chapter.id), label, band, chapterBandOrdinal(orderedChapters, index))}${showKicker ? `<p>${escapeHtml(chapterDisplayLabel(chapter, index, orderedChapters))}</p>` : ""}<h1>${escapeHtml(label)}</h1>${markdownToHtml(chapter.content, sectionAnchorId(chapter.id), layout.typography)}</section>`);
+     addSection(id, label, `<section id="${sectionAnchorId(chapter.id)}">${bookChromeHtml(book, layout, layoutSectionKey(band, chapter.id), label, band, chapterBandOrdinal(orderedChapters, index))}${showKicker ? `<p>${escapeHtml(chapterDisplayLabel(chapter, index, orderedChapters))}</p>` : ""}<h1>${escapeHtml(label)}</h1>${renderMarkdown(chapter.content, sectionAnchorId(chapter.id))}</section>`);
   });
   const back = backMatterSections(book, chapters);
-   if (back.length) addSection("back-matter", "Back matter", `<section class="matter">${back.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "closing", section.title, "closing", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${markdownToHtml(section.content, matterAnchorId(section.key), layout.typography)}</section>`).join("")}</section>`);
+   if (back.length) addSection("back-matter", "Back matter", `<section class="matter">${back.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "closing", section.title, "closing", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${renderMarkdown(section.content, matterAnchorId(section.key))}</section>`).join("")}</section>`);
   const toc = buildBookToc(book, chapters);
   const tocHref = (entry: TocEntry) => {
     if (entry.chapterId === titlePageChapter?.id) return `title-page.xhtml#${entry.id}`;
@@ -1745,6 +1787,90 @@ export function typographyCss(layout: BookLayout) {
   const dropCap = paragraph.dropCap ? `.book-paragraph.has-drop-cap::first-letter{float:left;font-family:${fontCss(paragraph.dropCapFontFamily)};font-size:${paragraph.fontSize * paragraph.dropCapLines * 0.82}pt;line-height:.78;color:${paragraph.dropCapColor};padding-right:${paragraph.dropCapGap}em;margin-top:.06em;font-weight:${Math.max(400, paragraph.fontWeight)}}` : "";
   const nested = `.book-nested-style{font-family:${fontCss(paragraph.nestedFontFamily)};color:${paragraph.nestedColor}}.book-nested-style.nested-small-caps{font-variant:small-caps;letter-spacing:.06em;text-transform:uppercase}.book-nested-style.nested-bold{font-weight:700}.book-nested-style.nested-italic{font-style:italic}.book-nested-style.nested-accent{color:${paragraph.nestedColor}}`;
   return `.book-title{${styleCss("title")}}.book-paragraph{${styleCss("paragraph")};${paragraphExtras}}.book-quote{${styleCss("quote")}}${([1, 2, 3, 4, 5, 6] as const).map((level) => `.book-heading-${level}{${styleCss(`heading${level}`)}}`).join("")}${dropCap}${nested}`;
+}
+
+function cssColor(value: string) {
+  if (value === "accent") return "var(--document-accent, #a56b3e)";
+  if (value === "inherit") return "inherit";
+  return value;
+}
+
+function paragraphStyleDeclarations(style: BookTextStyle) {
+  const declarations = [
+    `font-family:${fontCss(style.fontFamily)}`,
+    `font-size:${style.fontSize}pt`,
+    `font-weight:${style.fontWeight}`,
+    `font-style:${style.fontStyle}`,
+    `text-align:${style.textAlign}`,
+    `line-height:${style.lineHeight}`,
+    `letter-spacing:${style.letterSpacing}em`,
+    `color:${cssColor(style.color)}`,
+    `text-indent:${style.firstLineIndent}em`,
+    `padding-left:${style.leftIndent}em`,
+    `padding-right:${style.rightIndent}em`,
+    `margin-top:${style.spaceBefore}em`,
+    `margin-bottom:${style.spaceAfter}em`,
+    `hyphens:${style.hyphenation ? "auto" : "manual"}`,
+    `-webkit-hyphens:${style.hyphenation ? "auto" : "manual"}`,
+    `text-align-last:${style.lastLineAlign}`,
+    `font-variant-ligatures:${style.ligatures === "none" ? "no-common-ligatures" : "common-ligatures"}`,
+    `font-variant-numeric:${style.figureStyle === "oldstyle" ? "oldstyle-nums" : style.figureStyle === "lining" ? "lining-nums" : style.figureStyle === "tabular" ? "tabular-nums" : "normal"}`,
+    `text-decoration-line:${[style.underline ? "underline" : "", style.strikethrough ? "line-through" : ""].filter(Boolean).join(" ") || "none"}`,
+    `widows:${Math.max(1, style.widows)}`,
+    `orphans:${Math.max(1, style.orphans)}`,
+    `break-inside:${style.keepLines ? "avoid" : "auto"}`,
+    `break-after:${style.breakAfter ? "page" : style.keepWithNext ? "avoid" : "auto"}`,
+    `break-before:${style.breakBefore ? "page" : "auto"}`,
+  ];
+  if (style.textCase === "small-caps") declarations.push("font-variant-caps:small-caps");
+  else if (style.textCase !== "none") declarations.push(`text-transform:${style.textCase}`);
+  if (style.hangingPunctuation) declarations.push("hanging-punctuation:first last");
+  if (style.columns > 1) declarations.push(`column-count:${style.columns}`, `column-gap:${style.columnGap}em`, "column-fill:balance");
+  if (style.tabs.length) declarations.push("white-space:pre-wrap", `tab-size:${style.tabs[0].position}`);
+  if (style.border.enabled) {
+    declarations.push(
+      `border:${style.border.width}px ${style.border.style} ${cssColor(style.border.color)}`,
+      `border-radius:${style.border.radius}px`,
+      `padding:${style.border.padding}em`,
+    );
+  }
+  if (style.ruleAbove.enabled) {
+    declarations.push(
+      `border-top:${style.ruleAbove.width}px ${style.ruleAbove.style} ${cssColor(style.ruleAbove.color)}`,
+      `padding-top:${style.ruleAbove.offset}em`,
+    );
+  }
+  if (style.ruleBelow.enabled) {
+    declarations.push(
+      `border-bottom:${style.ruleBelow.width}px ${style.ruleBelow.style} ${cssColor(style.ruleBelow.color)}`,
+      `padding-bottom:${style.ruleBelow.offset}em`,
+    );
+  }
+  if (style.shading.enabled) {
+    declarations.push(`background-color:color-mix(in srgb, ${cssColor(style.shading.color)} 16%, transparent)`);
+  }
+  return declarations.join(";");
+}
+
+/**
+ * Emits one CSS class per named paragraph style so print, HTML, and EPUB stay
+ * faithful to the design canvas. `scope` lets the print sheet out-specify the
+ * base print styles without duplicating the style rules.
+ */
+export function paragraphStylesCss(layout: BookLayout, scope = "") {
+  const prefix = scope ? `${scope} ` : "";
+  return layout.paragraphStyles.map((preset) => {
+    const style = preset.style;
+    const selector = `${prefix}.book-style-${preset.id}`;
+    const rules = [`${selector}{${paragraphStyleDeclarations(style)}}`];
+    if (style.dropCap) {
+      rules.push(`${selector}.has-drop-cap::first-letter{float:left;margin-top:.06em;padding-right:${style.dropCapGap}em;color:${cssColor(style.dropCapColor)};font-family:${fontCss(style.dropCapFontFamily)};font-size:${style.fontSize * style.dropCapLines * 0.82}pt;font-weight:600;line-height:.78;}`);
+    }
+    if (style.nestedStyle !== "none") {
+      rules.push(`${selector} .book-nested-style{font-family:${fontCss(style.nestedFontFamily)};color:${cssColor(style.nestedColor)}}`);
+    }
+    return rules.join("");
+  }).join("");
 }
 
 export function imagePresentationCss() {

@@ -17,6 +17,7 @@ const {
   canvasTextSource,
   imageMarkdown,
   markdownToHtml,
+  paragraphStylesCss,
   restyleCanvasTextSource,
   richPresentationLeft,
   richAlignForLeft,
@@ -29,7 +30,7 @@ const {
   EMPTY_CANVAS_PARAGRAPH,
   DEFAULT_RICH_PRESENTATION,
 } = require("./.compiled/src/lib/bookPublishing.js");
-const { DEFAULT_BOOK_TYPOGRAPHY } = require("./.compiled/src/lib/bookLayout.js");
+const { DEFAULT_BOOK_LAYOUT, DEFAULT_BOOK_TYPOGRAPHY } = require("./.compiled/src/lib/bookLayout.js");
 
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
@@ -397,6 +398,22 @@ test("canvas typography carries drop caps and nested openings into preview marku
   const html = markdownToHtml("First light crossed the room.", undefined, typography);
   assert.match(html, /class="book-paragraph has-drop-cap"/);
   assert.match(html, /<span class="book-nested-style nested-small-caps">First<\/span> <span class="book-nested-style nested-small-caps">light<\/span>/);
+});
+
+test("named paragraph styles survive into exported HTML and print CSS", () => {
+  const source = canvasTextSource("A standfirst for the feature.", { styleId: "body-modern" });
+  const html = markdownToHtml(source, undefined, DEFAULT_BOOK_TYPOGRAPHY, DEFAULT_BOOK_LAYOUT.paragraphStyles);
+  assert.match(html, /class="book-paragraph book-style-body-modern"/);
+  assert.doesNotMatch(html, /note-me:layout/);
+
+  const css = paragraphStylesCss(DEFAULT_BOOK_LAYOUT);
+  assert.match(css, /\.book-style-body-modern\{/);
+  assert.match(css, /\.book-style-feature-opening\.has-drop-cap::first-letter/);
+
+  const exportCss = paragraphStylesCss({ ...DEFAULT_BOOK_LAYOUT, paragraphStyles: [{ id: "folio", name: "Folio", style: { ...DEFAULT_BOOK_TYPOGRAPHY.paragraph, textAlign: "center", textCase: "uppercase", widows: 3 } }] }, ".book-print-content");
+  assert.match(exportCss, /\.book-print-content \.book-style-folio\{/);
+  assert.match(exportCss, /widows:3/);
+  assert.match(exportCss, /text-transform:uppercase/);
 });
 
 test("inline underline and strikethrough survive Markdown rendering", () => {
