@@ -17,7 +17,7 @@ Books Studio already has an unusually strong foundation for a local-first writin
 
 ### P0 — magazine production fundamentals
 
-1. **Per-section page design and master pages.** A cover, masthead, feature opener, department, and colophon should be able to use different grids, margins, backgrounds, and running furniture while sharing one book. Today the layout is book-wide.
+1. **Per-section running furniture.** Page masters now cover paper, accent, margins, and baseline settings; per-section headers/footers and page-number overrides should follow.
 2. **True spreads and pagination.** Magazine teams review facing pages, not isolated sections. Books Studio needs a spread proof, gutter treatment, and a predictable page-break model.
 3. **Cover studio.** Covers need structured cover lines, issue line, masthead lockup, sell lines, barcode block, and an exportable cover page. The current cover preview is useful, but not a full cover design surface.
 
@@ -43,10 +43,11 @@ Books Studio already has an unusually strong foundation for a local-first writin
 - **Typographic depth**: ligatures, oldstyle/lining/tabular figures, hanging punctuation, last-line alignment, widows/orphans, keep-lines, page breaks, and a non-printing baseline grid with leading snap.
 - **Export fidelity**: applied paragraph styles now emit scoped CSS for HTML, EPUB, and print, including drop caps, rules, shading, widths, and alignment. Text blocks keep their designed width and placement in exported markup.
 - **Issue metadata**: volume, issue, season, and year with `{{volume}}`, `{{issue}}`, `{{season}}`, `{{year}}`, and `{{issueLine}}` running-head tokens.
+- **Section page masters**: per-section paper, accent, margins, baseline grid, free margins, six magazine masters, suggested masters by section kind, apply-to-book and apply-to-kind actions, rail badges, and per-section page rules in HTML/EPUB/print.
 
 ## Recommended next slices
 
-1. **Section page masters** — per-section layout overrides with a "page style" picker, inherited from the book by default.
+1. **Per-section running furniture** — let page masters set their own header/footer slots and page-number style.
 2. **Cover studio** — structured cover lines, masthead lockup, issue line, barcode block, and cover export.
 3. **Spread proof + flat plan** — facing-page view, gutter preview, and an issue outline with word budgets.
 4. **Print packaging** — bleed/crop marks, PDF preflight, and parity warnings between canvas and print.

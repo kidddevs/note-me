@@ -16,6 +16,7 @@ export interface BookTemplateChapter {
   kind: ChapterKind;
   title: string;
   content: string;
+  pageMaster?: string;
 }
 
 export interface BookTemplate {
@@ -100,6 +101,7 @@ export const BOOK_TEMPLATES: BookTemplate[] = [
         kind: "cover",
         title: "The Slow Issue",
         content: "Issue 04 · Summer 2026\n\nThe quiet craft of paying attention.\n\n**On the cover:** North light, 6:40 a.m.",
+        pageMaster: "cover",
       },
       {
         kind: "masthead",
@@ -115,11 +117,13 @@ export const BOOK_TEMPLATES: BookTemplate[] = [
         kind: "feature",
         title: "The Shape of a City",
         content: MAGAZINE_BODY,
+        pageMaster: "feature",
       },
       {
         kind: "department",
         title: "Field Notes",
         content: "A recurring department for short observations, places, objects, and conversations.\n\nKeep it close to the magazine's voice and let each issue accumulate into a world.",
+        pageMaster: "department",
       },
       {
         kind: "colophon",
@@ -144,9 +148,9 @@ export const BOOK_TEMPLATES: BookTemplate[] = [
     coverColor: "#356b5b",
     chapters: [
       { kind: "masthead", title: "Masthead", content: "**Published by** — Your organisation\n\n**Editor** — Your Name\n\n**Frequency** — Monthly" },
-      { kind: "feature", title: "Lead story", content: "Open with the most useful thing you learned or made this month.\n\nKeep the lead generous and practical, then close with what happens next." },
-      { kind: "department", title: "Department", content: "A regular section for people, projects, and short updates." },
-      { kind: "listing", title: "Notices", content: "**Upcoming** — Add events, deadlines, and opportunities.\n\n**New** — Add launches, releases, and links.\n\n**Contact** — Tell readers how to reach you." },
+      { kind: "feature", title: "Lead story", content: "Open with the most useful thing you learned or made this month.\n\nKeep the lead generous and practical, then close with what happens next.", pageMaster: "feature" },
+      { kind: "department", title: "Department", content: "A regular section for people, projects, and short updates.", pageMaster: "department" },
+      { kind: "listing", title: "Notices", content: "**Upcoming** — Add events, deadlines, and opportunities.\n\n**New** — Add launches, releases, and links.\n\n**Contact** — Tell readers how to reach you.", pageMaster: "department" },
       { kind: "colophon", title: "Colophon", content: "Thanks for reading. Forward this issue to someone who would find it useful." },
     ],
   },
@@ -165,9 +169,9 @@ export const BOOK_TEMPLATES: BookTemplate[] = [
     tocEnabled: true,
     coverColor: "#29231e",
     chapters: [
-      { kind: "title_page", title: "Untitled photo book", content: "Photographs by Your Name" },
-      { kind: "photo_essay", title: "Rooms in Light", content: "Add photographs, captions, and short passages. Use Design canvas to place full-bleed plates and text frames." },
-      { kind: "photo_essay", title: "Coastline", content: "A second visual sequence. Let the edit carry the argument." },
+      { kind: "title_page", title: "Untitled photo book", content: "Photographs by Your Name", pageMaster: "cover" },
+      { kind: "photo_essay", title: "Rooms in Light", content: "Add photographs, captions, and short passages. Use Design canvas to place full-bleed plates and text frames.", pageMaster: "feature" },
+      { kind: "photo_essay", title: "Coastline", content: "A second visual sequence. Let the edit carry the argument.", pageMaster: "feature" },
       { kind: "colophon", title: "Colophon", content: "Made with NoteMe. Printed on uncoated paper." },
     ],
   },
@@ -187,8 +191,8 @@ export const BOOK_TEMPLATES: BookTemplate[] = [
     coverColor: "#b04a31",
     chapters: [
       { kind: "title_page", title: "Untitled recipe book", content: "Recipes and notes by Your Name" },
-      { kind: "recipe", title: "Tomato season", content: "**Serves 4**\n\nA dish for the weeks when tomatoes are better than almost anything else.\n\n**Ingredients**\n\n- Ripe tomatoes\n- Good olive oil\n- Salt, pepper, and a little vinegar\n\n**Method**\n\n1. Slice the tomatoes and season them early.\n2. Let them sit until they release their juices.\n3. Finish with oil, vinegar, and torn herbs." },
-      { kind: "recipe", title: "Bread, patience", content: "A recipe that rewards waiting.\n\nWrite the method in short, calm steps. Keep ingredients and quantities easy to scan." },
+      { kind: "recipe", title: "Tomato season", content: "**Serves 4**\n\nA dish for the weeks when tomatoes are better than almost anything else.\n\n**Ingredients**\n\n- Ripe tomatoes\n- Good olive oil\n- Salt, pepper, and a little vinegar\n\n**Method**\n\n1. Slice the tomatoes and season them early.\n2. Let them sit until they release their juices.\n3. Finish with oil, vinegar, and torn herbs.", pageMaster: "department" },
+      { kind: "recipe", title: "Bread, patience", content: "A recipe that rewards waiting.\n\nWrite the method in short, calm steps. Keep ingredients and quantities easy to scan.", pageMaster: "department" },
       { kind: "colophon", title: "Colophon", content: "A note on the kitchen, the season, and the people who shared the table." },
     ],
   },

@@ -77,6 +77,9 @@ test("the magazine template starts with a cover, masthead, editorial and feature
   assert.ok(kinds.includes("feature"));
   assert.ok(kinds.includes("department"));
   assert.ok(kinds.includes("colophon"));
+  assert.equal(magazine.chapters[0].pageMaster, "cover");
+  assert.equal(magazine.chapters.find((chapter) => chapter.kind === "feature").pageMaster, "feature");
+  assert.equal(magazine.chapters.find((chapter) => chapter.kind === "department").pageMaster, "department");
   assert.equal(magazine.trimSize, "8.5x11");
   assert.equal(magazine.presetId, "magazine");
 });
@@ -138,5 +141,5 @@ test("a magazine template exports a cover-led issue with editorial CSS", () => {
   assert.match(html, /Masthead/);
   assert.match(html, /book-style-editorial-kicker/);
   assert.match(html, /--document-accent: #b04a31/);
-  assert.match(html, /class="title-page"/);
+  assert.match(html, /class="title-page book-page-1"/);
 });

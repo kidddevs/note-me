@@ -347,6 +347,7 @@ pub fn run() {
             list_chapters,
             create_chapter,
             update_chapter,
+            update_chapter_layout,
             delete_chapter,
             reorder_chapters,
             list_chapter_snapshots,

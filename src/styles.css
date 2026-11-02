@@ -5517,6 +5517,34 @@ kbd {
    New manuscript templates and editorial style kit
    ========================================================================== */
 
+.design-page-scope { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--book-accent) 20%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--book-accent) 5%, var(--surface)); }
+.design-page-scope > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.design-page-scope span { color: var(--text-4); font-size: 8px; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; }
+.design-page-scope strong { overflow: hidden; color: var(--text-2); font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.design-scope-switch { display: flex; flex-shrink: 0; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.design-scope-switch button { height: 23px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text-3); font: inherit; font-size: 9px; cursor: pointer; }
+.design-scope-switch button.active { background: var(--book-accent-soft); color: var(--book-accent); font-weight: 700; }
+.design-master-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.design-master-card { display: flex; align-items: flex-start; gap: 7px; min-height: 82px; padding: 7px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text-2); text-align: left; cursor: pointer; }
+.design-master-card:hover { border-color: color-mix(in srgb, var(--book-accent) 48%, var(--border)); }
+.design-master-card.suggested { border-color: color-mix(in srgb, var(--book-accent) 56%, var(--border)); background: color-mix(in srgb, var(--book-accent) 5%, var(--surface)); }
+.design-master-swatch { position: relative; display: block; width: 30px; height: 42px; flex-shrink: 0; overflow: hidden; border: 1px solid; border-radius: 2px; }
+.design-master-swatch i { position: absolute; left: 5px; right: 5px; display: block; height: 0; border-top: 1px dashed; opacity: .55; }
+.design-master-swatch i:nth-child(1) { top: 11px; }
+.design-master-swatch i:nth-child(2) { top: 20px; }
+.design-master-swatch i:nth-child(3) { top: 29px; }
+.design-master-card > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.design-master-card strong { color: var(--text); font-size: 9.5px; font-weight: 680; }
+.design-master-card small { color: var(--text-4); font-size: 8px; line-height: 1.35; }
+.design-master-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 2px; }
+.design-master-actions button { min-height: 29px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-2); font: inherit; font-size: 9px; font-weight: 600; cursor: pointer; }
+.design-master-actions button:hover:not(:disabled) { border-color: var(--book-accent); color: var(--book-accent); }
+.design-master-actions button:disabled { cursor: default; opacity: .45; }
+.design-master-actions button.wide { grid-column: 1 / -1; }
+.design-inline-link { display: inline; padding: 0; border: 0; background: transparent; color: var(--book-accent); font: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.books-page-master-chip { display: inline-flex; height: 24px; align-items: center; gap: 4px; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--editor-accent) 40%, var(--border)); border-radius: 5px; background: color-mix(in srgb, var(--editor-accent) 7%, var(--surface)); color: var(--editor-accent); font: inherit; font-size: 9px; font-weight: 650; cursor: pointer; }
+.books-page-master-chip:hover { border-color: var(--editor-accent); background: var(--editor-accent-soft); }
+.books-section-page-badge { display: inline-flex; width: fit-content; align-items: center; gap: 3px; margin-top: 2px; padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--book-accent) 28%, var(--border)); border-radius: 999px; color: var(--book-accent); font-size: 7.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .design-insert-control { display: flex; height: 28px; align-items: center; gap: 5px; padding: 0 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-3); }
 .design-insert-control:hover { border-color: color-mix(in srgb, var(--editor-accent) 42%, var(--border)); color: var(--editor-accent); }
 .design-insert-control select { max-width: 105px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; font-size: 9.5px; cursor: pointer; }

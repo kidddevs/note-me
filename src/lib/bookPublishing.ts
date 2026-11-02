@@ -3,6 +3,7 @@ import { chapterGroup, chapterIsOpeningPage, chapterKindLabel } from "./chapterK
 import {
   DEFAULT_BOOK_TYPOGRAPHY,
   layoutForBook,
+  layoutForChapter,
   layoutSectionKey,
   layoutTokenText,
   pageNumberForSection,
@@ -1359,17 +1360,35 @@ export function bookMarkdown(book: Book, chapters: Chapter[]) {
     .join("\n");
 }
 
+function sectionPageStyle(layout: BookLayout) {
+  return `--document-accent:${layout.accentColor};background-color:${layout.pageColor};${pagePatternBackgroundCss(layout)}`;
+}
+
+function sectionPageRules(book: Book, chapters: Chapter[], layouts: Map<number, BookLayout>) {
+  return chapters.map((chapter) => {
+    const layout = layouts.get(chapter.id);
+    if (!layout) return "";
+    const name = `book-page-${chapter.id}`;
+    return `@page ${name}{size:${trimCssSize(book.trim_size)};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;}.${name}{page:${name};}`;
+  }).join("");
+}
+
 export function bookHtml(book: Book, chapters: Chapter[]) {
   const title = escapeHtml(book.title || "Untitled manuscript");
   const layout = layoutForBook(book);
-  const renderMarkdown = (value: string, prefix?: string) => markdownToHtml(value, prefix, layout.typography, layout.paragraphStyles);
   const orderedChapters = orderBookChapters(chapters);
+  const chapterLayouts = new Map(orderedChapters.map((chapter) => [chapter.id, layoutForChapter(book, chapter)]));
+  const renderMarkdown = (value: string, prefix?: string, pageLayout: BookLayout = layout) => markdownToHtml(value, prefix, pageLayout.typography, pageLayout.paragraphStyles);
+  const pageRules = sectionPageRules(book, orderedChapters, chapterLayouts);
   const subtitle = book.subtitle ? `<p class="subtitle">${escapeHtml(book.subtitle)}</p>` : "";
   const author = book.author ? `<p class="author">${escapeHtml(book.author)}</p>` : "";
   const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   const contentChapters = orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind));
   const titlePageHtml = titlePageChapter
-     ? `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id))}</section>`
+     ? (() => {
+         const titleLayout = chapterLayouts.get(titlePageChapter.id) ?? layout;
+         return `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page book-page-${titlePageChapter.id}" style="${sectionPageStyle(titleLayout)}">${bookChromeHtml(book, titleLayout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), titleLayout)}</section>`;
+       })()
     : `<section class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening"), "Title page", "opening", 0)}<h1 class="book-title">${title}</h1>${subtitle}${author}</section>`;
   const frontMatterHtml = frontMatterSections(book, chapters).map((section, index) => `
     <section id="${matterAnchorId(section.key)}" class="book-matter page-break">
@@ -1386,14 +1405,15 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
   const chaptersHtml = contentChapters.map((chapter, index) => {
     const orderedIndex = orderedChapters.indexOf(chapter);
     const band = chapterPageBand(chapter);
-    const label = chapterTitleHeading(chapter, orderedIndex, orderedChapters);
+    const libraryLabel = chapterTitleHeading(chapter, orderedIndex, orderedChapters);
     const showKicker = band === "story" && chapterHasDistinctTitle(chapter, orderedIndex, orderedChapters);
+    const chapterLayout = chapterLayouts.get(chapter.id) ?? layout;
     return `
-     <section id="${sectionAnchorId(chapter.id)}" class="${band === "story" ? "chapter" : "book-matter"} ${index ? "page-break" : ""}">
-        ${bookChromeHtml(book, layout, layoutSectionKey(band, chapter.id), label, band, chapterBandOrdinal(orderedChapters, orderedIndex))}
+     <section id="${sectionAnchorId(chapter.id)}" class="${band === "story" ? "chapter" : "book-matter"} book-page-${chapter.id} ${index ? "page-break" : ""}" style="${sectionPageStyle(chapterLayout)}">
+        ${bookChromeHtml(book, chapterLayout, layoutSectionKey(band, chapter.id), libraryLabel, band, chapterBandOrdinal(orderedChapters, orderedIndex))}
         ${showKicker ? `<p class="chapter-kicker">${chapterDisplayLabel(chapter, orderedIndex, orderedChapters)}</p>` : ""}
-        <h2 class="book-heading-1">${escapeHtml(label)}</h2>
-         ${renderMarkdown(chapter.content, sectionAnchorId(chapter.id))}
+        <h2 class="book-heading-1">${escapeHtml(libraryLabel)}</h2>
+         ${renderMarkdown(chapter.content, sectionAnchorId(chapter.id), chapterLayout)}
       </section>`;
   }).join("\n");
   const contentsHtml = tocEntriesHtml(book, chapters);
@@ -1402,6 +1422,7 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
 <html lang="en"><head><meta charset="utf-8"><title>${title}</title>
 <style>
 @page { size: ${trimCssSize(book.trim_size)}; margin: ${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in; }
+${pageRules}
 * { box-sizing: border-box; }
  body { --document-accent: ${layout.accentColor}; margin: 0; color: #24211e; background-color: ${layout.pageColor}; ${pagePatternBackgroundCss(layout)} print-color-adjust: exact; -webkit-print-color-adjust: exact; font-family: ${fontCss(book.font_family)}; font-size: ${book.font_size}pt; line-height: ${book.line_height}; } ${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}
 .title-page { min-height: 70vh; display: flex; flex-direction: column; justify-content: center; text-align: center; page-break-after: always; }
@@ -1702,8 +1723,9 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   const { zipSync, strToU8 } = await import("fflate");
   const bookId = `noteme-book-${book.id}`;
   const layout = layoutForBook(book);
-  const renderMarkdown = (value: string, prefix?: string) => markdownToHtml(value, prefix, layout.typography, layout.paragraphStyles);
   const orderedChapters = orderBookChapters(chapters);
+  const chapterLayouts = new Map(orderedChapters.map((chapter) => [chapter.id, layoutForChapter(book, chapter)]));
+  const renderMarkdown = (value: string, prefix?: string, pageLayout: BookLayout = layout) => markdownToHtml(value, prefix, pageLayout.typography, pageLayout.paragraphStyles);
   const chapterFiles: Record<string, Uint8Array> = {};
   const epubImages = new Map<string, string>();
   const manifest: string[] = [];
@@ -1720,15 +1742,17 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
     manifest.push(`<item id="image-${imageNumber}" href="${imagePath}" media-type="${mime}"/>`);
     return `src="${imagePath}"`;
   });
-  const addSection = (id: string, title: string, body: string) => {
+  const addSection = (id: string, title: string, body: string, pageLayout: BookLayout = layout) => {
     const file = `OEBPS/${id}.xhtml`;
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);
-    chapterFiles[file] = strToU8(`<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${escapeHtml(title)}</title><style>${epubCss}</style></head><body>${embedImages(body)}</body></html>`);
+    const bodyStyle = `margin:${pageLayout.pageMargins.top}in ${pageLayout.pageMargins.right}in ${pageLayout.pageMargins.bottom}in ${pageLayout.pageMargins.left}in;background-color:${pageLayout.pageColor};--document-accent:${pageLayout.accentColor};${pagePatternBackgroundCss(pageLayout)}`;
+    chapterFiles[file] = strToU8(`<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${escapeHtml(title)}</title><style>${epubCss}</style></head><body style="${bodyStyle}">${embedImages(body)}</body></html>`);
   };
   const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   if (titlePageChapter) {
-     addSection("title-page", titlePageChapter.title || book.title || "Untitled manuscript", `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id))}</section>`);
+     const titleLayout = chapterLayouts.get(titlePageChapter.id) ?? layout;
+     addSection("title-page", titlePageChapter.title || book.title || "Untitled manuscript", `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, titleLayout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), titleLayout)}</section>`, titleLayout);
   } else {
     addSection("title-page", book.title || "Untitled manuscript", `<section class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening"), "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(book.title || "Untitled manuscript")}</h1>${book.subtitle ? `<p class="book-paragraph">${escapeHtml(book.subtitle)}</p>` : ""}${book.author ? `<p class="book-paragraph">${escapeHtml(book.author)}</p>` : ""}</section>`);
   }
@@ -1740,7 +1764,8 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
     const band = chapterPageBand(chapter);
     const label = chapterTitleHeading(chapter, index, orderedChapters);
     const showKicker = band === "story" && chapterHasDistinctTitle(chapter, index, orderedChapters);
-     addSection(id, label, `<section id="${sectionAnchorId(chapter.id)}">${bookChromeHtml(book, layout, layoutSectionKey(band, chapter.id), label, band, chapterBandOrdinal(orderedChapters, index))}${showKicker ? `<p>${escapeHtml(chapterDisplayLabel(chapter, index, orderedChapters))}</p>` : ""}<h1>${escapeHtml(label)}</h1>${renderMarkdown(chapter.content, sectionAnchorId(chapter.id))}</section>`);
+    const chapterLayout = chapterLayouts.get(chapter.id) ?? layout;
+     addSection(id, label, `<section id="${sectionAnchorId(chapter.id)}">${bookChromeHtml(book, chapterLayout, layoutSectionKey(band, chapter.id), label, band, chapterBandOrdinal(orderedChapters, index))}${showKicker ? `<p>${escapeHtml(chapterDisplayLabel(chapter, index, orderedChapters))}</p>` : ""}<h1>${escapeHtml(label)}</h1>${renderMarkdown(chapter.content, sectionAnchorId(chapter.id), chapterLayout)}</section>`, chapterLayout);
   });
   const back = backMatterSections(book, chapters);
    if (back.length) addSection("back-matter", "Back matter", `<section class="matter">${back.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "closing", section.title, "closing", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${renderMarkdown(section.content, matterAnchorId(section.key))}</section>`).join("")}</section>`);

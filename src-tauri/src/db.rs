@@ -81,6 +81,14 @@ fn migrate_book_chapters(conn: &Connection) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     }
 
+    if !columns.iter().any(|column| column == "layout_json") {
+        conn.execute(
+            "ALTER TABLE book_chapters ADD COLUMN layout_json TEXT NOT NULL DEFAULT '{}'",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -201,6 +209,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<(), String> {
             position   INTEGER NOT NULL DEFAULT 0,
             toc_include INTEGER NOT NULL DEFAULT 1,
             toc_heading_exclusions TEXT NOT NULL DEFAULT '[]',
+            layout_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -267,6 +276,7 @@ mod tests {
         assert!(chapter_columns.contains(&"chapter_kind".to_string()));
         assert!(chapter_columns.contains(&"toc_include".to_string()));
         assert!(chapter_columns.contains(&"toc_heading_exclusions".to_string()));
+        assert!(chapter_columns.contains(&"layout_json".to_string()));
 
         let snapshot_columns = columns(&conn, "book_snapshots");
         assert!(snapshot_columns.contains(&"chapter_id".to_string()));

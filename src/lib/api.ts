@@ -110,6 +110,8 @@ export const api = {
     }),
   updateChapter: (id: number, title: string, content: string, chapterKind: ChapterKind = "chapter", tocInclude = true, tocHeadingExclusions: string[] = []) =>
     invoke<void>("update_chapter", { id, chapterKind, title, content, tocInclude, tocHeadingExclusions }),
+  updateChapterLayout: (id: number, layoutJson: string) =>
+    invoke<void>("update_chapter_layout", { id, layoutJson }),
   deleteChapter: (id: number) => invoke<void>("delete_chapter", { id }),
   reorderChapters: (bookId: number, chapterIds: number[]) =>
     invoke<void>("reorder_chapters", { bookId, chapterIds }),

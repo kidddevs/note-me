@@ -64,6 +64,7 @@ interface BooksState {
   deleteBook: (id: number) => Promise<void>;
   createChapter: (bookId: number, title?: string, chapterKind?: ChapterKind, content?: string) => Promise<Chapter>;
   updateChapter: (id: number, title: string, content: string, chapterKind?: ChapterKind, tocInclude?: boolean, tocHeadingExclusions?: string[]) => Promise<void>;
+  updateChapterLayout: (id: number, layoutJson: string) => Promise<void>;
   deleteChapter: (id: number) => Promise<void>;
   reorderChapters: (ids: number[]) => Promise<void>;
 }
@@ -228,6 +229,23 @@ export const useBooks = create<BooksState>((set, get) => ({
               && chapter.toc_heading_exclusions.join("\u0000") === nextChapter.toc_heading_exclusions.join("\u0000");
             return stillOptimistic ? previousChapter : chapter;
           }),
+        }));
+      }
+      throw error;
+    }
+  },
+
+  updateChapterLayout: async (id, layoutJson) => {
+    const previousChapter = get().chapters.find((chapter) => chapter.id === id);
+    set((state) => ({
+      chapters: state.chapters.map((chapter) => chapter.id === id ? { ...chapter, layout_json: layoutJson } : chapter),
+    }));
+    try {
+      await api.updateChapterLayout(id, layoutJson);
+    } catch (error) {
+      if (previousChapter) {
+        set((state) => ({
+          chapters: state.chapters.map((chapter) => chapter.id === id && chapter.layout_json === layoutJson ? previousChapter : chapter),
         }));
       }
       throw error;

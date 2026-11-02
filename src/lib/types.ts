@@ -115,6 +115,7 @@ export interface Chapter {
   position: number;
   toc_include: boolean;
   toc_heading_exclusions: string[];
+  layout_json: string;
   created_at: string;
   updated_at: string;
 }
@@ -126,6 +127,7 @@ export interface ChapterInput {
   position?: number;
   tocInclude?: boolean;
   tocHeadingExclusions?: string[];
+  layoutJson?: string;
 }
 
 export type ChapterSnapshotReason = "auto" | "manual" | "safety" | "restore";

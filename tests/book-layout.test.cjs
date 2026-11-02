@@ -3,13 +3,51 @@ const assert = require("node:assert/strict");
 const {
   DEFAULT_BOOK_LAYOUT,
   EDITORIAL_PARAGRAPH_STYLES,
+  SECTION_PAGE_MASTERS,
   hasEditorialStyles,
+  hasSectionLayoutOverride,
+  layoutForChapter,
   mergeEditorialStyles,
   pageNumberForSection,
   pageNumberText,
   parseBookLayout,
   layoutTokenText,
+  sectionLayoutOverrideJson,
+  sectionPageMasterLayout,
 } = require("./.compiled/src/lib/bookLayout.js");
+
+function publishingBook(overrides = {}) {
+  return {
+    id: 1,
+    title: "Field Notes",
+    subtitle: "",
+    author: "A. Editor",
+    description: "",
+    genre: "Independent magazine",
+    status: "draft",
+    trim_size: "8.5x11",
+    font_family: "serif",
+    font_size: 10.5,
+    line_height: 1.45,
+    paragraph_spacing: 0.35,
+    margin: 0.55,
+    word_goal: 12000,
+    cover_color: "#b04a31",
+    dedication: "",
+    epigraph: "",
+    copyright_text: "",
+    acknowledgements: "",
+    toc_enabled: true,
+    toc_title: "In this issue",
+    toc_depth: 3,
+    toc_include_front_matter: false,
+    toc_include_back_matter: false,
+    layout_json: JSON.stringify(DEFAULT_BOOK_LAYOUT),
+    created_at: "",
+    updated_at: "",
+    ...overrides,
+  };
+}
 
 test("invalid layouts normalize to safe publishing defaults", () => {
   assert.deepEqual(parseBookLayout("not-json"), DEFAULT_BOOK_LAYOUT);
@@ -156,6 +194,46 @@ test("issue tokens resolve in running heads and footers", () => {
   const resolved = layoutTokenText("{{issueLine}} · {{season}} {{year}} · {{page}}", book, "Feature", "12", publication);
   assert.equal(resolved, "Volume 02 · Issue 04 · Summer 2026 · 12");
   assert.equal(layoutTokenText("{{volume}}/{{issue}}", book, "", "", publication), "02/04");
+});
+
+test("section page layouts inherit the book and store only their differences", () => {
+  const book = publishingBook();
+  const bookLayout = parseBookLayout(book.layout_json);
+  const chapter = {
+    layout_json: JSON.stringify({
+      pageColor: "#f3eadc",
+      pageMargins: { top: 0.5, right: 0.6, bottom: 0.7, left: 0.8 },
+      freeMargins: true,
+    }),
+  };
+  const chapterLayout = layoutForChapter(book, chapter);
+  assert.equal(chapterLayout.pageColor, "#f3eadc");
+  assert.equal(chapterLayout.freeMargins, true);
+  assert.equal(chapterLayout.pageMargins.left, 0.8);
+  assert.deepEqual(chapterLayout.typography, bookLayout.typography);
+  assert.deepEqual(chapterLayout.paragraphStyles, bookLayout.paragraphStyles);
+  assert.equal(layoutForChapter(book, { layout_json: "{}" }).pageColor, bookLayout.pageColor);
+
+  const diff = JSON.parse(sectionLayoutOverrideJson(bookLayout, chapterLayout));
+  assert.equal(diff.pageColor, "#f3eadc");
+  assert.equal(diff.freeMargins, true);
+  assert.equal(diff.typography, undefined);
+  assert.equal(diff.paragraphStyles, undefined);
+  assert.equal(hasSectionLayoutOverride(JSON.stringify(diff)), true);
+  assert.equal(hasSectionLayoutOverride("{}"), false);
+});
+
+test("page masters produce deterministic section page fields", () => {
+  const bookLayout = parseBookLayout(publishingBook().layout_json);
+  const feature = sectionPageMasterLayout(bookLayout, "feature");
+  assert.equal(feature.pageColor, "#fffdf8");
+  assert.equal(feature.accentColor, "#b04a31");
+  assert.deepEqual(feature.pageMargins, { top: 0.7, right: 0.6, bottom: 0.75, left: 0.8 });
+  assert.deepEqual(feature.typography, bookLayout.typography);
+  const cover = sectionPageMasterLayout(bookLayout, "cover");
+  assert.equal(cover.freeMargins, true);
+  assert.deepEqual(cover.pageMargins, { top: 0.35, right: 0.35, bottom: 0.35, left: 0.35 });
+  assert.ok(SECTION_PAGE_MASTERS.length >= 5);
 });
 
 test("page numbering honors start bands, overrides, and roman/custom styles", () => {

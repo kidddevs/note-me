@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   AlignCenter,
   AlignCenterHorizontal,
@@ -23,6 +23,7 @@ import {
   Copy,
   Frame,
   ImagePlus,
+  LayoutTemplate,
   Link2,
   List,
   ListOrdered,
@@ -44,7 +45,7 @@ import {
   Underline,
   X,
 } from "lucide-react";
-import { DEFAULT_BOOK_TYPOGRAPHY, hasEditorialStyles, mergeEditorialStyles, type BookBulletType, type BookGrepStyle, type BookLayout, type BookNestedStyle, type BookParagraphStyle, type BookRuleStyle, type BookTextAlign, type BookTextCase, type BookTextRole, type BookTextStyle } from "../lib/bookLayout";
+import { DEFAULT_BOOK_TYPOGRAPHY, SECTION_PAGE_MASTERS, hasEditorialStyles, mergeEditorialStyles, suggestedSectionPageMaster, type BookBulletType, type BookGrepStyle, type BookLayout, type BookNestedStyle, type BookParagraphStyle, type BookRuleStyle, type BookTextAlign, type BookTextCase, type BookTextRole, type BookTextStyle } from "../lib/bookLayout";
 import {
   addTableColumn,
   addTableRow,
@@ -493,51 +494,94 @@ function PageColorField({ value, onChange }: { value: string; onChange: (value: 
   return <span className="design-page-color"><input type="color" value={value} onChange={(event) => onChange(event.target.value)} aria-label="Page color" /><input value={value} onChange={(event) => onChange(event.target.value)} aria-label="Page color hex value" /></span>;
 }
 
-function DocumentPanel({ layout, onLayoutChange }: { layout: BookLayout; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void }) {
-  const styles = layout.paragraphStyles;
+function DocumentPanel({ layout, bookLayout, sectionLayoutActive, sectionKind, sectionLabel, onLayoutChange, onSectionLayoutChange, onResetSectionLayout, onApplySectionPageMaster, onApplySectionPageToBook, onApplySectionPageToKind }: {
+  layout: BookLayout;
+  bookLayout: BookLayout;
+  sectionLayoutActive: boolean;
+  sectionKind?: string;
+  sectionLabel?: string;
+  onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void;
+  onSectionLayoutChange: (change: (layout: BookLayout) => BookLayout) => void;
+  onResetSectionLayout: () => void;
+  onApplySectionPageMaster: (masterId: string) => void;
+  onApplySectionPageToBook: () => void;
+  onApplySectionPageToKind: () => void;
+}) {
+  const styles = bookLayout.paragraphStyles;
   const unit = useTheme((state) => state.measurementUnit);
   const marginRange = measurementRange(0.2, 3, unit);
+  const [scope, setScope] = useState<"book" | "section">(sectionLayoutActive ? "section" : "book");
+  useEffect(() => { if (sectionLayoutActive) setScope("section"); }, [sectionLayoutActive]);
+  const pageLayout = scope === "section" ? layout : bookLayout;
+  const setPageLayout = scope === "section" ? onSectionLayoutChange : onLayoutChange;
+  const suggestedMaster = suggestedSectionPageMaster(sectionKind ?? "");
+  const suggested = SECTION_PAGE_MASTERS.find((master) => master.id === suggestedMaster) ?? null;
   return <div className="design-editor">
     <div className="design-empty-hero"><Sparkles size={18} /><strong>Select something on the page</strong><span>Choose a text box, image, table, chart, or callout to open its design controls. With nothing selected, tune the page itself.</span></div>
-    <InspectorSection icon={<PaintBucket size={14} />} title="Page appearance" summary="Paper color and document accent" defaultOpen>
-      <Field label="Page background" wide><PageColorField value={layout.pageColor} onChange={(pageColor) => onLayoutChange((current) => ({ ...current, pageColor }))} /></Field>
+    <div className="design-page-scope">
+      <div><span>Editing</span><strong>{scope === "section" ? (sectionLabel || "This section") : "Book page"}</strong></div>
+      <div className="design-scope-switch" role="group" aria-label="Page editing scope">
+        <button className={scope === "book" ? "active" : ""} onClick={() => setScope("book")} aria-pressed={scope === "book"}>Book</button>
+        <button className={scope === "section" ? "active" : ""} onClick={() => setScope("section")} aria-pressed={scope === "section"}>This section</button>
+      </div>
+    </div>
+    {scope === "section" && <InspectorSection icon={<LayoutTemplate size={14} />} title="Page master" summary={sectionLayoutActive ? "Custom page for this section" : "Inherits the book page"} defaultOpen>
+      <div className="design-master-grid">
+        {SECTION_PAGE_MASTERS.map((master) => <button key={master.id} className={`design-master-card ${suggestedMaster === master.id ? "suggested" : ""}`} onClick={() => onApplySectionPageMaster(master.id)} title={master.description}>
+          <span className="design-master-swatch" style={{ background: master.layout.pageColor, borderColor: master.layout.accentColor }} aria-hidden="true"><i style={{ borderColor: master.layout.accentColor }} /><i style={{ borderColor: master.layout.accentColor }} /><i style={{ borderColor: master.layout.accentColor }} /></span>
+          <span><strong>{master.label}</strong><small>{master.description}</small></span>
+        </button>)}
+      </div>
+      <div className="design-master-actions">
+        <button onClick={() => { onResetSectionLayout(); setScope("book"); }} disabled={!sectionLayoutActive}>Use book page</button>
+        <button onClick={() => { onApplySectionPageToBook(); setScope("book"); }}>Apply page to book</button>
+        <button className="wide" onClick={onApplySectionPageToKind}>Apply to all {sectionKind ? sectionKind.replace(/_/g, " ") : "matching"} sections</button>
+      </div>
+      {suggested && <p className="design-help">Suggested for this section: <button className="design-inline-link" onClick={() => onApplySectionPageMaster(suggested.id)}>{suggested.label}</button></p>}
+      <p className="design-help">Page masters only override page fields. Typography, paragraph styles, and contents stay shared with the book.</p>
+    </InspectorSection>}
+    <InspectorSection icon={<PaintBucket size={14} />} title="Page appearance" summary={scope === "section" ? "This section's paper and accent" : "Whole-book paper and accent"} defaultOpen>
+      <Field label="Page background" wide><PageColorField value={pageLayout.pageColor} onChange={(pageColor) => setPageLayout((current) => ({ ...current, pageColor }))} /></Field>
       <div className="design-color-presets" aria-label="Page background presets">
-        {([["White", "#ffffff"], ["Ivory", "#fffaf3"], ["Warm paper", "#f3eadc"], ["Slate", "#22201d"]] as const).map(([label, color]) => <button key={label} style={{ background: color }} onClick={() => onLayoutChange((current) => ({ ...current, pageColor: color }))} title={`${label} page background`} aria-label={`${label} page background`} />)}
+        {([["White", "#ffffff"], ["Ivory", "#fffaf3"], ["Warm paper", "#f3eadc"], ["Slate", "#22201d"]] as const).map(([label, color]) => <button key={label} style={{ background: color }} onClick={() => setPageLayout((current) => ({ ...current, pageColor: color }))} title={`${label} page background`} aria-label={`${label} page background`} />)}
       </div>
-      <Field label="Document accent" wide><PageColorField value={layout.accentColor} onChange={(accentColor) => onLayoutChange((current) => ({ ...current, accentColor }))} /></Field>
+      <Field label="Document accent" wide><PageColorField value={pageLayout.accentColor} onChange={(accentColor) => setPageLayout((current) => ({ ...current, accentColor }))} /></Field>
       <div className="design-color-presets" aria-label="Document accent presets">
-        {([["Editorial", "#a56b3e"], ["Ink", "#29231e"], ["Botanical", "#6f7f6d"], ["Berry", "#874e47"], ["Ocean", "#486777"]] as const).map(([label, color]) => <button key={label} style={{ background: color }} onClick={() => onLayoutChange((current) => ({ ...current, accentColor: color }))} title={`${label} document accent`} aria-label={`${label} document accent`} />)}
+        {([["Editorial", "#a56b3e"], ["Ink", "#29231e"], ["Botanical", "#6f7f6d"], ["Berry", "#874e47"], ["Ocean", "#486777"]] as const).map(([label, color]) => <button key={label} style={{ background: color }} onClick={() => setPageLayout((current) => ({ ...current, accentColor: color }))} title={`${label} document accent`} aria-label={`${label} document accent`} />)}
       </div>
-      <div className="design-field wide"><span>Paper pattern</span><PagePatternPicker layout={layout} onChange={onLayoutChange} /></div>
-      <div className="design-inline-row"><Toggle checked={layout.freeMargins} onChange={(freeMargins) => onLayoutChange((current) => ({ ...current, freeMargins }))} label="Free margins" /></div>
+      <div className="design-field wide"><span>Paper pattern</span><PagePatternPicker layout={pageLayout} onChange={setPageLayout} /></div>
+      <div className="design-inline-row"><Toggle checked={pageLayout.freeMargins} onChange={(freeMargins) => setPageLayout((current) => ({ ...current, freeMargins }))} label="Free margins" /></div>
       <p className="design-help">Free margins unlocks full-bleed placement for text and artwork. Turn it on, then enable Full bleed on an object to reach the paper edge.</p>
       <p className="design-help">Page background and document accent are separate from the cover color. The editor chrome follows the app appearance instead.</p>
     </InspectorSection>
-    <InspectorSection icon={<Frame size={14} />} title="Page margins" summary={`${measurementText(layout.pageMargins.top, unit)} / ${measurementText(layout.pageMargins.right, unit)} / ${measurementText(layout.pageMargins.bottom, unit)} / ${measurementText(layout.pageMargins.left, unit)}`}>
+    <InspectorSection icon={<Frame size={14} />} title="Page margins" summary={`${measurementText(pageLayout.pageMargins.top, unit)} / ${measurementText(pageLayout.pageMargins.right, unit)} / ${measurementText(pageLayout.pageMargins.bottom, unit)} / ${measurementText(pageLayout.pageMargins.left, unit)}`}>
       <div className="design-grid">
-        {(["top", "right", "bottom", "left"] as const).map((side) => <Field key={side} label={side[0].toUpperCase() + side.slice(1)}><NumberField value={measurementValue(layout.pageMargins[side], unit)} min={marginRange.min} max={marginRange.max} step={marginRange.step} onChange={(value) => onLayoutChange((current) => ({ ...current, pageMargins: { ...current.pageMargins, [side]: measurementToInches(value, unit) } }))} suffix={measurementUnitShort(unit)} /></Field>)}
+        {(["top", "right", "bottom", "left"] as const).map((side) => <Field key={side} label={side[0].toUpperCase() + side.slice(1)}><NumberField value={measurementValue(pageLayout.pageMargins[side], unit)} min={marginRange.min} max={marginRange.max} step={marginRange.step} onChange={(value) => setPageLayout((current) => ({ ...current, pageMargins: { ...current.pageMargins, [side]: measurementToInches(value, unit) } }))} suffix={measurementUnitShort(unit)} /></Field>)}
       </div>
       <div className="design-margin-presets" role="group" aria-label="Page margin presets">
-        {([["Tight", 0.5], ["Standard", 1], ["Wide", 1.5]] as const).map(([label, value]) => <button key={label} onClick={() => onLayoutChange((current) => ({ ...current, pageMargins: { top: value, right: value, bottom: value, left: value } }))}>{label}<small>{measurementText(value, unit)}</small></button>)}
+        {([["Tight", 0.5], ["Standard", 1], ["Wide", 1.5]] as const).map(([label, value]) => <button key={label} onClick={() => setPageLayout((current) => ({ ...current, pageMargins: { top: value, right: value, bottom: value, left: value } }))}>{label}<small>{measurementText(value, unit)}</small></button>)}
       </div>
     </InspectorSection>
-    <InspectorSection icon={<Baseline size={14} />} title="Baseline grid" summary={layout.baselineGrid.enabled ? `${measurementText(layout.baselineGrid.spacing, unit)} rhythm` : "Off"}>
-      <div className="design-inline-row"><Toggle checked={layout.baselineGrid.enabled} onChange={(enabled) => onLayoutChange((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, enabled } }))} label="Show baseline grid" /></div>
+    <InspectorSection icon={<Baseline size={14} />} title="Baseline grid" summary={pageLayout.baselineGrid.enabled ? `${measurementText(pageLayout.baselineGrid.spacing, unit)} rhythm` : "Off"}>
+      <div className="design-inline-row"><Toggle checked={pageLayout.baselineGrid.enabled} onChange={(enabled) => setPageLayout((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, enabled } }))} label="Show baseline grid" /></div>
       <div className="design-grid">
-        <Field label="Baseline spacing"><NumberField value={measurementValue(layout.baselineGrid.spacing, unit)} min={measurementRange(0.08, 0.6, unit).min} max={measurementRange(0.08, 0.6, unit).max} step={measurementRange(0.08, 0.6, unit).step} onChange={(value) => onLayoutChange((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, spacing: measurementToInches(value, unit) } }))} suffix={measurementUnitShort(unit)} /></Field>
-        <Field label="Grid color"><ColorField value={layout.baselineGrid.color} onChange={(color) => onLayoutChange((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, color } }))} /></Field>
+        <Field label="Baseline spacing"><NumberField value={measurementValue(pageLayout.baselineGrid.spacing, unit)} min={measurementRange(0.08, 0.6, unit).min} max={measurementRange(0.08, 0.6, unit).max} step={measurementRange(0.08, 0.6, unit).step} onChange={(value) => setPageLayout((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, spacing: measurementToInches(value, unit) } }))} suffix={measurementUnitShort(unit)} /></Field>
+        <Field label="Grid color"><ColorField value={pageLayout.baselineGrid.color} onChange={(color) => setPageLayout((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, color } }))} /></Field>
       </div>
-      <button className="design-style-set" onClick={() => onLayoutChange((current) => {
-        const leading = (spacing: number) => Math.min(3, Math.max(0.8, Math.round(((spacing * 72) / Math.max(6, current.typography.paragraph.fontSize)) * 1000) / 1000));
-        return {
-          ...current,
-          typography: {
-            ...current.typography,
-            paragraph: { ...current.typography.paragraph, lineHeight: leading(current.baselineGrid.spacing) },
-            quote: { ...current.typography.quote, lineHeight: leading(current.baselineGrid.spacing) },
-          },
-        };
-      })}><Baseline size={13} /> Snap body leading to baseline<small>Round the body and quote line height to the grid</small></button>
+      <button className="design-style-set" onClick={() => {
+        const spacing = pageLayout.baselineGrid.spacing;
+        onLayoutChange((current) => {
+          const leading = Math.min(3, Math.max(0.8, Math.round(((spacing * 72) / Math.max(6, current.typography.paragraph.fontSize)) * 1000) / 1000));
+          return {
+            ...current,
+            typography: {
+              ...current.typography,
+              paragraph: { ...current.typography.paragraph, lineHeight: leading },
+              quote: { ...current.typography.quote, lineHeight: leading },
+            },
+          };
+        });
+      }}><Baseline size={13} /> Snap body leading to baseline<small>Round the body and quote line height to the grid</small></button>
       <p className="design-help">The baseline grid is a design aid; it never prints. Use it to keep body text, captions, and sidebars on a shared vertical rhythm.</p>
     </InspectorSection>
     <InspectorSection icon={<Palette size={14} />} title="Document styles" summary={`${styles.length} paragraph presets`} defaultOpen>
@@ -549,7 +593,7 @@ function DocumentPanel({ layout, onLayoutChange }: { layout: BookLayout; onLayou
     </InspectorSection>
     <InspectorSection icon={<BookOpen size={14} />} title="Role typography" summary="Fallback styles for each text role">
       <div className="design-role-list">
-        {(["title", "heading1", "heading2", "heading3", "paragraph", "quote"] as BookTextRole[]).map((role) => <div key={role} className="design-role-row"><span style={{ fontFamily: fontCss(layout.typography[role].fontFamily), fontWeight: layout.typography[role].fontWeight }}>{role === "paragraph" ? "Body" : role === "quote" ? "Quote" : role === "title" ? "Title" : `Heading ${role.slice(-1)}`}</span><small>{layout.typography[role].fontSize}pt · {layout.typography[role].textAlign}</small></div>)}
+        {(["title", "heading1", "heading2", "heading3", "paragraph", "quote"] as BookTextRole[]).map((role) => <div key={role} className="design-role-row"><span style={{ fontFamily: fontCss(bookLayout.typography[role].fontFamily), fontWeight: bookLayout.typography[role].fontWeight }}>{role === "paragraph" ? "Body" : role === "quote" ? "Quote" : role === "title" ? "Title" : `Heading ${role.slice(-1)}`}</span><small>{bookLayout.typography[role].fontSize}pt · {bookLayout.typography[role].textAlign}</small></div>)}
       </div>
       <div className="design-button-grid"><button onClick={() => onLayoutChange((current) => ({ ...current, typography: { ...current.typography, paragraph: { ...DEFAULT_BOOK_TYPOGRAPHY.paragraph } } }))}><Type size={13} /> Reset body role</button></div>
     </InspectorSection>
@@ -567,7 +611,7 @@ export interface LayerEntry {
   canReorder: boolean;
 }
 
-export function BooksInspector({ context, layout, freeLayout, selectionCount, onAlignSelection, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onReplaceArtwork, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onReplaceArtwork?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
+export function BooksInspector({ context, layout, bookLayout, sectionLayoutActive, sectionKind, sectionLabel, freeLayout, selectionCount, onAlignSelection, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onSectionLayoutChange, onResetSectionLayout, onApplySectionPageMaster, onApplySectionPageToBook, onApplySectionPageToKind, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onReplaceArtwork, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; bookLayout: BookLayout; sectionLayoutActive: boolean; sectionKind?: string; sectionLabel?: string; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onSectionLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onResetSectionLayout: () => void; onApplySectionPageMaster: (masterId: string) => void; onApplySectionPageToBook: () => void; onApplySectionPageToKind: () => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onReplaceArtwork?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
   const role = context.role;
   const roleStyle = role ? layout.typography[role] : null;
   const activePreset = context.presentation?.styleId ? layout.paragraphStyles.find((preset) => preset.id === context.presentation?.styleId) ?? null : null;
@@ -640,7 +684,7 @@ export function BooksInspector({ context, layout, freeLayout, selectionCount, on
       <button className="delete" onClick={(event) => onDeleteRange(context.start, context.end, event.currentTarget)} aria-label="Delete" title="Delete"><Trash2 size={14} /></button>
     </div>}
     <div className="design-inspector-body">
-      {context.kind === "none" ? <DocumentPanel layout={layout} onLayoutChange={onLayoutChange} /> : <>
+      {context.kind === "none" ? <DocumentPanel layout={layout} bookLayout={bookLayout} sectionLayoutActive={sectionLayoutActive} sectionKind={sectionKind} sectionLabel={sectionLabel} onLayoutChange={onLayoutChange} onSectionLayoutChange={onSectionLayoutChange} onResetSectionLayout={onResetSectionLayout} onApplySectionPageMaster={onApplySectionPageMaster} onApplySectionPageToBook={onApplySectionPageToBook} onApplySectionPageToKind={onApplySectionPageToKind} /> : <>
         {isText && <StyleLibrary layout={layout} context={context} onLayoutChange={onLayoutChange} onReplaceRange={onReplaceRange} />}
         {(isText || context.kind === "title") && editingStyle && <TextStyleEditor style={editingStyle} preset={context.kind === "title" ? null : activePreset} role={role} showInlineFormatting={isText} onPatch={patchStyle} onInlineFormat={onInlineFormat} onConvertRole={onConvertRole} onDelete={deleteStyle} onDuplicate={duplicateStyle} />}
         {isText && <FrameControls context={context} freeLayout={freeLayout} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} />}

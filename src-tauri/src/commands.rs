@@ -581,7 +581,7 @@ fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
 
 const CHAPTER_SELECT: &str = r#"
     SELECT id, book_id, chapter_kind, title, content, position, toc_include,
-           toc_heading_exclusions, created_at, updated_at
+           toc_heading_exclusions, layout_json, created_at, updated_at
     FROM book_chapters
 "#;
 
@@ -603,8 +603,9 @@ fn row_to_chapter(row: &rusqlite::Row) -> rusqlite::Result<Chapter> {
         position: row.get(5)?,
         toc_include: row.get(6)?,
         toc_heading_exclusions: parse_heading_exclusions(row.get(7)?),
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
+        layout_json: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 
@@ -956,6 +957,37 @@ pub fn update_chapter(
                 serde_json::to_string(&toc_heading_exclusions).map_err(|e| e.to_string())?,
                 id,
             ],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE books SET updated_at = datetime('now') WHERE id = ?1",
+            params![book_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn update_chapter_layout(state: State<Db>, id: i64, layout_json: String) -> Result<(), String> {
+    let layout = serde_json::from_str::<serde_json::Value>(&layout_json)
+        .map_err(|_| "section page layout must be valid JSON".to_string())?;
+    if !layout.is_object() {
+        return Err("section page layout must be a JSON object".to_string());
+    }
+    with_conn(&state, |conn| {
+        let book_id: Option<i64> = conn
+            .query_row(
+                "SELECT book_id FROM book_chapters WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let book_id = book_id.ok_or_else(|| "chapter not found".to_string())?;
+        conn.execute(
+            "UPDATE book_chapters SET layout_json = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![layout_json, id],
         )
         .map_err(|e| e.to_string())?;
         conn.execute(

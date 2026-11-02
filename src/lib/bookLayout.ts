@@ -1,4 +1,4 @@
-import type { Book } from "./types";
+import type { Book, Chapter } from "./types";
 
 export type BookChromePosition = "left" | "center" | "right";
 export type BookPageNumberStyle = "arabic" | "roman-lower" | "roman-upper" | "custom";
@@ -818,6 +818,132 @@ export function layoutForBook(book: Book) {
   const margin = Number.isFinite(book.margin) ? Math.min(3, Math.max(0.2, book.margin)) : 1;
   const marginsFallback: BookPageMargins = { top: margin, right: margin, bottom: margin, left: margin };
   return parseBookLayout(book.layout_json, typographyFallback, marginsFallback);
+}
+
+export interface BookSectionPageMaster {
+  id: string;
+  label: string;
+  description: string;
+  layout: Pick<BookLayout, "pageColor" | "accentColor" | "pagePattern" | "pageMargins" | "freeMargins"> & Partial<Pick<BookLayout, "baselineGrid" | "pagePatternColor" | "pagePatternSpacing">>;
+}
+
+export const SECTION_PAGE_MASTERS: BookSectionPageMaster[] = [
+  {
+    id: "feature",
+    label: "Feature opener",
+    description: "Generous outer margins and warm paper for the feature well.",
+    layout: { pageColor: "#fffdf8", accentColor: "#b04a31", pagePattern: "blank", pageMargins: { top: 0.7, right: 0.6, bottom: 0.75, left: 0.8 }, freeMargins: false },
+  },
+  {
+    id: "department",
+    label: "Department",
+    description: "A tinted page with tighter margins for recurring front-of-book sections.",
+    layout: { pageColor: "#f3eadc", accentColor: "#356b5b", pagePattern: "blank", pageMargins: { top: 0.55, right: 0.55, bottom: 0.6, left: 0.6 }, freeMargins: false },
+  },
+  {
+    id: "cover",
+    label: "Cover",
+    description: "Full-bleed artboard with a narrow safety margin for the cover.",
+    layout: { pageColor: "#ffffff", accentColor: "#b04a31", pagePattern: "blank", pageMargins: { top: 0.35, right: 0.35, bottom: 0.35, left: 0.35 }, freeMargins: true },
+  },
+  {
+    id: "contents",
+    label: "Contents",
+    description: "A crisp white page with room for the issue map and editor's picks.",
+    layout: { pageColor: "#ffffff", accentColor: "#a56b3e", pagePattern: "blank", pageMargins: { top: 0.55, right: 0.6, bottom: 0.65, left: 0.6 }, freeMargins: false },
+  },
+  {
+    id: "full-bleed",
+    label: "Full bleed",
+    description: "Artwork can reach every edge. Use text frames with care.",
+    layout: { pageColor: "#22201d", accentColor: "#d5b58a", pagePattern: "blank", pageMargins: { top: 0.2, right: 0.2, bottom: 0.2, left: 0.2 }, freeMargins: true },
+  },
+  {
+    id: "colophon",
+    label: "Colophon",
+    description: "A quiet closing page with generous margins and warm stock.",
+    layout: { pageColor: "#fffaf3", accentColor: "#a56b3e", pagePattern: "blank", pageMargins: { top: 0.9, right: 0.8, bottom: 0.9, left: 0.8 }, freeMargins: false },
+  },
+];
+
+export function suggestedSectionPageMaster(kind: string) {
+  if (kind === "cover") return "cover";
+  if (kind === "contents_page") return "contents";
+  if (kind === "feature" || kind === "interview" || kind === "profile" || kind === "photo_essay") return "feature";
+  if (kind === "department" || kind === "column" || kind === "review" || kind === "recipe" || kind === "listing" || kind === "editorial") return "department";
+  if (kind === "colophon") return "colophon";
+  return null;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function mergeLayoutObjects(base: JsonRecord, override: JsonRecord): JsonRecord {
+  const merged: JsonRecord = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined) continue;
+    const current = merged[key];
+    merged[key] = isJsonRecord(current) && isJsonRecord(value) ? mergeLayoutObjects(current, value) : value;
+  }
+  return merged;
+}
+
+function diffLayoutObjects(base: JsonRecord, next: JsonRecord): JsonRecord {
+  const diff: JsonRecord = {};
+  for (const [key, value] of Object.entries(next)) {
+    const current = base[key];
+    if (isJsonRecord(current) && isJsonRecord(value)) {
+      const nested = diffLayoutObjects(current, value);
+      if (Object.keys(nested).length > 0) diff[key] = nested;
+    } else if (JSON.stringify(current) !== JSON.stringify(value)) {
+      diff[key] = value;
+    }
+  }
+  return diff;
+}
+
+function parseLayoutObject(value?: string): JsonRecord {
+  try {
+    const parsed = value ? JSON.parse(value) : {};
+    return isJsonRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function hasSectionLayoutOverride(layoutJson?: string) {
+  return Object.keys(parseLayoutObject(layoutJson)).length > 0;
+}
+
+export function layoutForChapter(book: Book, chapter?: Pick<Chapter, "layout_json"> | null) {
+  const base = layoutForBook(book);
+  const override = parseLayoutObject(chapter?.layout_json);
+  if (Object.keys(override).length === 0) return base;
+  const merged = mergeLayoutObjects(JSON.parse(serializeBookLayout(base)) as JsonRecord, override);
+  return parseBookLayout(JSON.stringify(merged), base.typography, base.pageMargins);
+}
+
+/**
+ * Stores only the fields that differ from the book layout, so a section keeps
+ * inheriting global typography and publication settings until it overrides them.
+ */
+export function sectionLayoutOverrideJson(bookLayout: BookLayout, sectionLayout: BookLayout) {
+  const base = JSON.parse(serializeBookLayout(bookLayout)) as JsonRecord;
+  const next = JSON.parse(serializeBookLayout(sectionLayout)) as JsonRecord;
+  return JSON.stringify(diffLayoutObjects(base, next));
+}
+
+export function sectionPageMasterLayout(bookLayout: BookLayout, masterId: string) {
+  const master = SECTION_PAGE_MASTERS.find((item) => item.id === masterId);
+  if (!master) return bookLayout;
+  const merged = mergeLayoutObjects(
+    JSON.parse(serializeBookLayout(bookLayout)) as JsonRecord,
+    master.layout as unknown as JsonRecord,
+  ) as unknown as BookLayout;
+  return parseBookLayout(JSON.stringify(merged), bookLayout.typography, bookLayout.pageMargins);
 }
 
 export function pageRuleFor(layout: BookLayout, key: string): BookPageNumberRule {

@@ -207,6 +207,27 @@ test("plain-text export removes presentation markup while retaining reader conte
   assert.doesNotMatch(output, /note-me:layout/);
 });
 
+test("section page masters travel into HTML, EPUB, and named print pages", async () => {
+  const featureLayout = JSON.stringify({
+    pageColor: "#f3eadc",
+    accentColor: "#356b5b",
+    pageMargins: { top: 0.5, right: 0.6, bottom: 0.7, left: 0.8 },
+  });
+  const bookWithCover = book({ trim_size: "8.5x11" });
+  const sectionChapters = [
+    chapter(1, "The Slow Issue", "Issue 04 · Summer 2026", "cover", { layout_json: featureLayout }),
+    chapter(2, "The Arrival", "Feature copy for the well."),
+  ];
+  const html = bookHtml(bookWithCover, sectionChapters);
+  assert.match(html, /class="title-page book-page-1" style="--document-accent:#356b5b;background-color:#f3eadc;/);
+  assert.match(html, /@page book-page-1\{size:8\.5in 11in;margin:0\.5in 0\.6in 0\.7in 0\.8in;\}/);
+  assert.match(html, /\.book-page-1\{page:book-page-1;\}/);
+  assert.match(html, /class="chapter book-page-2/);
+
+  const files = textFiles(await bookEpub(bookWithCover, sectionChapters));
+  assert.match(files["OEBPS/title-page.xhtml"], /<body style="margin:0\.5in 0\.6in 0\.7in 0\.8in;background-color:#f3eadc;--document-accent:#356b5b;/);
+});
+
 test("print HTML adds an explicit print contract to the styled book document", () => {
   const output = bookPrintHtml(book(), chapters());
   assert.match(output, /id="noteme-print-contract"/);

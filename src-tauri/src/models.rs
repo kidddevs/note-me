@@ -78,6 +78,7 @@ pub struct Chapter {
     pub position: i64,
     pub toc_include: bool,
     pub toc_heading_exclusions: Vec<String>,
+    pub layout_json: String,
     pub created_at: String,
     pub updated_at: String,
 }

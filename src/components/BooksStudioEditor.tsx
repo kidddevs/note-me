@@ -17,6 +17,7 @@ import {
   History,
   ImagePlus,
   LayoutList,
+  LayoutTemplate,
   Lock,
   Minus,
   MousePointer2,
@@ -55,7 +56,7 @@ import {
 import type * as React from "react";
 import type { Book, Chapter, ChapterKind, ChapterSnapshot, ChapterSnapshotReason } from "../lib/types";
 import { BOOK_GRAPHICS, BOOK_GRAPHIC_CATEGORIES, graphicDataUri, type BookGraphic, type BookGraphicVariant } from "../lib/bookAssets";
-import { layoutForBook, mergeEditorialStyles, parseBookLayout, serializeBookLayout, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTypography } from "../lib/bookLayout";
+import { hasSectionLayoutOverride, layoutForBook, layoutForChapter, mergeEditorialStyles, parseBookLayout, sectionLayoutOverrideJson, sectionPageMasterLayout, serializeBookLayout, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTypography } from "../lib/bookLayout";
 import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVars } from "../lib/bookStyles";
 import { api } from "../lib/api";
 import { htmlToMarkdown } from "../lib/richtext";
@@ -70,6 +71,7 @@ import {
   canvasBlocks,
   chartBlockText,
   chapterDisplayLabel,
+  chapterKindLabel,
   defaultChartData,
   DEFAULT_RICH_PRESENTATION,
   editorContextFor,
@@ -898,6 +900,7 @@ function ManuscriptCanvas({ content, selection, selectedStarts, typography, para
 
 export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onFocusModeChange, onOpenOutline, onOpenSettings, onNewChapter, onNavigateSection }: { book: Book; chapters: Chapter[]; activeChapter: Chapter | null; focusMode: boolean; onFocusModeChange: (focused: boolean) => void; onOpenOutline: () => void; onOpenSettings: () => void; onNewChapter: () => void; onNavigateSection: (direction: -1 | 1) => void }) {
   const updateChapter = useBooks((state) => state.updateChapter);
+  const updateChapterLayout = useBooks((state) => state.updateChapterLayout);
   const updateBook = useBooks((state) => state.updateBook);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [findOpen, setFindOpen] = useState(false);
@@ -936,7 +939,8 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [sprintFinished, setSprintFinished] = useState(false);
   const [editorSelection, setEditorSelection] = useState({ start: 0, end: 0, titleFocused: false });
   const [selectedStarts, setSelectedStarts] = useState<number[]>([]);
-  const [inspectorLayout, setInspectorLayout] = useState(() => layoutForBook(book));
+  const [bookLayout, setBookLayout] = useState(() => layoutForBook(book));
+  const [inspectorLayout, setInspectorLayout] = useState(() => layoutForChapter(book, activeChapter));
   const editorRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const pageEditorRef = useRef<HTMLDivElement>(null);
@@ -958,6 +962,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const lastSnapshotRef = useRef<{ chapterId: number; content: string; title: string } | null>(null);
   const draftVersionRef = useRef(0);
   const closingRef = useRef(false);
+  const bookLayoutRef = useRef(bookLayout);
   const inspectorLayoutRef = useRef(inspectorLayout);
   const sprintStartWordsRef = useRef(0);
   const liveWordsRef = useRef(0);
@@ -1050,10 +1055,13 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   }, [activeChapter?.id, updateChapter]);
 
   useEffect(() => {
-    const nextLayout = layoutForBook(book);
+    const nextBookLayout = layoutForBook(book);
+    bookLayoutRef.current = nextBookLayout;
+    setBookLayout(nextBookLayout);
+    const nextLayout = layoutForChapter(book, activeChapter);
     inspectorLayoutRef.current = nextLayout;
     setInspectorLayout(nextLayout);
-  }, [book.id, book.layout_json]);
+  }, [book.id, book.layout_json, activeChapter?.id, activeChapter?.layout_json]);
 
   useEffect(() => {
     setSprintEndsAt(null);
@@ -1268,7 +1276,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   };
 
   const commitHistory = () => {
-    const layoutJson = serializeBookLayout(inspectorLayoutRef.current);
+    const layoutJson = serializeBookLayout(bookLayoutRef.current);
     const last = historyRef.current[historyIndexRef.current];
     if (last && last.content === contentRef.current && last.title === titleRef.current && last.layoutJson === layoutJson) return;
     const next = historyRef.current.slice(0, historyIndexRef.current + 1);
@@ -1300,11 +1308,15 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setContent(entry.content);
     setEditorSelection(entry.selection);
     markDraft({ title: entry.title, content: entry.content });
-    const nextLayout = parseBookLayout(entry.layoutJson);
+    const nextBookLayout = parseBookLayout(entry.layoutJson);
+    bookLayoutRef.current = nextBookLayout;
+    setBookLayout(nextBookLayout);
+    const currentBook = useBooks.getState().books.find((item) => item.id === book.id) ?? book;
+    const nextBook = { ...currentBook, layout_json: serializeBookLayout(nextBookLayout) };
+    const nextLayout = layoutForChapter(nextBook, activeChapter);
     inspectorLayoutRef.current = nextLayout;
     setInspectorLayout(nextLayout);
-    const currentBook = useBooks.getState().books.find((item) => item.id === book.id) ?? book;
-    void updateBook(currentBook.id, bookInputFromBook(currentBook, serializeBookLayout(nextLayout))).catch((error) => notify("error", "Design history could not be restored", String(error)));
+    void updateBook(currentBook.id, bookInputFromBook(currentBook, serializeBookLayout(nextBookLayout))).catch((error) => notify("error", "Design history could not be restored", String(error)));
     requestAnimationFrame(() => { applyingHistoryRef.current = false; });
   };
 
@@ -1472,7 +1484,12 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   };
 
   const changeLayout = (change: (layout: BookLayout) => BookLayout) => {
-    const nextLayout = change(inspectorLayoutRef.current);
+    const nextBookLayout = change(bookLayoutRef.current);
+    bookLayoutRef.current = nextBookLayout;
+    setBookLayout(nextBookLayout);
+    const currentBook = useBooks.getState().books.find((item) => item.id === book.id) ?? book;
+    const nextBook = { ...currentBook, layout_json: serializeBookLayout(nextBookLayout) };
+    const nextLayout = layoutForChapter(nextBook, activeChapter);
     inspectorLayoutRef.current = nextLayout;
     setInspectorLayout(nextLayout);
     if (layoutHistoryTimerRef.current !== null) window.clearTimeout(layoutHistoryTimerRef.current);
@@ -1480,12 +1497,77 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       layoutHistoryTimerRef.current = null;
       commitHistory();
     }, 350);
-    const currentBook = useBooks.getState().books.find((item) => item.id === book.id) ?? book;
-    void updateBook(currentBook.id, bookInputFromBook(currentBook, serializeBookLayout(nextLayout))).catch((error) => {
-      inspectorLayoutRef.current = layoutForBook(currentBook);
-      setInspectorLayout(inspectorLayoutRef.current);
+    void updateBook(currentBook.id, bookInputFromBook(currentBook, serializeBookLayout(nextBookLayout))).catch((error) => {
+      const fallbackBookLayout = layoutForBook(currentBook);
+      bookLayoutRef.current = fallbackBookLayout;
+      setBookLayout(fallbackBookLayout);
+      const fallbackLayout = layoutForChapter(currentBook, activeChapter);
+      inspectorLayoutRef.current = fallbackLayout;
+      setInspectorLayout(fallbackLayout);
       notify("error", "Typography could not be saved", String(error));
     });
+  };
+
+  const persistSectionLayout = (nextLayout: BookLayout) => {
+    if (!activeChapter) return;
+    inspectorLayoutRef.current = nextLayout;
+    setInspectorLayout(nextLayout);
+    const overrideJson = sectionLayoutOverrideJson(bookLayoutRef.current, nextLayout);
+    void updateChapterLayout(activeChapter.id, overrideJson).catch((error) => {
+      const currentBook = useBooks.getState().books.find((item) => item.id === book.id) ?? book;
+      const fallbackLayout = layoutForChapter(currentBook, activeChapter);
+      inspectorLayoutRef.current = fallbackLayout;
+      setInspectorLayout(fallbackLayout);
+      notify("error", "Section page could not be saved", String(error));
+    });
+  };
+
+  const changeSectionLayout = (change: (layout: BookLayout) => BookLayout) => {
+    persistSectionLayout(change(inspectorLayoutRef.current));
+  };
+
+  const applySectionPageMaster = (masterId: string) => {
+    persistSectionLayout(sectionPageMasterLayout(bookLayoutRef.current, masterId));
+  };
+
+  const resetSectionLayout = () => {
+    if (!activeChapter) return;
+    inspectorLayoutRef.current = bookLayoutRef.current;
+    setInspectorLayout(bookLayoutRef.current);
+    void updateChapterLayout(activeChapter.id, "{}").catch((error) => notify("error", "Section page could not be reset", String(error)));
+  };
+
+  const applySectionPageToBook = () => {
+    const current = inspectorLayoutRef.current;
+    changeLayout((bookLayout) => ({
+      ...bookLayout,
+      pageColor: current.pageColor,
+      accentColor: current.accentColor,
+      pagePattern: current.pagePattern,
+      pagePatternColor: current.pagePatternColor,
+      pagePatternSpacing: current.pagePatternSpacing,
+      pageMargins: { ...current.pageMargins },
+      baselineGrid: { ...current.baselineGrid },
+      freeMargins: current.freeMargins,
+    }));
+    if (activeChapter) {
+      void updateChapterLayout(activeChapter.id, "{}").catch((error) => notify("error", "Section page could not be cleared", String(error)));
+    }
+  };
+
+  const applySectionPageToKind = () => {
+    if (!activeChapter) return;
+    const overrideJson = sectionLayoutOverrideJson(bookLayoutRef.current, inspectorLayoutRef.current);
+    const targets = useBooks.getState().chapters.filter((chapter) => chapter.chapter_kind === activeChapter.chapter_kind && chapter.id !== activeChapter.id);
+    for (const target of targets) {
+      void updateChapterLayout(target.id, overrideJson).catch((error) => notify("error", "Page master could not be applied", String(error)));
+    }
+    notify("success", "Page master applied", `${targets.length + 1} ${chapterKindLabel(activeChapter.chapter_kind)} ${targets.length === 0 ? "section uses" : "sections use"} this page.`);
+  };
+
+  const changeEffectivePageLayout = (change: (layout: BookLayout) => BookLayout) => {
+    if (hasSectionLayoutOverride(activeChapter?.layout_json)) changeSectionLayout(change);
+    else changeLayout(change);
   };
 
 ;
@@ -2491,6 +2573,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 if (!freeLayout) setFreeLayout(true);
                 notify("info", "Design mode", "Drag any object to arrange it. Double-click the page to add a text box. Resize from the handles around a selection.");
               }} title="Design mode: freely arrange text boxes, artwork, charts, and images" aria-pressed={freeLayout}><Palette size={12} /> Design canvas</button>
+              {hasSectionLayoutOverride(activeChapter.layout_json) && <button className="books-page-master-chip" onClick={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); setInspectorOpen(true); }} title="This section uses a custom page master"><LayoutTemplate size={12} /> Custom page</button>}
             </div>
              {findOpen && (
               <div className="books-find-bar">
@@ -2540,8 +2623,8 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 <div className="design-tool-group books-canvas-toggles" aria-label="Canvas overlays">
                   <button className={showRulers ? "active" : ""} onClick={() => setShowRulers((value) => !value)} title={showRulers ? "Hide rulers" : "Show rulers"} aria-pressed={showRulers}><Ruler size={13} /> Rulers</button>
                   <button className={showGuides ? "active" : ""} onClick={() => setShowGuides((value) => !value)} title={showGuides ? "Hide margin guides" : "Show margin guides"} aria-pressed={showGuides}><Grid3X3 size={13} /> Guides</button>
-                  <button className={inspectorLayout.baselineGrid.enabled ? "active" : ""} onClick={() => changeLayout((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, enabled: !current.baselineGrid.enabled } }))} title={inspectorLayout.baselineGrid.enabled ? "Hide the baseline grid" : "Show the baseline grid"} aria-pressed={inspectorLayout.baselineGrid.enabled}><Baseline size={13} /> Baseline</button>
-                  <button className={inspectorLayout.freeMargins ? "active" : ""} onClick={() => changeLayout((current) => ({ ...current, freeMargins: !current.freeMargins }))} title={inspectorLayout.freeMargins ? "Lock elements back inside the margins" : "Free margins: allow full-bleed text and artwork"} aria-pressed={inspectorLayout.freeMargins}>{inspectorLayout.freeMargins ? <Unlock size={13} /> : <Lock size={13} />} Margins</button>
+                  <button className={inspectorLayout.baselineGrid.enabled ? "active" : ""} onClick={() => changeEffectivePageLayout((current) => ({ ...current, baselineGrid: { ...current.baselineGrid, enabled: !current.baselineGrid.enabled } }))} title={inspectorLayout.baselineGrid.enabled ? "Hide the baseline grid" : "Show the baseline grid"} aria-pressed={inspectorLayout.baselineGrid.enabled}><Baseline size={13} /> Baseline</button>
+                  <button className={inspectorLayout.freeMargins ? "active" : ""} onClick={() => changeEffectivePageLayout((current) => ({ ...current, freeMargins: !current.freeMargins }))} title={inspectorLayout.freeMargins ? "Lock elements back inside the margins" : "Free margins: allow full-bleed text and artwork"} aria-pressed={inspectorLayout.freeMargins}>{inspectorLayout.freeMargins ? <Unlock size={13} /> : <Lock size={13} />} Margins</button>
                 </div>
                 <div className="design-toolbar-end">
                   <div className="books-layout-switch" role="group" aria-label="Canvas layout mode">
@@ -2583,7 +2666,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 </div>
              </div>
         </div>
-           {inspectorOpen && <BooksInspector context={editorContext} layout={inspectorLayout} freeLayout={freeLayout} selectionCount={selectedStarts.length} onAlignSelection={alignCanvasSelection} onClearSelection={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); }} layers={canvasLayers} onSelectLayer={(start, end, additive) => { const block = canvasBlocks(content).find((item) => item.start === start && item.end === end); if (block) selectCanvasBlock(block, additive); }} onLayerFront={(start, end) => setLayerForRange(start, end, "front")} onLayerBack={(start, end) => setLayerForRange(start, end, "back")} onLayoutChange={changeLayout} onReplaceRange={replaceContentRange} onMoveRange={moveCanvasRange} onDeleteRange={confirmDeleteCanvasRange} onDuplicateRange={duplicateCanvasRange} onBringToFront={() => setSelectedLayer("front")} onSendToBack={() => setSelectedLayer("back")} onReplaceImage={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) void replaceCanvasArtwork(block); }} onReplaceArtwork={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) openArtworkReplacement(block); }} onInlineFormat={applyInlineFormat} onConvertRole={applyHeading} chapterWords={chapterWords} totalWords={totalWords} wordGoal={wordGoal} />}
+           {inspectorOpen && <BooksInspector context={editorContext} layout={inspectorLayout} bookLayout={bookLayout} sectionLayoutActive={hasSectionLayoutOverride(activeChapter.layout_json)} sectionKind={activeChapter.chapter_kind} sectionLabel={activeChapter.title || "This section"} freeLayout={freeLayout} selectionCount={selectedStarts.length} onAlignSelection={alignCanvasSelection} onClearSelection={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); }} layers={canvasLayers} onSelectLayer={(start, end, additive) => { const block = canvasBlocks(content).find((item) => item.start === start && item.end === end); if (block) selectCanvasBlock(block, additive); }} onLayerFront={(start, end) => setLayerForRange(start, end, "front")} onLayerBack={(start, end) => setLayerForRange(start, end, "back")} onLayoutChange={changeLayout} onSectionLayoutChange={changeSectionLayout} onResetSectionLayout={resetSectionLayout} onApplySectionPageMaster={applySectionPageMaster} onApplySectionPageToBook={applySectionPageToBook} onApplySectionPageToKind={applySectionPageToKind} onReplaceRange={replaceContentRange} onMoveRange={moveCanvasRange} onDeleteRange={confirmDeleteCanvasRange} onDuplicateRange={duplicateCanvasRange} onBringToFront={() => setSelectedLayer("front")} onSendToBack={() => setSelectedLayer("back")} onReplaceImage={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) void replaceCanvasArtwork(block); }} onReplaceArtwork={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) openArtworkReplacement(block); }} onInlineFormat={applyInlineFormat} onConvertRole={applyHeading} chapterWords={chapterWords} totalWords={totalWords} wordGoal={wordGoal} />}
       </div>
     </div>
     {canvasMenu && (() => {
