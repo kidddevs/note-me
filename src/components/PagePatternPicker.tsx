@@ -1,7 +1,12 @@
 import type { CSSProperties } from "react";
 import { BOOK_PAGE_PATTERNS, type BookLayout } from "../lib/bookLayout";
+import { measurementRange, measurementText, measurementToInches, measurementValue, measurementUnitShort } from "../lib/measurements";
+import { useTheme } from "../store/theme";
 
 export function PagePatternPicker({ layout, onChange }: { layout: BookLayout; onChange: (change: (layout: BookLayout) => BookLayout) => void }) {
+  const unit = useTheme((state) => state.measurementUnit);
+  const spacingRange = measurementRange(0.15, 0.6, unit);
+  const spacingStep = unit === "px" ? 1 : unit === "cm" ? 0.025 : 0.01;
   const previewStyle = {
     "--page-pattern-color": layout.pagePatternColor,
     "--page-pattern-step": "13px",
@@ -35,8 +40,8 @@ export function PagePatternPicker({ layout, onChange }: { layout: BookLayout; on
           <label>
             <span>Spacing</span>
             <span className="page-pattern-spacing">
-              <input type="range" min="0.15" max="0.6" step="0.01" value={layout.pagePatternSpacing} onChange={(event) => onChange((current) => ({ ...current, pagePatternSpacing: Number(event.target.value) }))} aria-label="Paper pattern spacing" />
-              <code>{layout.pagePatternSpacing.toFixed(2)} in</code>
+              <input type="range" min={spacingRange.min} max={spacingRange.max} step={spacingStep} value={measurementValue(layout.pagePatternSpacing, unit)} onChange={(event) => onChange((current) => ({ ...current, pagePatternSpacing: measurementToInches(Number(event.target.value), unit) }))} aria-label={`Paper pattern spacing in ${measurementUnitShort(unit)}`} />
+              <code>{measurementText(layout.pagePatternSpacing, unit)}</code>
             </span>
           </label>
         </div>

@@ -141,6 +141,7 @@ export interface BookLayout {
   pagePattern: BookPagePattern;
   pagePatternColor: string;
   pagePatternSpacing: number;
+  freeMargins: boolean;
   typography: BookTypography;
   paragraphStyles: BookParagraphStyle[];
 }
@@ -164,7 +165,7 @@ export interface BookPaperPreset {
 }
 
 export const BOOK_PAPER_PRESETS: BookPaperPreset[] = [
-  { id: "manuscript", label: "Manuscript", description: "6 × 9 with clean paper and one-inch margins", trimSize: "6x9", margin: 1, pagePattern: "blank", pageColor: "#ffffff" },
+  { id: "manuscript", label: "Manuscript", description: "6 × 9 clean paper with generous margins", trimSize: "6x9", margin: 1, pagePattern: "blank", pageColor: "#ffffff" },
   { id: "journal", label: "Journal", description: "5.25 × 8 dotted paper with warm margins", trimSize: "5.25x8", margin: 0.75, pagePattern: "dotted", pageColor: "#fffaf3" },
   { id: "notebook", label: "Notebook", description: "5 × 8 ruled paper for everyday notes", trimSize: "5x8", margin: 0.6, pagePattern: "ruled", pageColor: "#fffaf3" },
   { id: "planner", label: "Planner", description: "US Letter weekly columns for spreads and trackers", trimSize: "8.5x11", margin: 0.5, pagePattern: "planner", pageColor: "#ffffff" },
@@ -313,6 +314,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   pagePattern: "blank",
   pagePatternColor: "#c9c0b4",
   pagePatternSpacing: 0.28,
+  freeMargins: false,
   typography: DEFAULT_BOOK_TYPOGRAPHY,
   paragraphStyles: DEFAULT_PARAGRAPH_STYLES,
 };
@@ -593,6 +595,7 @@ export function parseBookLayout(value?: string, typographyFallback: BookTypograp
     pagePattern: pagePattern(source.pagePattern, DEFAULT_BOOK_LAYOUT.pagePattern),
     pagePatternColor: color(source.pagePatternColor, DEFAULT_BOOK_LAYOUT.pagePatternColor),
     pagePatternSpacing: decimal(source.pagePatternSpacing, DEFAULT_BOOK_LAYOUT.pagePatternSpacing, 0.15, 0.6),
+    freeMargins: boolean(source.freeMargins, DEFAULT_BOOK_LAYOUT.freeMargins),
     typography: Object.fromEntries((Object.keys(typographyFallback) as BookTextRole[]).map((role) => [role, textStyle(sourceTypography[role], typographyFallback[role])])) as BookTypography,
     paragraphStyles: paragraphStyles(source.paragraphStyles),
   };

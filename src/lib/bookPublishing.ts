@@ -299,6 +299,7 @@ export interface ImagePresentation {
   wrap?: "left" | "right";
   wrapGap?: number;
   bleed?: boolean;
+  backgroundColor?: string;
   cornerRadius?: number;
   borderWidth?: number;
   borderColor?: string;
@@ -315,6 +316,7 @@ export interface RichPresentation {
   y?: number;
   height?: number;
   z?: number;
+  bleed?: boolean;
   styleId?: string;
 }
 
@@ -415,6 +417,10 @@ function parseImageAttributes(value?: string): ImagePresentation {
     if (key === "wrap" && ["left", "right"].includes(raw as string)) result.wrap = raw as "left" | "right";
     if (key === "wrapgap" && raw) result.wrapGap = Math.min(6, Math.max(0, Number(raw) || 0));
     if (key === "bleed" && ["1", "true", "yes"].includes(raw as string)) result.bleed = true;
+    if (key === "bg" && raw) {
+      const decoded = decodeAttribute(raw);
+      if (/^#[0-9a-f]{3,8}$/i.test(decoded)) result.backgroundColor = decoded;
+    }
     if (key === "caption" && raw) result.caption = decodeAttribute(raw).slice(0, 240);
     if (key === "corner" && raw) result.cornerRadius = Math.min(120, Math.max(0, Number(raw) || 0));
     if (key === "bw" && raw) result.borderWidth = Math.min(20, Math.max(0, Number(raw) || 0));
@@ -444,6 +450,7 @@ function imageAttributesText(presentation: ImagePresentation) {
     presentation.wrap ? `wrap=${presentation.wrap}` : "",
     presentation.wrap ? `wrapgap=${presentation.wrapGap ?? 1.4}` : "",
     presentation.bleed ? "bleed=1" : "",
+    presentation.backgroundColor ? `bg=${encodeURIComponent(presentation.backgroundColor)}` : "",
     presentation.caption ? `caption=${encodeURIComponent(presentation.caption)}` : "",
     presentation.cornerRadius !== undefined ? `corner=${presentation.cornerRadius}` : "",
     presentation.borderWidth !== undefined ? `bw=${presentation.borderWidth}` : "",
@@ -481,7 +488,8 @@ function inlineHtml(value: string) {
       const frameClass = presentation.frame === "none" ? "" : ` frame-${presentation.frame}`;
       const flowClass = `${presentation.wrap ? ` wrap-${presentation.wrap}` : ""}${presentation.bleed ? " bleed" : ""}`;
       const wrapStyle = presentation.wrap ? `;margin-${presentation.wrap === "left" ? "right" : "left"}:${presentation.wrapGap ?? 1.4}em` : "";
-      return `<figure class="book-figure align-${presentation.align}${flowClass}" style="width:${presentation.width}%${wrapStyle}"><span class="book-image-frame radius-${presentation.radius} aspect-${presentation.aspect} fit-${presentation.fit}${frameClass}"><img class="book-image" src="${source}" alt="${escapeHtml(alt)}" loading="lazy" /></span>${presentation.caption ? `<figcaption>${escapeHtml(presentation.caption)}</figcaption>` : ""}</figure>`;
+      const backgroundStyle = presentation.backgroundColor ? ` style="background-color:${presentation.backgroundColor}"` : "";
+      return `<figure class="book-figure align-${presentation.align}${flowClass}" style="width:${presentation.width}%${wrapStyle}"><span class="book-image-frame radius-${presentation.radius} aspect-${presentation.aspect} fit-${presentation.fit}${frameClass}"${backgroundStyle}><img class="book-image" src="${source}" alt="${escapeHtml(alt)}" loading="lazy" /></span>${presentation.caption ? `<figcaption>${escapeHtml(presentation.caption)}</figcaption>` : ""}</figure>`;
     })
      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, source: string) => /^(?:https?:\/\/|mailto:|#)/i.test(source) ? `<a href="${source}">${label}</a>` : label);
 }
@@ -524,6 +532,7 @@ export interface ChartData {
   x?: number;
   y?: number;
   z?: number;
+  bleed?: boolean;
 }
 
 export interface TableData {
@@ -535,6 +544,7 @@ export interface TableData {
   x?: number;
   y?: number;
   z?: number;
+  bleed?: boolean;
 }
 
 const CHART_PALETTES: Record<ChartPalette, string[]> = {
@@ -562,6 +572,7 @@ export function richPresentationFromValue(value: unknown, fallback: RichPresenta
     y: clampPresentationY(typeof value.y === "number" ? value.y : undefined),
     height: clampPresentationHeight(typeof value.height === "number" ? value.height : undefined),
     z: clampPresentationZ(typeof value.z === "number" ? value.z : undefined),
+    bleed: value.bleed === true ? true : undefined,
     styleId: clampStyleId(value.styleId),
   };
 }
@@ -763,6 +774,7 @@ export function tableDataFromValue(value: unknown): TableData {
     x: clampPresentationX(typeof value.x === "number" ? value.x : undefined, width),
     y: clampPresentationY(typeof value.y === "number" ? value.y : undefined),
     z: clampPresentationZ(typeof value.z === "number" ? value.z : undefined),
+    bleed: value.bleed === true ? true : undefined,
   };
 }
 
@@ -1046,6 +1058,7 @@ function canvasLayoutFromSource(source: string) {
       ...(attributes.has("y") ? { y: clampPresentationY(Number(attributes.get("y"))) } : {}),
       ...(attributes.has("height") ? { height: clampPresentationHeight(Number(attributes.get("height"))) } : {}),
       ...(attributes.has("z") ? { z: clampPresentationZ(Number(attributes.get("z"))) } : {}),
+      ...(attributes.has("bleed") ? { bleed: true } : {}),
       ...(attributes.has("style") ? { styleId: clampStyleId(attributes.get("style")) } : {}),
     },
   };
@@ -1053,13 +1066,14 @@ function canvasLayoutFromSource(source: string) {
 
 function canvasLayoutComment(presentation: RichPresentation) {
   const hasCustomX = presentation.x !== undefined && !(presentation.x === 0 && presentation.align === "left");
-  const hasLayout = presentation.width !== 100 || presentation.align !== "left" || hasCustomX || presentation.y !== undefined || presentation.height !== undefined || presentation.z !== undefined || Boolean(presentation.styleId);
+  const hasLayout = presentation.width !== 100 || presentation.align !== "left" || hasCustomX || presentation.y !== undefined || presentation.height !== undefined || presentation.z !== undefined || presentation.bleed || Boolean(presentation.styleId);
   if (!hasLayout) return "";
   const attributes = [`width=${presentation.width}`, `align=${presentation.align}`];
   if (hasCustomX) attributes.push(`x=${clampPresentationX(presentation.x, presentation.width)}`);
   if (presentation.y !== undefined) attributes.push(`y=${clampPresentationY(presentation.y)}`);
   if (presentation.height !== undefined) attributes.push(`height=${clampPresentationHeight(presentation.height)}`);
   if (presentation.z !== undefined) attributes.push(`z=${clampPresentationZ(presentation.z)}`);
+  if (presentation.bleed) attributes.push("bleed=1");
   if (presentation.styleId) attributes.push(`style=${clampStyleId(presentation.styleId)}`);
   return ` <!-- note-me:layout ${attributes.join(" ")} -->`;
 }
@@ -1203,10 +1217,10 @@ export function canvasBlocks(value: string): CanvasBlock[] {
         const kind = (directive?.[1].toLocaleLowerCase() ?? "chart") as RichBlockKind;
         if (kind === "table") {
           const table = tableContentFromBody(body);
-          blocks.push({ kind, start, end, source, display: source, editPrefix: "", editSuffix: "", tableLines: table.lines, tableOptions: table.options, presentation: { width: table.options.width, align: table.options.align, ...(table.options.x !== undefined ? { x: table.options.x } : {}), ...(table.options.y !== undefined ? { y: table.options.y } : {}), ...(table.options.z !== undefined ? { z: table.options.z } : {}) } });
+          blocks.push({ kind, start, end, source, display: source, editPrefix: "", editSuffix: "", tableLines: table.lines, tableOptions: table.options, presentation: { width: table.options.width, align: table.options.align, ...(table.options.x !== undefined ? { x: table.options.x } : {}), ...(table.options.y !== undefined ? { y: table.options.y } : {}), ...(table.options.z !== undefined ? { z: table.options.z } : {}), ...(table.options.bleed ? { bleed: true } : {}) } });
         } else if (kind === "chart") {
           const chart = chartDataFromJson(body);
-          blocks.push({ kind, start, end, source, display: source, editPrefix: "", editSuffix: "", chart, presentation: chart ? { width: chart.width, align: chart.align, ...(chart.x !== undefined ? { x: chart.x } : {}), ...(chart.y !== undefined ? { y: chart.y } : {}), ...(chart.z !== undefined ? { z: chart.z } : {}) } : { ...DEFAULT_RICH_PRESENTATION, align: "center" } });
+          blocks.push({ kind, start, end, source, display: source, editPrefix: "", editSuffix: "", chart, presentation: chart ? { width: chart.width, align: chart.align, ...(chart.x !== undefined ? { x: chart.x } : {}), ...(chart.y !== undefined ? { y: chart.y } : {}), ...(chart.z !== undefined ? { z: chart.z } : {}), ...(chart.bleed ? { bleed: true } : {}) } : { ...DEFAULT_RICH_PRESENTATION, align: "center" } });
         } else {
           const parsed = richJsonLine(body);
           const options = objectValue(parsed.value) ? parsed.value : {};

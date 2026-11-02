@@ -27,6 +27,7 @@ const {
   chapterUsesFreeLayout,
   setChapterFreeLayout,
   EMPTY_CANVAS_PARAGRAPH,
+  DEFAULT_RICH_PRESENTATION,
 } = require("./.compiled/src/lib/bookPublishing.js");
 const { DEFAULT_BOOK_TYPOGRAPHY } = require("./.compiled/src/lib/bookLayout.js");
 
@@ -154,6 +155,34 @@ test("HTML export includes print geometry, book chrome, rich blocks, and embedde
   assert.match(output, /class="book-image-frame radius-soft aspect-auto fit-contain"/);
   assert.ok(output.includes(`data:image/png;base64,${TINY_PNG}`));
   assert.match(visibleText(output), /The first light found the room/);
+});
+
+test("text frames can opt into full-bleed margins", () => {
+  const source = canvasTextSource("A wide editorial note.", { ...DEFAULT_RICH_PRESENTATION, bleed: true });
+  assert.match(source, /bleed=1/);
+  const block = canvasBlocks(source).find((item) => item.kind === "text");
+  assert.equal(block.presentation.bleed, true);
+  const roundTrip = canvasTextSource(block.source, block.presentation);
+  assert.match(roundTrip, /bleed=1/);
+});
+
+test("artwork backgrounds and full-bleed presentation round trip", () => {
+  const markdown = imageMarkdown("Wide plate", `data:image/png;base64,${TINY_PNG}`, {
+    radius: "none",
+    align: "left",
+    width: 100,
+    aspect: "auto",
+    fit: "contain",
+    frame: "none",
+    caption: "",
+    bleed: true,
+    backgroundColor: "#f3eadc",
+  });
+  assert.match(markdown, /bleed=1/);
+  assert.match(markdown, /bg=%23f3eadc/);
+  const html = markdownToHtml(markdown, undefined, DEFAULT_BOOK_TYPOGRAPHY);
+  assert.match(html, /class="book-figure align-left bleed"/);
+  assert.match(html, /style="background-color:#f3eadc"/);
 });
 
 test("paper patterns travel into HTML and print exports", () => {

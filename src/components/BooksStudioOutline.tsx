@@ -14,6 +14,7 @@ import {
   LayoutList,
   MoreHorizontal,
   Plus,
+  Ruler,
   Search,
   Sparkles,
   Trash2,
@@ -21,7 +22,9 @@ import {
 } from "lucide-react";
 import type { Book, Chapter, ChapterKind } from "../lib/types";
 import { buildBookToc, orderBookChapters, type TocEntry } from "../lib/bookToc";
+import { trimSizeLabel } from "../lib/measurements";
 import { useBooks } from "../store/books";
+import { useTheme } from "../store/theme";
 import { notify } from "../store/toast";
 import {
   CHAPTER_KIND_OPTIONS,
@@ -303,6 +306,7 @@ export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter
   );
 }
 export function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOpenChapter }: { book: Book; chapters: Chapter[]; onNewChapter: (kind?: ChapterKind) => void; onOpenMatter: (focus: MatterFocus) => void; onOpenChapter: (id: number) => void }) {
+  const measurementUnit = useTheme((state) => state.measurementUnit);
   const reorderChapters = useBooks((state) => state.reorderChapters);
   const deleteChapter = useBooks((state) => state.deleteChapter);
   const updateChapter = useBooks((state) => state.updateChapter);
@@ -466,6 +470,7 @@ export function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOp
             <div className="books-outline-card-heading"><div><span className="books-eyebrow"><Sparkles size={13} /> Manuscript health</span><strong>Structure at a glance</strong></div></div>
             <div className="books-outline-health-list">
               <div><span><BookOpen size={13} /> Sections</span><strong>{chapters.length}</strong></div>
+              <div><span><Ruler size={13} /> Page size</span><strong>{trimSizeLabel(book.trim_size, measurementUnit)}</strong></div>
               <div><span><Clock3 size={13} /> Read time</span><strong>{readTime} min</strong></div>
               <div><span><EyeOff size={13} /> Hidden sections</span><strong>{hiddenSections}</strong></div>
               <div><span><LayoutList size={13} /> Empty sections</span><strong className={emptySections ? "attention" : ""}>{emptySections}</strong></div>

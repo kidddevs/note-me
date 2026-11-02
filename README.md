@@ -74,10 +74,13 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 
 - InDesign-style **Flow** and **Free** layout modes. Flow keeps text in document order; Free turns the content area into an artboard.
 - Text boxes, artwork, tables, charts, and callouts can be positioned freely, resized from eight handles, snapped to margins, layered front/back, and arranged with edge or center alignment.
-- Shift-click multi-selection, group dragging, alignment guides, zero-height insertion previews, zoom, rulers, margin guides, and fit-to-width.
+- Shift-click multi-selection, group dragging, alignment guides, zero-height insertion previews, rulers, margin guides, fit-to-width, and stable canvas zoom from 25–200% with buttons, keyboard shortcuts, trackpad pinch, or `Cmd`/`Ctrl`-scroll.
+- Right-click any text frame, artwork, table, chart, or callout for contextual editing, duplication, layering, movement, deletion, and full-bleed commands. Right-click the page for canvas tools.
 - A contextual design inspector with role typography, paragraph presets, character controls, hyphenation, columns, tabs, drop caps, nested openings, rules, borders, shading, bullets, numbering, and GREP styling.
 - Paper patterns and presets: blank, ruled, dot grid, graph, and planner pages with configurable rule color and spacing, plus one-click Manuscript, Journal, Notebook, Planner, and Sketchbook setups.
-- A searchable artwork drawer with local images and recolorable editorial artwork — ornaments, dividers, botanicals, symbols, frames, lines, shapes, arrows, and a dedicated Journal set with cards, trackers, labels, washi tape, pockets, stamps, and photo corners. Artwork inserts at a sensible width for its role instead of always filling the column.
+- **Free margins** unlock full-bleed text and artwork beyond the content margins. Individual objects can opt into full bleed, and artwork can carry its own background color to override the page background.
+- Measurement units are switchable between **inches, centimeters, and pixels** across page sizes, margins, rulers, pattern spacing, and settings while staying stored in print-safe inches.
+- A searchable artwork drawer with local images and recolorable editorial artwork — ornaments, dividers, botanicals, symbols, frames, lines, shapes, arrows, and a dedicated Journal set with cards, trackers, labels, washi tape, pockets, stamps, and photo corners. Artwork inserts at a sensible width for its role, and an existing artwork can be replaced directly from the collection.
 - Portable rich blocks for GFM tables, configurable tables, bar / line / area / donut / stat charts, callouts, and graph fences — all embedded in the manuscript Markdown.
 
 ### Publishing
@@ -138,6 +141,9 @@ Installers are written to `src-tauri/target/release/bundle/`.
 | `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous tab |
 | `Cmd+F` | Find in the current Books Studio section |
 | `Cmd+Alt+F` | Find and replace in a Books Studio section |
+| `Cmd++` / `Cmd+-` | Zoom the Books Studio canvas in / out |
+| `Cmd+0` | Reset canvas zoom to 100% |
+| Trackpad pinch / `Cmd`-scroll | Zoom the Books Studio canvas |
 | `Cmd+Alt+0`–`Cmd+Alt+3` | Apply Body, H1, H2, or H3 to the selected text box |
 | `Cmd+Alt+Q` | Apply quote style to the selected text box |
 | `Cmd+Z` / `Cmd+Shift+Z` | Undo / redo manuscript edits |

@@ -40,6 +40,8 @@ test("paper patterns normalize and clamp to useful journal settings", () => {
   assert.equal(parsed.pagePatternSpacing, 0.15);
   assert.equal(parseBookLayout(JSON.stringify({ pagePattern: "invalid" })).pagePattern, "blank");
   assert.equal(parseBookLayout(JSON.stringify({ pagePatternSpacing: 9 })).pagePatternSpacing, 0.6);
+  assert.equal(parseBookLayout("{}").freeMargins, false);
+  assert.equal(parseBookLayout(JSON.stringify({ freeMargins: true })).freeMargins, true);
 });
 
 test("page margins normalize per edge and fall back to the book margin", () => {

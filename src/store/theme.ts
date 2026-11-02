@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { EditorMode, Theme } from "../lib/types";
 import { api } from "../lib/api";
 import { setSoundEnabled } from "../lib/sounds";
+import { DEFAULT_MEASUREMENT_UNIT, isMeasurementUnit, type MeasurementUnit } from "../lib/measurements";
 
 export type FontSize = "sm" | "md" | "lg";
 
@@ -12,6 +13,7 @@ interface ThemeState {
   fontSize: FontSize;
   spellcheck: boolean;
   soundEffects: boolean;
+  measurementUnit: MeasurementUnit;
   ready: boolean;
   init: () => Promise<void>;
   setTheme: (t: Theme) => void;
@@ -21,6 +23,7 @@ interface ThemeState {
   setFontSize: (f: FontSize) => void;
   setSpellcheck: (v: boolean) => void;
   setSoundEffects: (v: boolean) => void;
+  setMeasurementUnit: (unit: MeasurementUnit) => void;
 }
 
 const THEME_KEY = "ui.theme";
@@ -29,6 +32,7 @@ const SIDEBAR_KEY = "ui.sidebarCollapsed";
 const FONT_KEY = "ui.fontSize";
 const SPELL_KEY = "ui.spellcheck";
 const SOUND_KEY = "ui.soundEffects";
+const MEASUREMENT_KEY = "ui.measurementUnit";
 
 const FONT_PX: Record<FontSize, string> = { sm: "13px", md: "14px", lg: "16px" };
 
@@ -53,20 +57,23 @@ export const useTheme = create<ThemeState>((set, get) => ({
   fontSize: "md",
   spellcheck: false,
   soundEffects: true,
+  measurementUnit: DEFAULT_MEASUREMENT_UNIT,
   ready: false,
   init: async () => {
-    const [t, m, sc, fs, sp, snd] = await Promise.all([
+    const [t, m, sc, fs, sp, snd, mu] = await Promise.all([
       api.getSetting(THEME_KEY),
       api.getSetting(EDITOR_KEY),
       api.getSetting(SIDEBAR_KEY),
       api.getSetting(FONT_KEY),
       api.getSetting(SPELL_KEY),
       api.getSetting(SOUND_KEY),
+      api.getSetting(MEASUREMENT_KEY),
     ]);
     const theme = (t as Theme) ?? "system";
     const mode = (m as EditorMode) ?? "split";
     const font = (fs as FontSize) ?? "md";
     const sound = snd === null ? true : snd === "1";
+    const measurementUnit = isMeasurementUnit(mu) ? mu : DEFAULT_MEASUREMENT_UNIT;
     applyTheme(theme);
     applyFontSize(font);
     setSoundEnabled(sound);
@@ -77,6 +84,7 @@ export const useTheme = create<ThemeState>((set, get) => ({
       fontSize: font,
       spellcheck: sp === "1",
       soundEffects: sound,
+      measurementUnit,
       ready: true,
     });
   },
@@ -113,6 +121,10 @@ export const useTheme = create<ThemeState>((set, get) => ({
     setSoundEnabled(v);
     api.setSetting(SOUND_KEY, v ? "1" : "0").catch(() => {});
     set({ soundEffects: v });
+  },
+  setMeasurementUnit: (unit) => {
+    api.setSetting(MEASUREMENT_KEY, unit).catch(() => {});
+    set({ measurementUnit: unit });
   },
 }));
 

@@ -58,6 +58,9 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["⌘", "F"], description: "Find in current section" },
       { keys: ["⌘", "⌥", "↑/↓"], description: "Previous / next section" },
       { keys: ["↑", "↓"], description: "Move through section rail" },
+      { keys: ["⌘", "+ / −"], description: "Zoom canvas in / out" },
+      { keys: ["⌘", "0"], description: "Reset canvas zoom" },
+      { keys: ["Pinch"], description: "Trackpad pinch or ⌘-scroll to zoom" },
     ],
   },
 ];

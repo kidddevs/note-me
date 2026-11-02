@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { BookOpen, Check, FileText, LayoutList, NotebookPen, Settings2, Sparkles } from "lucide-react";
+import { BookOpen, Check, FileText, LayoutList, NotebookPen, Ruler, Settings2, Sparkles } from "lucide-react";
 import type { Book, BookInput, Chapter } from "../lib/types";
 import { BOOK_PAPER_PRESETS, layoutForBook, layoutSectionKey, pageRuleFor, serializeBookLayout, type BookLayout, type BookPageNumberStyle, type BookTextRole } from "../lib/bookLayout";
+import { MEASUREMENT_UNITS, measurementRange, measurementToInches, measurementUnitShort, measurementValue, trimSizeLabel } from "../lib/measurements";
 import { orderBookChapters } from "../lib/bookToc";
 import { chapterKindLabel, chapterPageBand, FONT_OPTIONS, PAGE_NUMBER_STYLE_OPTIONS, PAGE_START_OPTIONS, STATUS_OPTIONS, TRIM_SIZES, type PageBand } from "../lib/bookPublishing";
 import { useBooks } from "../store/books";
+import { useTheme } from "../store/theme";
 import { notify } from "../store/toast";
 import type { MatterFocus } from "./BooksStudio";
 import { PagePatternPicker } from "./PagePatternPicker";
 
 export function SettingsScreen({ book, chapters, focus }: { book: Book; chapters: Chapter[]; focus?: MatterFocus }) {
   const updateBook = useBooks((state) => state.updateBook);
+  const measurementUnit = useTheme((state) => state.measurementUnit);
+  const setMeasurementUnit = useTheme((state) => state.setMeasurementUnit);
+  const marginRange = measurementRange(0.2, 3, measurementUnit);
   const orderedChapters = orderBookChapters(chapters);
   const frontMatterRef = useRef<HTMLElement>(null);
   const backMatterRef = useRef<HTMLElement>(null);
@@ -76,7 +81,8 @@ export function SettingsScreen({ book, chapters, focus }: { book: Book; chapters
   const layout = layoutForBook({ ...book, font_family: draft.fontFamily, font_size: draft.fontSize, line_height: draft.lineHeight, layout_json: draft.layoutJson ?? book.layout_json });
   const setLayout = (next: BookLayout) => set("layoutJson", serializeBookLayout(next));
   const setPageMargin = (side: keyof BookLayout["pageMargins"], value: number) => {
-    const next = Math.min(3, Math.max(0.2, Number.isFinite(value) ? value : 1));
+    const inches = measurementToInches(value, measurementUnit);
+    const next = Math.min(3, Math.max(0.2, Number.isFinite(inches) ? inches : 1));
     setLayout({ ...layout, pageMargins: { ...layout.pageMargins, [side]: next } });
   };
   const applyPaperPreset = (preset: (typeof BOOK_PAPER_PRESETS)[number]) => {
@@ -210,10 +216,12 @@ export function SettingsScreen({ book, chapters, focus }: { book: Book; chapters
             </div>
          </section>
          <section className="books-settings-card"><div className="books-card-heading"><FileText size={16} /><div><h2>Page design</h2><p>Trim, paper, and spacing for your soft copy.</p></div></div>
+           <div className="books-unit-row"><div className="books-unit-copy"><Ruler size={14} /><span><strong>Measurement unit</strong><small>Page size, margins, rulers, and pattern spacing.</small></span></div><div className="books-unit-switch" role="group" aria-label="Measurement unit">{MEASUREMENT_UNITS.map((option) => <button key={option.value} type="button" className={measurementUnit === option.value ? "active" : ""} onClick={() => setMeasurementUnit(option.value)} aria-pressed={measurementUnit === option.value} title={option.description}>{option.short}</button>)}</div></div>
            <div className="books-paper-presets"><div className="books-page-margins-heading"><strong>Paper presets</strong><span>Start from a page system, then fine-tune below.</span></div><div className="books-paper-preset-grid">{BOOK_PAPER_PRESETS.map((preset) => <button key={preset.id} type="button" onClick={() => applyPaperPreset(preset)} title={preset.description}><strong>{preset.label}</strong><small>{preset.description}</small></button>)}</div></div>
-           <label>Trim size<select value={draft.trimSize} onChange={(event) => set("trimSize", event.target.value)}>{TRIM_SIZES.map((option) => <option key={option.value} value={option.value}>{option.label} - {option.description}</option>)}</select></label><label>Page background<div className="books-color-field"><input className="books-color-input" type="color" value={layout.pageColor} onChange={(event) => setLayout({ ...layout, pageColor: event.target.value })} /><code>{layout.pageColor}</code></div></label><label>Document accent<div className="books-color-field"><input className="books-color-input" type="color" value={layout.accentColor} onChange={(event) => setLayout({ ...layout, accentColor: event.target.value })} /><code>{layout.accentColor}</code></div></label><label>Typeface<select value={draft.fontFamily} onChange={(event) => set("fontFamily", event.target.value)}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><div className="books-range-row"><label>Font size<strong>{draft.fontSize} pt</strong><input type="range" min="9" max="18" step="0.5" value={draft.fontSize} onChange={(event) => set("fontSize", Number(event.target.value))} /></label><label>Line height<strong>{draft.lineHeight.toFixed(2)}</strong><input type="range" min="1.2" max="2" step="0.05" value={draft.lineHeight} onChange={(event) => set("lineHeight", Number(event.target.value))} /></label></div><div className="books-range-row"><label>Paragraph gap<strong>{draft.paragraphSpacing} em</strong><input type="range" min="0" max="1.5" step="0.1" value={draft.paragraphSpacing} onChange={(event) => set("paragraphSpacing", Number(event.target.value))} /></label></div>
+           <label>Trim size<select value={draft.trimSize} onChange={(event) => set("trimSize", event.target.value)}>{TRIM_SIZES.map((option) => <option key={option.value} value={option.value}>{trimSizeLabel(option.value, measurementUnit)} - {option.description}</option>)}</select></label><label>Page background<div className="books-color-field"><input className="books-color-input" type="color" value={layout.pageColor} onChange={(event) => setLayout({ ...layout, pageColor: event.target.value })} /><code>{layout.pageColor}</code></div></label><label>Document accent<div className="books-color-field"><input className="books-color-input" type="color" value={layout.accentColor} onChange={(event) => setLayout({ ...layout, accentColor: event.target.value })} /><code>{layout.accentColor}</code></div></label><label>Typeface<select value={draft.fontFamily} onChange={(event) => set("fontFamily", event.target.value)}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><div className="books-range-row"><label>Font size<strong>{draft.fontSize} pt</strong><input type="range" min="9" max="18" step="0.5" value={draft.fontSize} onChange={(event) => set("fontSize", Number(event.target.value))} /></label><label>Line height<strong>{draft.lineHeight.toFixed(2)}</strong><input type="range" min="1.2" max="2" step="0.05" value={draft.lineHeight} onChange={(event) => set("lineHeight", Number(event.target.value))} /></label></div><div className="books-range-row"><label>Paragraph gap<strong>{draft.paragraphSpacing} em</strong><input type="range" min="0" max="1.5" step="0.1" value={draft.paragraphSpacing} onChange={(event) => set("paragraphSpacing", Number(event.target.value))} /></label></div>
            <div className="books-page-pattern-settings"><div className="books-page-margins-heading"><strong>Paper pattern</strong><span>Give journals, notebooks, and planners a printed page rhythm.</span></div><PagePatternPicker layout={layout} onChange={(change) => setLayout(change(layout))} /></div>
-           <div className="books-page-margins-settings"><div className="books-page-margins-heading"><strong>Page margins</strong><span>Each edge can be tuned independently. Values are inches from the trim.</span></div><div className="books-page-margin-inputs">{([["top", "Top"], ["right", "Right"], ["bottom", "Bottom"], ["left", "Left"]] as const).map(([side, label]) => <label key={side}>{label}<span><input type="number" min="0.2" max="3" step="0.05" value={layout.pageMargins[side]} onChange={(event) => setPageMargin(side, Number(event.target.value))} /><small>in</small></span></label>)}</div></div></section>
+           <label className="books-toggle-row"><span><strong>Free margins</strong><small>Allow full-bleed text and artwork to reach the paper edge.</small></span><input type="checkbox" checked={layout.freeMargins} onChange={(event) => setLayout({ ...layout, freeMargins: event.target.checked })} /></label>
+           <div className="books-page-margins-settings"><div className="books-page-margins-heading"><strong>Page margins</strong><span>Each edge can be tuned independently in {measurementUnitShort(measurementUnit)} from the trim.</span></div><div className="books-page-margin-inputs">{([["top", "Top"], ["right", "Right"], ["bottom", "Bottom"], ["left", "Left"]] as const).map(([side, label]) => <label key={side}>{label}<span><input type="number" min={marginRange.min} max={marginRange.max} step={marginRange.step} value={measurementValue(layout.pageMargins[side], measurementUnit)} onChange={(event) => setPageMargin(side, Number(event.target.value))} /><small>{measurementUnitShort(measurementUnit)}</small></span></label>)}</div></div></section>
       </div>
     </div>
   );

@@ -76,6 +76,8 @@ import {
   type TableAlign,
 } from "../lib/bookPublishing";
 import { cloneParagraphStyle, styleColor, styleFromRole, uniqueStyleId } from "../lib/bookStyles";
+import { measurementRange, measurementText, measurementToInches, measurementUnitShort, measurementValue } from "../lib/measurements";
+import { useTheme } from "../store/theme";
 import { PagePatternPicker } from "./PagePatternPicker";
 
 function InspectorSection({ icon, title, summary, children, defaultOpen = false }: { icon: ReactNode; title: string; summary?: string; children: ReactNode; defaultOpen?: boolean }) {
@@ -337,7 +339,7 @@ function StyleLibrary({ layout, context, onLayoutChange, onReplaceRange }: { lay
   </InspectorSection>;
 }
 
-function FrameControls({ context, freeLayout, onReplaceRange }: { context: EditorContext; freeLayout: boolean; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
+function FrameControls({ context, freeLayout, freeMargins, onReplaceRange }: { context: EditorContext; freeLayout: boolean; freeMargins: boolean; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
   const presentation = context.presentation ?? DEFAULT_RICH_PRESENTATION;
   const isText = context.kind === "paragraph" || context.kind === "heading" || context.kind === "quote";
   if (!isText) return null;
@@ -351,13 +353,14 @@ function FrameControls({ context, freeLayout, onReplaceRange }: { context: Edito
       <Field label="Height"><NumberField value={presentation.height ?? 0} min={0} max={400} step={0.5} onChange={(height) => update({ height: height || undefined })} suffix="%" /></Field>
       <Field label="Placement"><PlacementButtons value={presentation.align} onChange={(align) => update({ align, x: undefined })} /></Field>
     </div>
+    <div className="design-inline-row">{freeMargins ? <Toggle checked={Boolean(presentation.bleed)} onChange={(bleed) => update({ bleed })} label="Full bleed" /> : <span className="design-help">Enable Free margins in Page appearance to bleed this frame.</span>}</div>
     <p className="design-help">Set a frame height to balance multi-column text; 0 keeps the frame automatic.</p>
     {!freeLayout && <p className="design-help">Enable Free layout in the canvas bar to place this frame vertically anywhere on the artboard.</p>}
     {freeLayout && <p className="design-help">Position is measured from the top-left of the safe content area. Y uses the page content width as its unit.</p>}
   </InspectorSection>;
 }
 
-function ImageInspector({ context, freeLayout, onReplaceRange, onReplaceImage }: { context: EditorContext; freeLayout: boolean; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onReplaceImage?: () => void }) {
+function ImageInspector({ context, freeLayout, freeMargins, onReplaceRange, onReplaceImage, onReplaceArtwork }: { context: EditorContext; freeLayout: boolean; freeMargins: boolean; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onReplaceImage?: () => void; onReplaceArtwork?: () => void }) {
   const image = context.image;
   if (!image) return null;
   const presentation = image.presentation;
@@ -373,7 +376,7 @@ function ImageInspector({ context, freeLayout, onReplaceRange, onReplaceImage }:
   const left = richPresentationLeft({ width: presentation.width, align: presentation.align, x: presentation.x });
   return <div className="design-editor">
     <InspectorSection icon={<ImagePlus size={14} />} title="Artwork" summary="Crop, fit, wrap, effects" defaultOpen>
-      <div className="design-inline-actions"><button onClick={onReplaceImage}><ImagePlus size={13} /> Replace image</button><span className="design-mini-label">{presentation.width}% × {presentation.height ?? "auto"}</span></div>
+      <div className="design-inline-actions"><button onClick={onReplaceImage}><ImagePlus size={13} /> Replace file</button>{onReplaceArtwork && <button onClick={onReplaceArtwork}><Palette size={13} /> Replace artwork</button>}<span className="design-mini-label">{presentation.width}% × {presentation.height ?? "auto"}</span></div>
       <div className="design-grid">
         <Field label="Shape"><select value={presentation.aspect} onChange={(event) => update({ aspect: event.target.value as ImagePresentation["aspect"], ...(event.target.value === "auto" ? {} : { fit: "cover" as const }) })}><option value="auto">Original</option><option value="square">Square</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option><option value="wide">Wide</option></select></Field>
         <Field label="Crop fit"><select value={presentation.fit} onChange={(event) => update({ fit: event.target.value as ImagePresentation["fit"] })}><option value="contain">Fit inside</option><option value="cover">Fill frame</option></select></Field>
@@ -391,12 +394,13 @@ function ImageInspector({ context, freeLayout, onReplaceRange, onReplaceImage }:
         <Field label="Border width"><NumberField value={presentation.borderWidth ?? 0} min={0} max={20} step={0.5} onChange={(borderWidth) => update({ borderWidth: borderWidth || undefined })} suffix="px" /></Field>
         <Field label="Border color" wide><ColorField value={presentation.borderColor ?? "#a56b3e"} onChange={(borderColor) => update({ borderColor })} /></Field>
       </div>
-      <div className="design-inline-row"><Toggle checked={Boolean(presentation.caption)} onChange={(checked) => update({ caption: checked ? presentation.caption || "Add a caption" : "" })} label="Visible caption" /></div>
+      <div className="design-inline-row"><Toggle checked={Boolean(presentation.caption)} onChange={(checked) => update({ caption: checked ? presentation.caption || "Add a caption" : "" })} label="Visible caption" /><Toggle checked={Boolean(presentation.backgroundColor)} onChange={(checked) => update({ backgroundColor: checked ? presentation.backgroundColor ?? "#ffffff" : undefined })} label="Custom background" /></div>
       {presentation.caption && <Field label="Caption" wide><input value={presentation.caption} onChange={(event) => update({ caption: event.target.value })} /></Field>}
+      {presentation.backgroundColor && <Field label="Artwork background" wide><ColorField value={presentation.backgroundColor} onChange={(backgroundColor) => update({ backgroundColor })} /></Field>}
       <Field label="Alt text" wide><input value={image.alt} onChange={(event) => updateAlt(event.target.value)} /></Field>
       <div className="design-grid"><Field label="Placement"><PlacementButtons value={presentation.align} onChange={(align) => update({ align, x: undefined })} /></Field><Field label="Frame"><select value={presentation.frame} onChange={(event) => update({ frame: event.target.value as ImagePresentation["frame"] })}><option value="none">No frame</option><option value="hairline">Hairline</option><option value="mat">Gallery mat</option></select></Field></div>
       {!freeLayout && <div className="design-subgroup">
-        <div className="design-subgroup-head"><strong>Page flow</strong><Toggle checked={Boolean(presentation.bleed)} onChange={(bleed) => update({ bleed })} label="Full bleed" /></div>
+        <div className="design-subgroup-head"><strong>Page flow</strong>{freeMargins ? <Toggle checked={Boolean(presentation.bleed)} onChange={(bleed) => update({ bleed })} label="Full bleed" /> : <span className="design-help">Enable Free margins to bleed</span>}</div>
         <div className="design-grid">
           <Field label="Text wrap"><select value={presentation.wrap ?? "none"} onChange={(event) => update({ wrap: event.target.value === "none" ? undefined : event.target.value as "left" | "right" })}><option value="none">No wrap</option><option value="left">Wrap left</option><option value="right">Wrap right</option></select></Field>
           {presentation.wrap && <Field label="Wrap gap"><NumberField value={presentation.wrapGap ?? 1.4} min={0} max={6} step={0.1} onChange={(wrapGap) => update({ wrapGap })} suffix="em" /></Field>}
@@ -404,12 +408,13 @@ function ImageInspector({ context, freeLayout, onReplaceRange, onReplaceImage }:
         <p className="design-help">Runaround flows following text around the artwork. Full bleed extends it across the page margins.</p>
       </div>}
       {!freeLayout && <p className="design-help">Free layout adds vertical artwork placement on the artboard.</p>}
+      {freeLayout && freeMargins && <div className="design-inline-row"><Toggle checked={Boolean(presentation.bleed)} onChange={(bleed) => update({ bleed })} label="Full bleed" /></div>}
       <p className="design-help">Height and Y position use the page content width as their unit, so artwork scales with the book.</p>
     </InspectorSection>
   </div>;
 }
 
-function TableInspector({ context, onReplaceRange }: { context: EditorContext; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
+function TableInspector({ context, freeMargins, onReplaceRange }: { context: EditorContext; freeMargins: boolean; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
   const lines = context.tableLines ?? [];
   const options = context.tableOptions ?? { caption: "", align: "left" as TableAlign, striped: false, compact: false, width: 100 };
   const rewrite = (nextLines = lines, nextOptions = options) => onReplaceRange(context.start, context.end, tableBlockText(nextLines, nextOptions));
@@ -421,13 +426,13 @@ function TableInspector({ context, onReplaceRange }: { context: EditorContext; o
       <Field label="Placement"><select value={options.align} onChange={(event) => rewrite(lines, { ...options, align: event.target.value as TableAlign, x: undefined })}><option value="left">Left</option><option value="center">Centered</option><option value="right">Right</option></select></Field>
       <Field label="Width"><NumberField value={options.width} min={20} max={100} step={1} onChange={(width) => rewrite(lines, { ...options, width, x: options.x !== undefined ? Math.min(options.x, 100 - width) : undefined })} suffix="%" /></Field>
     </div>
-    <div className="design-inline-row"><Toggle checked={options.striped} onChange={(striped) => rewrite(lines, { ...options, striped })} label="Striped rows" /><Toggle checked={options.compact} onChange={(compact) => rewrite(lines, { ...options, compact })} label="Compact" /></div>
+    <div className="design-inline-row"><Toggle checked={options.striped} onChange={(striped) => rewrite(lines, { ...options, striped })} label="Striped rows" /><Toggle checked={options.compact} onChange={(compact) => rewrite(lines, { ...options, compact })} label="Compact" />{freeMargins && <Toggle checked={Boolean(options.bleed)} onChange={(bleed) => rewrite(lines, { ...options, bleed })} label="Full bleed" />}</div>
     {editableRows.length > 0 && <div className="design-table-editor-wrap"><div className="design-subgroup-head"><strong>Data grid</strong><small>{editableRows.length - 1} data {editableRows.length - 1 === 1 ? "row" : "rows"}</small></div><div className="design-table-editor" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(70px, 1fr))` }}>{editableRows.flatMap(({ line, rowIndex }) => splitTableCells(line).slice(0, columnCount).map((cell, columnIndex) => <input key={`${rowIndex}-${columnIndex}`} className={rowIndex === 0 ? "header" : ""} value={cell} onChange={(event) => rewrite(updateTableCell(lines, rowIndex, columnIndex, event.target.value))} aria-label={`${rowIndex === 0 ? "Header" : `Row ${rowIndex}`} column ${columnIndex + 1}`} />))}</div></div>}
     <div className="design-button-grid"><button onClick={() => rewrite(addTableRow(lines))}><Rows3 size={13} /> Add row</button><button onClick={() => rewrite(addTableColumn(lines))}><Columns3 size={13} /> Add column</button><button onClick={() => rewrite(removeTableRow(lines))} disabled={lines.length <= 2}><Rows3 size={13} /> Remove row</button><button onClick={() => rewrite(removeTableColumn(lines))} disabled={splitTableCells(lines[0] ?? "").length <= 1}><Columns3 size={13} /> Remove column</button></div>
   </InspectorSection>;
 }
 
-function ChartInspector({ context, onReplaceRange }: { context: EditorContext; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
+function ChartInspector({ context, freeMargins, onReplaceRange }: { context: EditorContext; freeMargins: boolean; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
   const data = context.chart ?? defaultChartData();
   const update = (patch: Partial<ChartData>) => onReplaceRange(context.start, context.end, chartBlockText({ ...data, ...patch }));
   const updateSeries = (series: ChartData["series"]) => update({ series });
@@ -444,14 +449,14 @@ function ChartInspector({ context, onReplaceRange }: { context: EditorContext; o
       <Field label="Placement"><select value={data.align} onChange={(event) => update({ align: event.target.value as RichAlign, x: undefined })}><option value="left">Left</option><option value="center">Centered</option><option value="right">Right</option></select></Field>
       <Field label="Width"><NumberField value={data.width} min={20} max={100} step={1} onChange={(width) => update({ width, x: data.x !== undefined ? Math.min(data.x, 100 - width) : undefined })} suffix="%" /></Field>
     </div>
-    <div className="design-inline-row"><Toggle checked={data.showLegend} onChange={(showLegend) => update({ showLegend })} label="Legend" /><Toggle checked={data.showGrid} onChange={(showGrid) => update({ showGrid })} label="Grid" /></div>
+    <div className="design-inline-row"><Toggle checked={data.showLegend} onChange={(showLegend) => update({ showLegend })} label="Legend" /><Toggle checked={data.showGrid} onChange={(showGrid) => update({ showGrid })} label="Grid" />{freeMargins && <Toggle checked={Boolean(data.bleed)} onChange={(bleed) => update({ bleed })} label="Full bleed" />}</div>
     <div className="design-subgroup-head"><strong>Data points</strong><div><button onClick={addPoint}><Plus size={12} /> Point</button><button onClick={removePoint} disabled={data.labels.length <= 1}><Minus size={12} /> Point</button></div></div>
     <div className="design-chart-grid" style={{ gridTemplateColumns: `minmax(70px, 1.1fr) repeat(${data.series.length}, minmax(46px, 1fr))` }}><strong>Label</strong>{data.series.map((series, index) => <input key={`name-${index}`} value={series.name} onChange={(event) => updateSeries(data.series.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} aria-label={`Series ${index + 1} name`} />)}{data.labels.map((label, labelIndex) => <Fragment key={`point-${labelIndex}`}><input value={label} onChange={(event) => update({ labels: data.labels.map((item, index) => index === labelIndex ? event.target.value : item) })} aria-label={`Point ${labelIndex + 1} label`} />{data.series.map((series, seriesIndex) => <input key={`${labelIndex}-${seriesIndex}`} type="number" value={series.values[labelIndex] ?? 0} onChange={(event) => updateSeries(data.series.map((item, index) => index === seriesIndex ? { ...item, values: item.values.map((value, pointIndex) => pointIndex === labelIndex ? Number(event.target.value) || 0 : value) } : item))} aria-label={`${series.name} value for ${label}`} />)}</Fragment>)}</div>
     <div className="design-button-grid"><button onClick={addSeries}><Plus size={13} /> Add series</button><button onClick={removeSeries} disabled={data.series.length <= 1}><Trash2 size={13} /> Remove series</button></div>
   </InspectorSection>;
 }
 
-function CalloutInspector({ context, onReplaceRange }: { context: EditorContext; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
+function CalloutInspector({ context, freeMargins, onReplaceRange }: { context: EditorContext; freeMargins: boolean; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
   const body = context.blockBody ?? "";
   const parsed = richJsonLine(body);
   const options = objectValue(parsed.value) ? parsed.value : {};
@@ -467,6 +472,7 @@ function CalloutInspector({ context, onReplaceRange }: { context: EditorContext;
       <Field label="Placement"><select value={presentation.align} onChange={(event) => update(title, tone, content, { ...presentation, align: event.target.value as RichAlign, x: undefined })}><option value="left">Left</option><option value="center">Centered</option><option value="right">Right</option></select></Field>
       <Field label="Width"><NumberField value={presentation.width} min={20} max={100} step={1} onChange={(width) => update(title, tone, content, { ...presentation, width, x: presentation.x !== undefined ? Math.min(presentation.x, 100 - width) : undefined })} suffix="%" /></Field>
     </div>
+    {freeMargins && <div className="design-inline-row"><Toggle checked={Boolean(presentation.bleed)} onChange={(bleed) => update(title, tone, content, { ...presentation, bleed })} label="Full bleed" /></div>}
     <Field label="Callout copy" wide><textarea rows={5} value={content} onChange={(event) => update(title, tone, event.target.value)} /></Field>
   </InspectorSection>;
 }
@@ -477,6 +483,8 @@ function PageColorField({ value, onChange }: { value: string; onChange: (value: 
 
 function DocumentPanel({ layout, onLayoutChange }: { layout: BookLayout; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void }) {
   const styles = layout.paragraphStyles;
+  const unit = useTheme((state) => state.measurementUnit);
+  const marginRange = measurementRange(0.2, 3, unit);
   return <div className="design-editor">
     <div className="design-empty-hero"><Sparkles size={18} /><strong>Select something on the page</strong><span>Choose a text box, image, table, chart, or callout to open its design controls. With nothing selected, tune the page itself.</span></div>
     <InspectorSection icon={<PaintBucket size={14} />} title="Page appearance" summary="Paper color and document accent" defaultOpen>
@@ -489,14 +497,16 @@ function DocumentPanel({ layout, onLayoutChange }: { layout: BookLayout; onLayou
         {([["Editorial", "#a56b3e"], ["Ink", "#29231e"], ["Botanical", "#6f7f6d"], ["Berry", "#874e47"], ["Ocean", "#486777"]] as const).map(([label, color]) => <button key={label} style={{ background: color }} onClick={() => onLayoutChange((current) => ({ ...current, accentColor: color }))} title={`${label} document accent`} aria-label={`${label} document accent`} />)}
       </div>
       <div className="design-field wide"><span>Paper pattern</span><PagePatternPicker layout={layout} onChange={onLayoutChange} /></div>
+      <div className="design-inline-row"><Toggle checked={layout.freeMargins} onChange={(freeMargins) => onLayoutChange((current) => ({ ...current, freeMargins }))} label="Free margins" /></div>
+      <p className="design-help">Free margins unlocks full-bleed placement for text and artwork. Turn it on, then enable Full bleed on an object to reach the paper edge.</p>
       <p className="design-help">Page background and document accent are separate from the cover color. The editor chrome follows the app appearance instead.</p>
     </InspectorSection>
-    <InspectorSection icon={<Frame size={14} />} title="Page margins" summary={`${layout.pageMargins.top} / ${layout.pageMargins.right} / ${layout.pageMargins.bottom} / ${layout.pageMargins.left} in`}>
+    <InspectorSection icon={<Frame size={14} />} title="Page margins" summary={`${measurementText(layout.pageMargins.top, unit)} / ${measurementText(layout.pageMargins.right, unit)} / ${measurementText(layout.pageMargins.bottom, unit)} / ${measurementText(layout.pageMargins.left, unit)}`}>
       <div className="design-grid">
-        {(["top", "right", "bottom", "left"] as const).map((side) => <Field key={side} label={side[0].toUpperCase() + side.slice(1)}><NumberField value={layout.pageMargins[side]} min={0.2} max={3} step={0.05} onChange={(value) => onLayoutChange((current) => ({ ...current, pageMargins: { ...current.pageMargins, [side]: value } }))} suffix="in" /></Field>)}
+        {(["top", "right", "bottom", "left"] as const).map((side) => <Field key={side} label={side[0].toUpperCase() + side.slice(1)}><NumberField value={measurementValue(layout.pageMargins[side], unit)} min={marginRange.min} max={marginRange.max} step={marginRange.step} onChange={(value) => onLayoutChange((current) => ({ ...current, pageMargins: { ...current.pageMargins, [side]: measurementToInches(value, unit) } }))} suffix={measurementUnitShort(unit)} /></Field>)}
       </div>
       <div className="design-margin-presets" role="group" aria-label="Page margin presets">
-        {([["Tight", 0.5], ["Standard", 1], ["Wide", 1.5]] as const).map(([label, value]) => <button key={label} onClick={() => onLayoutChange((current) => ({ ...current, pageMargins: { top: value, right: value, bottom: value, left: value } }))}>{label}<small>{value} in</small></button>)}
+        {([["Tight", 0.5], ["Standard", 1], ["Wide", 1.5]] as const).map(([label, value]) => <button key={label} onClick={() => onLayoutChange((current) => ({ ...current, pageMargins: { top: value, right: value, bottom: value, left: value } }))}>{label}<small>{measurementText(value, unit)}</small></button>)}
       </div>
     </InspectorSection>
     <InspectorSection icon={<Palette size={14} />} title="Document styles" summary={`${styles.length} paragraph presets`} defaultOpen>
@@ -525,7 +535,7 @@ export interface LayerEntry {
   canReorder: boolean;
 }
 
-export function BooksInspector({ context, layout, freeLayout, selectionCount, onAlignSelection, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
+export function BooksInspector({ context, layout, freeLayout, selectionCount, onAlignSelection, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onReplaceArtwork, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onReplaceArtwork?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
   const role = context.role;
   const roleStyle = role ? layout.typography[role] : null;
   const activePreset = context.presentation?.styleId ? layout.paragraphStyles.find((preset) => preset.id === context.presentation?.styleId) ?? null : null;
@@ -601,11 +611,11 @@ export function BooksInspector({ context, layout, freeLayout, selectionCount, on
       {context.kind === "none" ? <DocumentPanel layout={layout} onLayoutChange={onLayoutChange} /> : <>
         {isText && <StyleLibrary layout={layout} context={context} onLayoutChange={onLayoutChange} onReplaceRange={onReplaceRange} />}
         {(isText || context.kind === "title") && editingStyle && <TextStyleEditor style={editingStyle} preset={context.kind === "title" ? null : activePreset} role={role} showInlineFormatting={isText} onPatch={patchStyle} onInlineFormat={onInlineFormat} onConvertRole={onConvertRole} onDelete={deleteStyle} onDuplicate={duplicateStyle} />}
-        {isText && <FrameControls context={context} freeLayout={freeLayout} onReplaceRange={onReplaceRange} />}
-        {context.kind === "image" && <ImageInspector context={context} freeLayout={freeLayout} onReplaceRange={onReplaceRange} onReplaceImage={onReplaceImage} />}
-        {context.kind === "table" && <TableInspector context={context} onReplaceRange={onReplaceRange} />}
-        {context.kind === "chart" && <ChartInspector context={context} onReplaceRange={onReplaceRange} />}
-        {context.kind === "callout" && <CalloutInspector context={context} onReplaceRange={onReplaceRange} />}
+        {isText && <FrameControls context={context} freeLayout={freeLayout} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} />}
+        {context.kind === "image" && <ImageInspector context={context} freeLayout={freeLayout} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} onReplaceImage={onReplaceImage} onReplaceArtwork={onReplaceArtwork} />}
+        {context.kind === "table" && <TableInspector context={context} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} />}
+        {context.kind === "chart" && <ChartInspector context={context} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} />}
+        {context.kind === "callout" && <CalloutInspector context={context} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} />}
         <InspectorSection icon={<BookOpen size={14} />} title="Chapter pulse" summary={`${chapterWords.toLocaleString()} words`} defaultOpen={false}>
           <div className="design-pulse"><strong>{chapterWords.toLocaleString()}</strong><span>words in this section</span><div className="design-goal-track"><span style={{ width: `${goalProgress}%` }} /></div><div className="design-goal-meta"><span>{totalWords.toLocaleString()} total</span><span>{goalProgress}% of goal</span></div></div>
         </InspectorSection>

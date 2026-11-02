@@ -6,14 +6,17 @@ import {
   ArrowUp,
   BarChart3,
   BookOpen,
+  BringToFront,
   ChevronRight,
   BookmarkPlus,
   Clock3,
+  Copy,
   Grid3X3,
   GripVertical,
   History,
   ImagePlus,
   LayoutList,
+  Lock,
   Minus,
   MousePointer2,
   Move,
@@ -32,13 +35,16 @@ import {
   Ruler,
   Save,
   Search,
+  SendToBack,
   Settings2,
+  SlidersHorizontal,
   Timer,
   Table2,
   TextCursorInput,
   Trash2,
   Type,
   Undo2,
+  Unlock,
   Upload,
   WandSparkles,
   X,
@@ -53,6 +59,8 @@ import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVar
 import { api } from "../lib/api";
 import { htmlToMarkdown } from "../lib/richtext";
 import { useBooks } from "../store/books";
+import { useTheme } from "../store/theme";
+import { measurementUnitShort, rulerLabel, rulerMajorInches } from "../lib/measurements";
 import { notify } from "../store/toast";
 import { BooksInspector, type LayerEntry } from "./BooksStudioInspector";
 import {
@@ -94,6 +102,13 @@ import { handleTabListKeyDown, manuscriptStyle, useConfirmationDialog } from "./
 
 const SPRINT_PRESETS = [15, 25, 45] as const;
 const CANVAS_PREFS_KEY = "note-me.books.canvas.v2";
+const MIN_CANVAS_ZOOM = 25;
+const MAX_CANVAS_ZOOM = 200;
+const CANVAS_ZOOM_STEP = 10;
+
+function clampCanvasZoom(value: number) {
+  return Math.max(MIN_CANVAS_ZOOM, Math.min(MAX_CANVAS_ZOOM, Math.round(value)));
+}
 
 function readCanvasPrefs() {
   const fallback = { zoom: 100, rulers: true, guides: true };
@@ -101,7 +116,7 @@ function readCanvasPrefs() {
     const raw = window.localStorage.getItem(CANVAS_PREFS_KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as { zoom?: unknown; rulers?: unknown; guides?: unknown };
-    const zoom = typeof parsed.zoom === "number" && parsed.zoom >= 60 && parsed.zoom <= 160 ? Math.round(parsed.zoom) : fallback.zoom;
+    const zoom = typeof parsed.zoom === "number" && parsed.zoom >= MIN_CANVAS_ZOOM && parsed.zoom <= MAX_CANVAS_ZOOM ? Math.round(parsed.zoom) : fallback.zoom;
     return { zoom, rulers: parsed.rulers !== false, guides: parsed.guides !== false };
   } catch {
     return fallback;
@@ -146,7 +161,7 @@ function snapshotPreview(content: string) {
 }
 
 
-function BooksAssetDrawer({ onClose, onInsert }: { onClose: () => void; onInsert: (markdown: string) => void }) {
+function BooksAssetDrawer({ onClose, onInsert, replacing = false }: { onClose: () => void; onInsert: (markdown: string) => void; replacing?: boolean }) {
   const [category, setCategory] = useState(BOOK_GRAPHIC_CATEGORIES[0]);
   const [variant, setVariant] = useState<BookGraphicVariant | "all">("all");
   const [color, setColor] = useState("#a56b3e");
@@ -189,11 +204,11 @@ function BooksAssetDrawer({ onClose, onInsert }: { onClose: () => void; onInsert
   return (
     <section className="books-assets-drawer" aria-label="Book assets">
       <div className="books-assets-heading">
-        <div><span className="books-eyebrow"><ImagePlus size={13} /> Artwork</span><strong>Place an image or ornament</strong></div>
+        <div><span className="books-eyebrow"><ImagePlus size={13} /> Artwork</span><strong>{replacing ? "Replace the selected artwork" : "Place an image or ornament"}</strong></div>
         <button className="books-assets-close" onClick={onClose} aria-label="Close artwork drawer"><X size={14} /></button>
       </div>
       <div className="books-assets-tools">
-        <button className="books-asset-upload" onClick={() => void importImage()} disabled={uploading}><Upload size={13} /> {uploading ? "Reading image…" : "Add image from computer"}</button>
+        <button className="books-asset-upload" onClick={() => void importImage()} disabled={uploading}><Upload size={13} /> {uploading ? "Reading image…" : replacing ? "Replace with image from computer" : "Add image from computer"}</button>
         <div className="books-asset-color-group"><label className="books-asset-color"><span>Graphic color</span><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /><code>{color}</code></label><div className="books-asset-swatches" aria-label="Graphic color presets">{["#a56b3e", "#29231e", "#6f7f6d", "#874e47", "#756e62"].map((preset) => <button key={preset} className={color === preset ? "active" : ""} style={{ background: preset }} onClick={() => setColor(preset)} aria-label={`Use ${preset}`} />)}</div></div>
       </div>
       <label className="books-asset-search"><Search size={12} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this collection" aria-label="Search artwork collection" />{query && <button onClick={() => setQuery("")} aria-label="Clear artwork search"><X size={12} /></button>}</label>
@@ -221,6 +236,7 @@ function roundCanvasPercent(value: number) {
 
 
 type CanvasSnapRect = { left: number; top: number; width: number; height: number };
+type CanvasMenuState = { x: number; y: number; block: CanvasBlock | null };
 
 function snapAxis(value: number, size: number, targets: number[], threshold: number) {
   let best: { value: number; guide: number; distance: number } | null = null;
@@ -358,15 +374,21 @@ function moveCanvasBlockInContent(workingContent: string, currentStart: number, 
 }
 
 function CanvasRulers({ trimWidth, trimHeight }: { trimWidth: number; trimHeight: number }) {
+  const unit = useTheme((state) => state.measurementUnit);
   const width = Math.max(1, trimWidth);
   const height = Math.max(1, trimHeight);
+  const major = rulerMajorInches(unit);
+  const minor = major / 4;
+  const horizontalTicks = Math.floor(width / major) + 1;
+  const verticalTicks = Math.floor(height / major) + 1;
   return (
     <>
-      <div className="books-canvas-ruler horizontal" aria-hidden="true" style={{ "--ruler-minor": `${100 / (width * 4)}%`, "--ruler-major": `${100 / width}%` } as CSSProperties}>
-        {Array.from({ length: Math.floor(width) + 1 }, (_, index) => <span key={index} style={{ left: `${(index / width) * 100}%` }}>{index}</span>)}
+      <div className="books-canvas-ruler horizontal" aria-hidden="true" style={{ "--ruler-minor": `${(minor / width) * 100}%`, "--ruler-major": `${(major / width) * 100}%` } as CSSProperties}>
+        {Array.from({ length: horizontalTicks }, (_, index) => <span key={index} style={{ left: `${((index * major) / width) * 100}%` }}>{rulerLabel(index * major, unit)}</span>)}
+        <span className="books-canvas-ruler-unit">{measurementUnitShort(unit)}</span>
       </div>
-      <div className="books-canvas-ruler vertical" aria-hidden="true" style={{ "--ruler-minor": `${100 / (height * 4)}%`, "--ruler-major": `${100 / height}%` } as CSSProperties}>
-        {Array.from({ length: Math.floor(height) + 1 }, (_, index) => <span key={index} style={{ top: `${(index / height) * 100}%` }}>{index}</span>)}
+      <div className="books-canvas-ruler vertical" aria-hidden="true" style={{ "--ruler-minor": `${(minor / height) * 100}%`, "--ruler-major": `${(major / height) * 100}%` } as CSSProperties}>
+        {Array.from({ length: verticalTicks }, (_, index) => <span key={index} style={{ top: `${((index * major) / height) * 100}%` }}>{rulerLabel(index * major, unit)}</span>)}
       </div>
     </>
   );
@@ -378,7 +400,7 @@ function CanvasRulers({ trimWidth, trimHeight }: { trimWidth: number; trimHeight
 
 
 
-function CanvasTextBlock({ block, index, width, left, freeY, layer, height, fullResize, selected, moving, resizing, typography, focusRequest, onFocusHandled, onTextChange, onTextSelection, onEditorKeyDown, onResizeStart, onMoveStart, onParagraphBreak }: { block: CanvasBlock; index: number; width: number; left?: number; freeY?: number; layer?: number; height?: number; fullResize?: boolean; selected: boolean; moving?: boolean; resizing?: boolean; typography: BookTypography; focusRequest?: { start: number; cursor: number } | null; onFocusHandled?: () => void; onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void; onTextSelection: (block: CanvasBlock, element: HTMLElement) => void; onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: ResizeDirection) => void; onMoveStart: (event: React.PointerEvent<HTMLElement>, block: CanvasBlock) => void; onParagraphBreak: (block: CanvasBlock, before: string, after: string) => void }) {
+function CanvasTextBlock({ block, index, width, left, freeY, layer, height, fullResize, selected, moving, resizing, typography, focusRequest, onFocusHandled, onTextChange, onTextSelection, onEditorKeyDown, onResizeStart, onMoveStart, onParagraphBreak, onContextMenu }: { block: CanvasBlock; index: number; width: number; left?: number; freeY?: number; layer?: number; height?: number; fullResize?: boolean; selected: boolean; moving?: boolean; resizing?: boolean; typography: BookTypography; focusRequest?: { start: number; cursor: number } | null; onFocusHandled?: () => void; onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void; onTextSelection: (block: CanvasBlock, element: HTMLElement) => void; onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: ResizeDirection) => void; onMoveStart: (event: React.PointerEvent<HTMLElement>, block: CanvasBlock) => void; onParagraphBreak: (block: CanvasBlock, before: string, after: string) => void; onContextMenu: (event: React.MouseEvent, block: CanvasBlock) => void }) {
   const [editing, setEditing] = useState(false);
   const editor = useRef<HTMLDivElement>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
@@ -444,7 +466,7 @@ function CanvasTextBlock({ block, index, width, left, freeY, layer, height, full
     });
   }, [editing]);
   const beginEditing = () => setEditing(true);
-  return <div className={`books-canvas-text-block align-${block.presentation.align} ${selected ? "selected" : ""} ${moving ? "is-moving" : ""} ${height !== undefined ? "fixed-height" : ""} ${textStyleClasses(style)}`} style={{ ...canvasBlockStyle(width, left, freeY, moving, layer, height), ...textStyleVars(style) }} data-canvas-block data-block-start={block.start} onPointerDown={(event) => {
+  return <div className={`books-canvas-text-block align-${block.presentation.align} ${selected ? "selected" : ""} ${moving ? "is-moving" : ""} ${block.presentation.bleed ? "bleed" : ""} ${height !== undefined ? "fixed-height" : ""} ${textStyleClasses(style)}`} style={{ ...canvasBlockStyle(width, left, freeY, moving, layer, height), ...textStyleVars(style) }} data-canvas-block data-block-start={block.start} onContextMenu={(event) => onContextMenu(event, block)} onPointerDown={(event) => {
     if ((event.target as HTMLElement).closest(".books-canvas-text-preview")) onMoveStart(event, block);
   }}>
     <CanvasMoveHandle label={label} onMoveStart={(event) => onMoveStart(event, block)} />
@@ -480,13 +502,16 @@ function CanvasTextBlock({ block, index, width, left, freeY, layer, height, full
   </div>;
 }
 
-function ManuscriptCanvas({ content, selection, selectedStarts, typography, paragraphStyles, freeLayout, onSelectVisual, onTextChange, onTextSelection, onEditorKeyDown, onEditorDragOver, onEditorDrop, onEditorPaste, onResizeStart, onDeleteBlock, onInsertArtwork, onChangePresentation, onMoveRange, onMoveBlocks, onPlaceBlock, onParagraphBreak, focusRequest, onFocusHandled, resizing }: {
+function ManuscriptCanvas({ content, selection, selectedStarts, typography, paragraphStyles, freeLayout, freeMargins, bleedLeft, bleedWidth, onSelectVisual, onTextChange, onTextSelection, onEditorKeyDown, onEditorDragOver, onEditorDrop, onEditorPaste, onResizeStart, onDeleteBlock, onInsertArtwork, onChangePresentation, onMoveRange, onMoveBlocks, onPlaceBlock, onParagraphBreak, onContextMenu, focusRequest, onFocusHandled, resizing }: {
   content: string;
   selection: { start: number; end: number };
   selectedStarts: number[];
   typography: BookTypography;
   paragraphStyles: BookParagraphStyle[];
   freeLayout: boolean;
+  freeMargins: boolean;
+  bleedLeft: number;
+  bleedWidth: number;
   onSelectVisual: (block: CanvasBlock, additive?: boolean) => void;
   onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void;
   onTextSelection: (block: CanvasBlock, element: HTMLElement) => void;
@@ -502,6 +527,7 @@ function ManuscriptCanvas({ content, selection, selectedStarts, typography, para
   onMoveBlocks: (updates: Array<{ block: CanvasBlock; patch: Partial<RichPresentation> }>) => void;
   onPlaceBlock: (block: CanvasBlock, patch: Partial<RichPresentation>, dropIndex: number | null) => void;
   onParagraphBreak: (block: CanvasBlock, before: string, after: string) => void;
+  onContextMenu: (event: React.MouseEvent, block: CanvasBlock) => void;
   focusRequest: { start: number; cursor: number } | null;
   onFocusHandled: () => void;
   resizing: { start: number; width: number; x?: number; height?: number; y?: number } | null;
@@ -559,6 +585,7 @@ function ManuscriptCanvas({ content, selection, selectedStarts, typography, para
         ...(radius ? { borderRadius: radius } : {}),
         ...(image.borderWidth ? { borderWidth: `${image.borderWidth}px`, borderStyle: image.borderStyle ?? "solid", borderColor: image.borderColor === "accent" ? "var(--book-accent)" : image.borderColor ?? "color-mix(in srgb, var(--book-ink) 22%, transparent)" } : {}),
         ...(image.shadow && image.shadow !== "none" ? { boxShadow: image.shadow === "soft" ? "0 6px 18px rgba(0,0,0,.12)" : image.shadow === "medium" ? "0 12px 30px rgba(0,0,0,.18)" : "0 18px 46px rgba(0,0,0,.26)" } : {}),
+        ...(image.backgroundColor ? { backgroundColor: image.backgroundColor } : {}),
         ...(image.opacity !== undefined ? { opacity: image.opacity } : {}),
         ...(image.rotation ? { transform: `rotate(${image.rotation}deg)` } : {}),
       };
@@ -802,8 +829,9 @@ function ManuscriptCanvas({ content, selection, selectedStarts, typography, para
       const selected = (groupSelected ? selectedStarts.includes(block.start) : isSelected(block)) && (block.kind !== "text" || block.source.trim().length > 0);
       const liveResize = resizing?.start === block.start ? resizing : null;
       const liveDrag = blockDrag?.start === block.start ? blockDrag : null;
-      const width = liveResize?.width ?? liveDrag?.width ?? block.presentation.width;
-      const left = liveResize ? (liveResize.x ?? richPresentationLeft({ ...block.presentation, width: liveResize.width })) : liveDrag?.x ?? (freeLayout ? richPresentationLeft({ ...block.presentation, width }) : block.presentation.x);
+      const blockBleed = freeMargins && (block.kind === "image" ? Boolean(block.image?.presentation.bleed) : Boolean(block.presentation.bleed));
+      const width = liveResize?.width ?? liveDrag?.width ?? (freeLayout && blockBleed ? bleedWidth : block.presentation.width);
+      const left = liveResize ? (liveResize.x ?? richPresentationLeft({ ...block.presentation, width: liveResize.width })) : liveDrag?.x ?? (freeLayout ? (blockBleed ? bleedLeft : richPresentationLeft({ ...block.presentation, width })) : block.presentation.x);
       const freeY = freeLayout ? liveResize?.y ?? liveDrag?.y ?? block.presentation.y ?? 0 : undefined;
       const liveHeight = liveResize?.height;
       const fullResize = freeLayout && (block.kind === "text" || block.kind === "image");
@@ -812,14 +840,14 @@ function ManuscriptCanvas({ content, selection, selectedStarts, typography, para
       const preset = block.presentation.styleId ? paragraphStyles.find((item) => item.id === block.presentation.styleId) ?? null : null;
       const blockTypography = block.kind === "text" && block.role ? resolvedBlockTypography(typography, block.role, preset) : typography;
       const imageWrap = !freeLayout && block.kind === "image" ? block.image?.presentation.wrap : undefined;
-      const imageBleed = !freeLayout && block.kind === "image" && Boolean(block.image?.presentation.bleed);
+      const imageBleed = freeMargins && !freeLayout && block.kind === "image" && Boolean(block.image?.presentation.bleed);
       const flowClasses = `${imageWrap ? `wrap-${imageWrap}` : ""} ${imageBleed ? "bleed" : ""}`;
       return <Fragment key={`${block.start}-${index}`}>
         {blockDrag && !freeLayout && blockDrag.dropIndex === index && dropLine(index)}
         {block.kind === "text" ? (
-          <CanvasTextBlock block={block} index={index} width={width} left={left} freeY={freeY} layer={layer} height={liveHeight ?? block.presentation.height} fullResize={fullResize} selected={selected} moving={moving} resizing={Boolean(liveResize)} typography={blockTypography} focusRequest={focusRequest?.start === block.start ? focusRequest : null} onFocusHandled={onFocusHandled} onTextChange={onTextChange} onTextSelection={onTextSelection} onEditorKeyDown={onEditorKeyDown} onResizeStart={onResizeStart} onMoveStart={beginBlockMove} onParagraphBreak={onParagraphBreak} />
+          <CanvasTextBlock block={block} index={index} width={width} left={left} freeY={freeY} layer={layer} height={liveHeight ?? block.presentation.height} fullResize={fullResize} selected={selected} moving={moving} resizing={Boolean(liveResize)} typography={blockTypography} focusRequest={focusRequest?.start === block.start ? focusRequest : null} onFocusHandled={onFocusHandled} onTextChange={onTextChange} onTextSelection={onTextSelection} onEditorKeyDown={onEditorKeyDown} onResizeStart={onResizeStart} onMoveStart={beginBlockMove} onParagraphBreak={onParagraphBreak} onContextMenu={onContextMenu} />
         ) : (
-          <div className={`books-canvas-visual ${selected ? "selected" : ""} ${moving ? "is-moving" : ""} align-${block.presentation.align} ${flowClasses}`} style={{ ...canvasBlockStyle(width, left, freeY, moving, layer), ...(imageWrap ? { marginRight: imageWrap === "left" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined, marginLeft: imageWrap === "right" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined } : {}) }} role="button" tabIndex={0} data-canvas-block data-block-start={block.start} onPointerDown={(event) => beginBlockMove(event, block)} onKeyDown={(event) => {
+          <div className={`books-canvas-visual ${selected ? "selected" : ""} ${moving ? "is-moving" : ""} align-${block.presentation.align} ${block.presentation.bleed ? "bleed" : ""} ${flowClasses}`} style={{ ...canvasBlockStyle(width, left, freeY, moving, layer), ...(imageWrap ? { marginRight: imageWrap === "left" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined, marginLeft: imageWrap === "right" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined } : {}) }} role="button" tabIndex={0} data-canvas-block data-block-start={block.start} onContextMenu={(event) => onContextMenu(event, block)} onPointerDown={(event) => beginBlockMove(event, block)} onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
               onSelectVisual(block, event.shiftKey || event.metaKey);
@@ -863,8 +891,14 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [findQuery, setFindQuery] = useState("");
   const [findIndex, setFindIndex] = useState(0);
   const [assetOpen, setAssetOpen] = useState(false);
+  const [artworkReplaceTarget, setArtworkReplaceTarget] = useState<{ start: number; end: number } | null>(null);
   const [canvasPrefs] = useState(readCanvasPrefs);
   const [canvasZoom, setCanvasZoom] = useState(canvasPrefs.zoom);
+  const canvasZoomRef = useRef(canvasZoom);
+  canvasZoomRef.current = canvasZoom;
+  const [frameSize, setFrameSize] = useState({ width: 780, height: 660 });
+  const [pagePadding, setPagePadding] = useState({ left: 0, right: 0 });
+  const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState | null>(null);
   const [showRulers, setShowRulers] = useState(canvasPrefs.rulers);
   const [showGuides, setShowGuides] = useState(canvasPrefs.guides);
   const confirmation = useConfirmationDialog();
@@ -893,6 +927,9 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const editorRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const pageEditorRef = useRef<HTMLDivElement>(null);
+  const pageFrameRef = useRef<HTMLDivElement>(null);
+  const pageSheetRef = useRef<HTMLDivElement>(null);
+  const canvasMenuRef = useRef<HTMLDivElement>(null);
   const activeEditorMapRef = useRef({ sourceStart: 0, prefixLength: 0 });
   const findInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -934,6 +971,9 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     [chapters, activeChapter?.id, content]
   );
   const [trimWidth = 6, trimHeight = 9] = (book.trim_size || "6x9").split("x").map((value) => Number(value) || 0);
+  const contentWidthInches = Math.max(0.2, trimWidth - inspectorLayout.pageMargins.left - inspectorLayout.pageMargins.right);
+  const bleedLeftPercent = -(inspectorLayout.pageMargins.left / contentWidthInches) * 100;
+  const bleedWidthPercent = 100 + ((inspectorLayout.pageMargins.left + inspectorLayout.pageMargins.right) / contentWidthInches) * 100;
   const sprintWords = Math.max(0, currentManuscriptWords - sprintStartWords);
   const sprintRunning = sprintEndsAt !== null;
   const sprintPaused = !sprintRunning && !sprintFinished && sprintRemaining !== null && sprintRemaining > 0;
@@ -1017,6 +1057,96 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       // Canvas preferences are a convenience; ignore storage failures.
     }
   }, [canvasZoom, showGuides, showRulers]);
+
+  useEffect(() => {
+    const frame = pageFrameRef.current;
+    if (!frame) return;
+    const update = () => setFrameSize({ width: frame.offsetWidth, height: frame.offsetHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [activeChapter?.id]);
+
+  useEffect(() => {
+    const sheet = pageSheetRef.current;
+    if (!sheet) return;
+    const update = () => {
+      const styles = window.getComputedStyle(sheet);
+      const left = Number.parseFloat(styles.paddingLeft) || 0;
+      const right = Number.parseFloat(styles.paddingRight) || 0;
+      setPagePadding((current) => current.left === left && current.right === right ? current : { left, right });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(sheet);
+    return () => observer.disconnect();
+  }, [activeChapter?.id, inspectorLayout.pageMargins.left, inspectorLayout.pageMargins.right, trimWidth, showRulers]);
+
+  useEffect(() => {
+    const host = pageEditorRef.current;
+    if (!host) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const delta = event.deltaY > 0 ? -CANVAS_ZOOM_STEP : CANVAS_ZOOM_STEP;
+      setCanvasZoom((value) => clampCanvasZoom(value + delta));
+    };
+    let gestureStart = canvasZoomRef.current;
+    const handleGestureStart = (event: Event) => {
+      event.preventDefault();
+      gestureStart = canvasZoomRef.current;
+    };
+    const handleGestureChange = (event: Event) => {
+      event.preventDefault();
+      const scale = (event as Event & { scale?: number }).scale;
+      if (typeof scale === "number" && Number.isFinite(scale)) setCanvasZoom(clampCanvasZoom(gestureStart * scale));
+    };
+    host.addEventListener("wheel", handleWheel, { passive: false });
+    host.addEventListener("gesturestart", handleGestureStart as EventListener, { passive: false });
+    host.addEventListener("gesturechange", handleGestureChange as EventListener, { passive: false });
+    return () => {
+      host.removeEventListener("wheel", handleWheel);
+      host.removeEventListener("gesturestart", handleGestureStart as EventListener);
+      host.removeEventListener("gesturechange", handleGestureChange as EventListener);
+    };
+  }, [activeChapter?.id]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      if (!(event.target instanceof HTMLElement) || !event.target.closest(".books-editor-screen")) return;
+      if (event.key === "=" || event.key === "+") {
+        event.preventDefault();
+        setCanvasZoom((value) => clampCanvasZoom(value + CANVAS_ZOOM_STEP));
+      } else if (event.key === "-") {
+        event.preventDefault();
+        setCanvasZoom((value) => clampCanvasZoom(value - CANVAS_ZOOM_STEP));
+      } else if (event.key === "0") {
+        event.preventDefault();
+        setCanvasZoom(100);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!canvasMenu) return;
+    requestAnimationFrame(() => canvasMenuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']")?.focus());
+    const close = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".books-canvas-context")) setCanvasMenu(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCanvasMenu(null);
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [canvasMenu]);
 
   useEffect(() => {
     if (sprintEndsAt === null) return;
@@ -1382,7 +1512,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     const horizontalPadding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
     const rulerOffset = showRulers ? 20 : 0;
     const available = host.clientWidth - horizontalPadding - rulerOffset - 2;
-    setCanvasZoom(Math.max(60, Math.min(100, Math.round((available / 780) * 100))));
+    setCanvasZoom(clampCanvasZoom(Math.min(100, (available / 780) * 100)));
   };
 
 
@@ -1488,6 +1618,12 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     }
   };
 
+  const openArtworkReplacement = (block: CanvasBlock) => {
+    if (block.kind !== "image") return;
+    setArtworkReplaceTarget({ start: block.start, end: block.end });
+    setAssetOpen(true);
+  };
+
   const restyleCanvasTextBlock = (block: CanvasBlock, role: BookTextRole) => {
     if (block.kind !== "text") return;
     replaceContentRange(block.start, block.end, restyleCanvasTextSource(block.source, role, block.presentation));
@@ -1576,6 +1712,25 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     }
     setSelectedStarts([block.start]);
     setEditorSelection({ start: block.start, end: block.end, titleFocused: false });
+  };
+
+  const focusCanvasText = (block: CanvasBlock) => {
+    selectCanvasBlock(block);
+    requestAnimationFrame(() => {
+      canvasRef.current?.querySelector<HTMLElement>(`[data-block-start="${block.start}"] .books-canvas-text-preview`)?.click();
+    });
+  };
+
+  const openCanvasMenu = (event: React.MouseEvent, block: CanvasBlock | null = null) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (block) {
+      selectCanvasBlock(block);
+    } else {
+      setSelectedStarts([]);
+      setEditorSelection({ start: -1, end: -1, titleFocused: false });
+    }
+    setCanvasMenu({ x: event.clientX, y: event.clientY, block });
   };
 
   const moveCanvasBlocks = (updates: Array<{ block: CanvasBlock; patch: Partial<RichPresentation> }>) => {
@@ -1819,6 +1974,12 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   };
 
   const insertAsset = (markdown: string) => {
+    if (artworkReplaceTarget) {
+      replaceContentRange(artworkReplaceTarget.start, artworkReplaceTarget.end, markdown.trim());
+      setArtworkReplaceTarget(null);
+      setAssetOpen(false);
+      return;
+    }
     const freeY = freeInsertionY(editorSelection.start);
     const nextMarkdown = withFreeY(markdown, freeY);
     const selectedVisual = canvasBlocks(content).find((block) => block.kind !== "text" && block.start === editorSelection.start && block.end === editorSelection.end);
@@ -2205,6 +2366,9 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
         typography={inspectorLayout.typography}
         paragraphStyles={inspectorLayout.paragraphStyles}
         freeLayout={freeLayout}
+        freeMargins={inspectorLayout.freeMargins}
+        bleedLeft={bleedLeftPercent}
+        bleedWidth={bleedWidthPercent}
         onSelectVisual={selectCanvasBlock}
         onTextChange={updateCanvasText}
         onTextSelection={syncCanvasSelection}
@@ -2220,6 +2384,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
         onMoveBlocks={moveCanvasBlocks}
         onPlaceBlock={placeCanvasBlock}
         onParagraphBreak={breakCanvasParagraph}
+        onContextMenu={openCanvasMenu}
         focusRequest={pendingCanvasFocus}
         onFocusHandled={() => setPendingCanvasFocus(null)}
         resizing={canvasResize}
@@ -2286,9 +2451,9 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 )}
               </div>
               <div className="books-canvas-zoom topline-zoom" role="group" aria-label="Canvas zoom">
-                <button onClick={() => setCanvasZoom((value) => Math.max(60, value - 10))} disabled={canvasZoom <= 60} title="Zoom out" aria-label="Zoom out"><ZoomOut size={13} /></button>
-                <button className="books-canvas-zoom-value" onClick={() => setCanvasZoom(100)} title="Reset zoom" aria-label={`Reset zoom. Current zoom ${canvasZoom} percent`}>{canvasZoom}%</button>
-                <button onClick={() => setCanvasZoom((value) => Math.min(160, value + 10))} disabled={canvasZoom >= 160} title="Zoom in" aria-label="Zoom in"><ZoomIn size={13} /></button>
+                <button onClick={() => setCanvasZoom((value) => clampCanvasZoom(value - CANVAS_ZOOM_STEP))} disabled={canvasZoom <= MIN_CANVAS_ZOOM} title="Zoom out (⌘− / Ctrl−)" aria-label="Zoom out"><ZoomOut size={13} /></button>
+                <button className="books-canvas-zoom-value" onClick={() => setCanvasZoom(100)} title="Pinch or ⌘-scroll to zoom · Click to reset" aria-label={`Reset zoom. Current zoom ${canvasZoom} percent`}>{canvasZoom}%</button>
+                <button onClick={() => setCanvasZoom((value) => clampCanvasZoom(value + CANVAS_ZOOM_STEP))} disabled={canvasZoom >= MAX_CANVAS_ZOOM} title="Zoom in (⌘+ / Ctrl+)" aria-label="Zoom in"><ZoomIn size={13} /></button>
                 <button className="books-canvas-zoom-fit" onClick={fitCanvasToWidth} title="Fit page to width" aria-label="Fit page to width">Fit</button>
               </div>
               <button className={`design-mode-chip ${freeLayout ? "active" : ""}`} onClick={() => {
@@ -2335,6 +2500,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 <div className="design-tool-group books-canvas-toggles" aria-label="Canvas overlays">
                   <button className={showRulers ? "active" : ""} onClick={() => setShowRulers((value) => !value)} title={showRulers ? "Hide rulers" : "Show rulers"} aria-pressed={showRulers}><Ruler size={13} /> Rulers</button>
                   <button className={showGuides ? "active" : ""} onClick={() => setShowGuides((value) => !value)} title={showGuides ? "Hide margin guides" : "Show margin guides"} aria-pressed={showGuides}><Grid3X3 size={13} /> Guides</button>
+                  <button className={inspectorLayout.freeMargins ? "active" : ""} onClick={() => changeLayout((current) => ({ ...current, freeMargins: !current.freeMargins }))} title={inspectorLayout.freeMargins ? "Lock elements back inside the margins" : "Free margins: allow full-bleed text and artwork"} aria-pressed={inspectorLayout.freeMargins}>{inspectorLayout.freeMargins ? <Unlock size={13} /> : <Lock size={13} />} Margins</button>
                 </div>
                 <div className="design-toolbar-end">
                   <div className="books-layout-switch" role="group" aria-label="Canvas layout mode">
@@ -2344,13 +2510,18 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                   <button className="books-page-settings-button" onClick={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); setInspectorOpen(true); }} title="Page background and document design" aria-label="Page settings"><PaintBucket size={12} /> Page</button>
                 </div>
               </div>
-            {assetOpen && <BooksAssetDrawer onClose={() => setAssetOpen(false)} onInsert={insertAsset} />}
+            {assetOpen && <BooksAssetDrawer onClose={() => { setAssetOpen(false); setArtworkReplaceTarget(null); }} onInsert={insertAsset} replacing={Boolean(artworkReplaceTarget)} />}
              <div className="books-page-editor" ref={pageEditorRef}>
-                <div className={`books-page-frame ${showRulers ? "with-rulers" : ""}`} style={{ zoom: canvasZoom / 100 }}>
+                <div className="books-page-zoom-shell" style={{ width: frameSize.width * (canvasZoom / 100), height: frameSize.height * (canvasZoom / 100) }}>
+                <div ref={pageFrameRef} className={`books-page-frame ${showRulers ? "with-rulers" : ""}`} style={{ transform: `scale(${canvasZoom / 100})`, transformOrigin: "top left" }}>
                   {showRulers && <CanvasRulers trimWidth={trimWidth} trimHeight={trimHeight} />}
-                  <div className={`books-page-sheet paper-${inspectorLayout.pagePattern} ${showGuides ? "show-guides" : ""} ${freeLayout ? "free-layout" : ""}`} style={{ ...(freeLayout ? { minHeight: `calc(${Math.max(0.2, trimHeight / Math.max(0.2, trimWidth))} * 100cqw)` } : {}), "--page-pattern-color": inspectorLayout.pagePatternColor, "--page-pattern-step": `calc(var(--page-inch) * ${inspectorLayout.pagePatternSpacing})` } as CSSProperties} onPointerDown={(event) => {
+                  <div ref={pageSheetRef} className={`books-page-sheet paper-${inspectorLayout.pagePattern} ${showGuides ? "show-guides" : ""} ${freeLayout ? "free-layout" : ""} ${inspectorLayout.freeMargins ? "free-margins" : ""}`} style={{ ...(freeLayout ? { minHeight: `calc(${Math.max(0.2, trimHeight / Math.max(0.2, trimWidth))} * 100cqw)` } : {}), "--page-pattern-color": inspectorLayout.pagePatternColor, "--page-pattern-step": `calc(var(--page-inch) * ${inspectorLayout.pagePatternSpacing})`, "--bleed-left": `${pagePadding.left}px`, "--bleed-right": `${pagePadding.right}px` } as CSSProperties} onPointerDown={(event) => {
                     const target = event.target as HTMLElement;
                     if (!target.closest("[data-canvas-block], input, textarea, button, select, .books-chapter-heading-row")) { setEditorSelection({ start: -1, end: -1, titleFocused: false }); setSelectedStarts([]); }
+                  }} onContextMenu={(event) => {
+                    const target = event.target as HTMLElement;
+                    if (target.closest("[data-canvas-block], input, textarea, button, select, .books-chapter-heading-row")) return;
+                    openCanvasMenu(event, null);
                   }} onDoubleClick={(event) => {
                     if (!freeLayout) return;
                     const target = event.target as HTMLElement;
@@ -2368,11 +2539,54 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                     {manuscriptBody}
                   </div>
                 </div>
+                </div>
              </div>
         </div>
-           {inspectorOpen && <BooksInspector context={editorContext} layout={inspectorLayout} freeLayout={freeLayout} selectionCount={selectedStarts.length} onAlignSelection={alignCanvasSelection} onClearSelection={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); }} layers={canvasLayers} onSelectLayer={(start, end, additive) => { const block = canvasBlocks(content).find((item) => item.start === start && item.end === end); if (block) selectCanvasBlock(block, additive); }} onLayerFront={(start, end) => setLayerForRange(start, end, "front")} onLayerBack={(start, end) => setLayerForRange(start, end, "back")} onLayoutChange={changeLayout} onReplaceRange={replaceContentRange} onMoveRange={moveCanvasRange} onDeleteRange={confirmDeleteCanvasRange} onDuplicateRange={duplicateCanvasRange} onBringToFront={() => setSelectedLayer("front")} onSendToBack={() => setSelectedLayer("back")} onReplaceImage={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) void replaceCanvasArtwork(block); }} onInlineFormat={applyInlineFormat} onConvertRole={applyHeading} chapterWords={chapterWords} totalWords={totalWords} wordGoal={wordGoal} />}
+           {inspectorOpen && <BooksInspector context={editorContext} layout={inspectorLayout} freeLayout={freeLayout} selectionCount={selectedStarts.length} onAlignSelection={alignCanvasSelection} onClearSelection={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); }} layers={canvasLayers} onSelectLayer={(start, end, additive) => { const block = canvasBlocks(content).find((item) => item.start === start && item.end === end); if (block) selectCanvasBlock(block, additive); }} onLayerFront={(start, end) => setLayerForRange(start, end, "front")} onLayerBack={(start, end) => setLayerForRange(start, end, "back")} onLayoutChange={changeLayout} onReplaceRange={replaceContentRange} onMoveRange={moveCanvasRange} onDeleteRange={confirmDeleteCanvasRange} onDuplicateRange={duplicateCanvasRange} onBringToFront={() => setSelectedLayer("front")} onSendToBack={() => setSelectedLayer("back")} onReplaceImage={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) void replaceCanvasArtwork(block); }} onReplaceArtwork={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) openArtworkReplacement(block); }} onInlineFormat={applyInlineFormat} onConvertRole={applyHeading} chapterWords={chapterWords} totalWords={totalWords} wordGoal={wordGoal} />}
       </div>
     </div>
+    {canvasMenu && (() => {
+      const block = canvasMenu.block;
+      const left = Math.max(8, Math.min(canvasMenu.x, window.innerWidth - 240));
+      const top = Math.max(8, Math.min(canvasMenu.y, window.innerHeight - 330));
+      const close = () => setCanvasMenu(null);
+      const blockBleed = block ? block.kind === "image" ? Boolean(block.image?.presentation.bleed) : Boolean(block.presentation.bleed) : false;
+      const blockLabel = block
+        ? block.kind === "text"
+          ? block.level ? `Heading ${block.level}` : block.role === "quote" ? "Quote" : "Text box"
+          : block.kind === "image" ? "Artwork" : block.kind === "table" ? "Table" : block.kind === "chart" ? "Chart" : "Callout"
+        : "Page canvas";
+      return <div ref={canvasMenuRef} className="books-canvas-context" role="menu" aria-label={`${blockLabel} options`} style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
+        <span className="books-canvas-context-kicker">{blockLabel}</span>
+        {block ? <>
+          {block.kind === "text" && <button role="menuitem" onClick={() => { close(); focusCanvasText(block); }}><Type size={13} /> Edit text</button>}
+          {block.kind === "image" && <button role="menuitem" onClick={() => { close(); openArtworkReplacement(block); }}><ImagePlus size={13} /> Replace artwork…</button>}
+          {block.kind === "image" && <button role="menuitem" onClick={() => { close(); void replaceCanvasArtwork(block); }}><Upload size={13} /> Replace file…</button>}
+          <button role="menuitem" onClick={() => { close(); selectCanvasBlock(block); }}><SlidersHorizontal size={13} /> {block.kind === "text" ? "Text settings" : block.kind === "image" ? "Artwork settings" : "Edit data"}</button>
+          {inspectorLayout.freeMargins && <button role="menuitem" onClick={() => { close(); changeCanvasPresentation(block, { bleed: !blockBleed }); }}><Unlock size={13} /> {blockBleed ? "Remove full bleed" : "Full bleed"}</button>}
+          <div className="books-canvas-context-divider" />
+          <button role="menuitem" onClick={() => { close(); duplicateCanvasRange(block.start, block.end); }}><Copy size={13} /> Duplicate</button>
+          {!freeLayout && <>
+            <button role="menuitem" onClick={() => { close(); moveCanvasRange(block.start, block.end, -1); }}><ArrowUp size={13} /> Move earlier</button>
+            <button role="menuitem" onClick={() => { close(); moveCanvasRange(block.start, block.end, 1); }}><ArrowDown size={13} /> Move later</button>
+          </>}
+          {freeLayout && <>
+            <button role="menuitem" onClick={() => { close(); changeCanvasLayer(block, "front"); }}><BringToFront size={13} /> Bring to front</button>
+            <button role="menuitem" onClick={() => { close(); changeCanvasLayer(block, "back"); }}><SendToBack size={13} /> Send to back</button>
+          </>}
+          <div className="books-canvas-context-divider" />
+          <button role="menuitem" className="danger" onClick={() => { close(); confirmDeleteCanvasRange(block.start, block.end); }}><Trash2 size={13} /> Delete</button>
+        </> : <>
+          <button role="menuitem" onClick={() => { close(); addTextBlock(); }}><Type size={13} /> Add text box</button>
+          <button role="menuitem" onClick={() => { close(); setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); setInspectorOpen(true); }}><PaintBucket size={13} /> Page settings</button>
+          <div className="books-canvas-context-divider" />
+          <button role="menuitem" onClick={() => { close(); setShowRulers((value) => !value); }}><Ruler size={13} /> {showRulers ? "Hide rulers" : "Show rulers"}</button>
+          <button role="menuitem" onClick={() => { close(); setShowGuides((value) => !value); }}><Grid3X3 size={13} /> {showGuides ? "Hide guides" : "Show guides"}</button>
+          <button role="menuitem" onClick={() => { close(); changeLayout((current) => ({ ...current, freeMargins: !current.freeMargins })); }}>{inspectorLayout.freeMargins ? <Lock size={13} /> : <Unlock size={13} />} {inspectorLayout.freeMargins ? "Lock margins" : "Free margins"}</button>
+          <button role="menuitem" onClick={() => { close(); fitCanvasToWidth(); }}><Move size={13} /> Fit page to width</button>
+        </>}
+      </div>;
+    })()}
     {historyOpen && (
       <div className="books-history-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setHistoryOpen(false); }}>
         <section className="books-history-panel" role="dialog" aria-modal="true" aria-labelledby="books-history-title">
