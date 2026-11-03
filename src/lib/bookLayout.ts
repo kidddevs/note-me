@@ -1,4 +1,6 @@
 import type { Book, Chapter } from "./types";
+import type { BookCoverDocument } from "./bookCoverDoc";
+import { emptyCoverDocument, parseCoverDocument } from "./bookCoverDoc";
 
 export type BookChromePosition = "left" | "center" | "right";
 export type BookPageNumberStyle = "arabic" | "roman-lower" | "roman-upper" | "custom";
@@ -164,6 +166,23 @@ export interface BookCoverLine {
   text: string;
 }
 
+export interface BookCoverGradientStop {
+  color: string;
+  position: number;
+}
+
+export interface BookCoverGradient {
+  type: "linear" | "radial";
+  angle: number;
+  stops: BookCoverGradientStop[];
+}
+
+export interface BookCoverFill {
+  type: "solid" | "gradient" | "none";
+  color: string;
+  gradient: BookCoverGradient;
+}
+
 export interface BookCoverDesign {
   enabled: boolean;
   template: BookCoverTemplate;
@@ -182,6 +201,17 @@ export interface BookCoverDesign {
   image: string;
   imageFit: "cover" | "contain";
   vignette: boolean;
+  /* Print wrap & layered designer */
+  pageCount: number;
+  paperStock: string;
+  spineWidthOverride: number;
+  bleed: number;
+  isbn: string;
+  barcodeImage: string;
+  publisher: string;
+  backCopy: string;
+  authorBio: string;
+  doc: BookCoverDocument;
 }
 
 export interface BookLayout {
@@ -491,6 +521,16 @@ export const DEFAULT_BOOK_COVER: BookCoverDesign = {
   image: "",
   imageFit: "cover",
   vignette: true,
+  pageCount: 320,
+  paperStock: "cream-60",
+  spineWidthOverride: 0,
+  bleed: 0.125,
+  isbn: "",
+  barcodeImage: "",
+  publisher: "",
+  backCopy: "",
+  authorBio: "",
+  doc: emptyCoverDocument(),
 };
 
 export const DEFAULT_BOOK_LAYOUT: BookLayout = {
@@ -761,6 +801,16 @@ function coverDesign(value: unknown, fallback: BookCoverDesign): BookCoverDesign
     image: text(source.image).slice(0, 12_000_000),
     imageFit: source.imageFit === "contain" ? "contain" : "cover",
     vignette: boolean(source.vignette, fallback.vignette),
+    pageCount: whole(source.pageCount, fallback.pageCount, 1, 8000),
+    paperStock: text(source.paperStock).slice(0, 40) || fallback.paperStock,
+    spineWidthOverride: decimal(source.spineWidthOverride, fallback.spineWidthOverride, 0, 4),
+    bleed: decimal(source.bleed, fallback.bleed, 0, 0.5),
+    isbn: text(source.isbn).slice(0, 40),
+    barcodeImage: text(source.barcodeImage).slice(0, 16_000_000),
+    publisher: text(source.publisher).slice(0, 160),
+    backCopy: text(source.backCopy).slice(0, 6000),
+    authorBio: text(source.authorBio).slice(0, 3000),
+    doc: parseCoverDocument(source.doc, fallback.doc),
   };
 }
 

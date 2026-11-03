@@ -1,5 +1,6 @@
 import type { Book } from "./types";
 import type { BookCoverDesign, BookCoverLine, BookCoverTemplate, BookLayout, BookPublication } from "./bookLayout";
+import { coverDocCss, coverDocPageHtml, hasCoverDocument } from "./bookCoverDoc";
 
 export interface ResolvedBookCover {
   template: BookCoverTemplate;
@@ -122,11 +123,12 @@ export function coverMarkup(book: Book, layout: BookLayout) {
 }
 
 export function coverPageHtml(book: Book, layout: BookLayout) {
+  if (hasCoverDocument(layout.cover)) return coverDocPageHtml(book, layout.cover, "front");
   return `<section class="book-cover-page">${coverMarkup(book, layout)}</section>`;
 }
 
 export function coverCss() {
-  return `
+  return coverDocCss() + `
 .book-cover-page { width:100%; page-break-after: always; break-after: page; }
 .book-cover-art { --cover-bg:#a56b3e; --cover-ink:#fffaf3; --cover-accent:#f2c6a0; --cover-font:Georgia, 'Times New Roman', serif; position:relative; display:flex; width:100%; aspect-ratio:var(--cover-aspect, 8.5 / 11); overflow:hidden; isolation:isolate; background:var(--cover-bg); color:var(--cover-ink); container-type:inline-size; font-family:var(--cover-font); }
 .book-cover-art::before { position:absolute; inset:0; z-index:-1; background:radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--cover-accent) 28%, transparent), transparent 52%), linear-gradient(145deg, transparent 38%, color-mix(in srgb, #000 18%, transparent)); content:""; pointer-events:none; }

@@ -43,7 +43,7 @@ Books Studio already has an unusually strong foundation for a local-first writin
 - **Issue metadata**: volume, issue, season, and year with `{{volume}}`, `{{issue}}`, `{{season}}`, `{{year}}`, and `{{issueLine}}` running-head tokens.
 - **Section page masters**: per-section paper, accent, margins, baseline grid, free margins, six magazine masters, suggested masters by section kind, apply-to-book and apply-to-kind actions, rail badges, and per-section page rules in HTML/EPUB/print.
 - **Section running furniture**: each section can carry its own three-slot running header and footer, page-number visibility, placement, style, start number, and custom format. Furniture resolves in the canvas, export preview, HTML, EPUB, and print, with a one-click return to the book chrome.
-- **Cover studio**: four cover compositions, structured masthead and issue lockup, kicker, headline, standfirst, cover lines, price, barcode, cover image, ink and accent colours, alignment, full-bleed print, and an optional cover page in HTML and EPUB exports.
+- **Cover studio**: a full-wrap Photoshop-style designer with front/spine/back artboards, layered text/image/shape/line/ornament/barcode objects, gradients, blend modes, opacity, lock/visibility, guides, snapping, zoom, preview, undo/redo, six complete wrap templates, page-count-driven spine math with paper stock, movable ISBN/EAN-13 barcode or custom barcode image, 150/300 DPI full-wrap and individual panel downloads, full-wrap print, and an optional cover page in HTML and EPUB exports.
 
 ## Recommended next slices
 

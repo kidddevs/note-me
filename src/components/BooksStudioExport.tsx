@@ -14,6 +14,7 @@ import {
 import type { Book, Chapter } from "../lib/types";
 import { bookExportChecks } from "../lib/bookExport";
 import { layoutForBook, layoutForChapter, layoutSectionKey, serializeBookLayout } from "../lib/bookLayout";
+import { coverMetrics, hasCoverDocument } from "../lib/bookCoverDoc";
 import { backMatterSections, buildBookToc, frontMatterSections, matterAnchorId, orderBookChapters, sectionAnchorId, type TocEntry } from "../lib/bookToc";
 import { chapterBandOrdinal, chapterDisplayLabel, chapterHasDistinctTitle, chapterIsOpeningPage, chapterPageBand, chapterTitleHeading, EXPORT_OPTIONS, markdownToHtml, paragraphStylesCss, tocTitle, trimCssSize, TRIM_SIZES, wordCount } from "../lib/bookPublishing";
 import { notify } from "../store/toast";
@@ -116,13 +117,15 @@ export function PrintBook({ book, chapters, toc }: { book: Book; chapters: Chapt
     const name = `book-page-${chapter.id}`;
     return `@page ${name}{size:${trimCssSize(book.trim_size)};margin:${page.pageMargins.top}in ${page.pageMargins.right}in ${page.pageMargins.bottom}in ${page.pageMargins.left}in;}.${name}{page:${name};}`;
   }).join("");
-  const printCss = `@page{size:${trimCssSize(book.trim_size)};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;}@page book-cover{size:${trimCssSize(book.trim_size)};margin:0;}.book-print-cover{page:book-cover;}${namedPageCss}${paragraphStylesCss(layout, ".book-print-content")}`;
+  const coverMetricsForPrint = coverMetrics(book.trim_size, layout.cover);
+  const coverPageSize = hasCoverDocument(layout.cover) ? `${coverMetricsForPrint.fullWidth}in ${coverMetricsForPrint.fullHeight}in` : trimCssSize(book.trim_size);
+  const printCss = `@page{size:${trimCssSize(book.trim_size)};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;}@page book-cover{size:${coverPageSize};margin:0;}.book-print-cover{page:book-cover;}.book-print-cover .cover-doc{box-shadow:none!important;}@media print{.book-print-cover .cover-doc{width:${coverMetricsForPrint.fullWidth}in!important;height:${coverMetricsForPrint.fullHeight}in!important;}}${namedPageCss}${paragraphStylesCss(layout, ".book-print-content")}`;
   const pageStyle = (page: typeof layout, background = page.pageColor) => ({ ...manuscriptStyle({ ...book, layout_json: serializeBookLayout(page) }), backgroundColor: background });
   return (
     <div className="book-print-root" style={manuscriptStyle(book)}>
       <style dangerouslySetInnerHTML={{ __html: printCss }} />
       <div className="book-print-content">
-        <section className={`book-print-cover ${layout.cover.enabled ? "cover-included" : "cover-disabled"}`}><CoverArtwork book={book} layout={layout} /></section>
+        <section className={`book-print-cover ${layout.cover.enabled ? "cover-included" : "cover-disabled"}`}><CoverArtwork book={book} layout={layout} fit={false} /></section>
         <section className={titlePage ? `book-page-${titlePage.id}` : undefined} style={pageStyle(titleLayout)}>
           <BooksPageChrome book={book} layout={titleLayout} keyName={titlePage ? layoutSectionKey("opening", titlePage.id) : layoutSectionKey("opening")} section={titlePage?.title || "Title page"} band="opening" ordinal={0} />
           <h1 className="book-title">{titlePage?.title || book.title}</h1>
