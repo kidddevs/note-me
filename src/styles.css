@@ -4363,6 +4363,9 @@ textarea:focus-visible,
 .books-page-chrome-row span:nth-child(2) { text-align: center; }
 .books-page-chrome-row span:last-child { text-align: right; }
 .books-page-chrome-row.footer { margin-top: 10px; padding-top: 7px; border-top: 1px solid color-mix(in srgb, var(--book-accent) 24%, transparent); }
+.books-canvas-page-chrome { position: relative; z-index: 1; flex-shrink: 0; margin-bottom: 14px; pointer-events: none; }
+.books-canvas-page-chrome .books-page-chrome-row { min-height: 10px; }
+.books-canvas-page-chrome .books-page-chrome-row.footer { margin-top: 5px; padding-top: 4px; }
 .books-preview-kicker { color: var(--book-accent); font-size: 8px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
 .books-preview-page h2 { margin: 45px 0 9px; font-family: var(--book-font); font-size: 29px; font-weight: 600; letter-spacing: -.055em; line-height: 1; }
 .books-preview-subtitle { margin: 0; color: var(--book-muted); font-family: Georgia, serif; font-size: 12px; }
@@ -5541,6 +5544,12 @@ kbd {
 .design-master-actions button:hover:not(:disabled) { border-color: var(--book-accent); color: var(--book-accent); }
 .design-master-actions button:disabled { cursor: default; opacity: .45; }
 .design-master-actions button.wide { grid-column: 1 / -1; }
+.design-furniture { display: flex; flex-direction: column; gap: 5px; }
+.design-furniture .design-subgroup-head { margin-bottom: 0; }
+.design-furniture .design-subgroup-head > span { color: var(--text-4); font-size: 8px; }
+.design-furniture-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.design-furniture-slots input { min-width: 0; height: 27px; padding: 0 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-2); font: inherit; font-size: 9px; }
+.design-furniture-slots input:focus { outline: 0; border-color: var(--book-accent); box-shadow: 0 0 0 2px var(--book-accent-soft); }
 .design-inline-link { display: inline; padding: 0; border: 0; background: transparent; color: var(--book-accent); font: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .books-page-master-chip { display: inline-flex; height: 24px; align-items: center; gap: 4px; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--editor-accent) 40%, var(--border)); border-radius: 5px; background: color-mix(in srgb, var(--editor-accent) 7%, var(--surface)); color: var(--editor-accent); font: inherit; font-size: 9px; font-weight: 650; cursor: pointer; }
 .books-page-master-chip:hover { border-color: var(--editor-accent); background: var(--editor-accent-soft); }

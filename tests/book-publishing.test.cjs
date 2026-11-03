@@ -228,6 +228,36 @@ test("section page masters travel into HTML, EPUB, and named print pages", async
   assert.match(files["OEBPS/title-page.xhtml"], /<body style="margin:0\.5in 0\.6in 0\.7in 0\.8in;background-color:#f3eadc;--document-accent:#356b5b;/);
 });
 
+test("per-section running furniture overrides book chrome in HTML, EPUB, and print", async () => {
+  const sectionLayout = JSON.stringify({
+    header: { left: "Field Notes", center: "{{section}}", right: "" },
+    footer: { left: "", center: "", right: "" },
+    pageNumbering: { enabled: true, placement: "center", style: "roman-lower", start: 7, startSection: "story", customFormat: "Page {n}", rules: {} },
+  });
+  const sectionChapters = [
+    chapter(1, "The Shape of Morning", "By A. Writer", "title_page"),
+    chapter(2, "The Arrival", "Feature copy for the well.", "chapter", { layout_json: sectionLayout }),
+    chapter(3, "A Pause", "A short interlude between movements.", "interlude"),
+  ];
+  const html = bookHtml(book(), sectionChapters);
+  const feature = html.match(/<section id="section-2"[\s\S]*?<\/section>/)?.[0] ?? "";
+  assert.match(feature, /class="book-chrome"/);
+  assert.match(feature, /Field Notes/);
+  assert.match(feature, /The Arrival/);
+  assert.match(feature, /vii/);
+  assert.doesNotMatch(feature, /A\. Writer/);
+  const following = html.match(/<section id="section-3"[\s\S]*?<\/section>/)?.[0] ?? "";
+  assert.match(following, /The Shape of Morning/);
+  assert.match(following, /A\. Writer/);
+  assert.match(bookPrintHtml(book(), sectionChapters), /Field Notes/);
+
+  const files = textFiles(await bookEpub(book(), sectionChapters));
+  assert.match(files["OEBPS/chapter-2.xhtml"], /Field Notes/);
+  assert.match(files["OEBPS/chapter-2.xhtml"], /vii/);
+  assert.doesNotMatch(files["OEBPS/chapter-2.xhtml"], /A\. Writer/);
+  assert.match(files["OEBPS/chapter-3.xhtml"], /A\. Writer/);
+});
+
 test("print HTML adds an explicit print contract to the styled book document", () => {
   const output = bookPrintHtml(book(), chapters());
   assert.match(output, /id="noteme-print-contract"/);

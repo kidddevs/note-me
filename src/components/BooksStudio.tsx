@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import type { Book, Chapter, ChapterKind } from "../lib/types";
-import { layoutForBook } from "../lib/bookLayout";
+import { layoutForBook, type BookLayout } from "../lib/bookLayout";
 import {
   buildBookToc,
   orderBookChapters,
@@ -267,8 +267,8 @@ export function manuscriptStyle(book: Book): CSSProperties {
   } as CSSProperties;
 }
 
-export function BooksPageChrome({ book, keyName, section, band, ordinal }: { book: Book; keyName: string; section: string; band: PageBand; ordinal: number }) {
-  const values = bookChromeValues(book, layoutForBook(book), keyName, section, band, ordinal);
+export function BooksPageChrome({ book, layout, keyName, section, band, ordinal }: { book: Book; layout?: BookLayout; keyName: string; section: string; band: PageBand; ordinal: number }) {
+  const values = bookChromeValues(book, layout ?? layoutForBook(book), keyName, section, band, ordinal);
   if (!values.header.some(Boolean) && !values.footer.some(Boolean)) return null;
   const row = (name: string, slots: string[]) => slots.some(Boolean) ? <div className={`books-page-chrome-row ${name}`}>{slots.map((slot, index) => <span key={`${name}-${index}`}>{slot}</span>)}</div> : null;
   return <div className="books-page-chrome">{row("header", values.header)}{row("footer", values.footer)}</div>;

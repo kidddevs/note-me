@@ -21,6 +21,7 @@ import {
   Code2,
   Columns3,
   Copy,
+  FileText,
   Frame,
   ImagePlus,
   LayoutTemplate,
@@ -45,7 +46,7 @@ import {
   Underline,
   X,
 } from "lucide-react";
-import { DEFAULT_BOOK_TYPOGRAPHY, SECTION_PAGE_MASTERS, hasEditorialStyles, mergeEditorialStyles, suggestedSectionPageMaster, type BookBulletType, type BookGrepStyle, type BookLayout, type BookNestedStyle, type BookParagraphStyle, type BookRuleStyle, type BookTextAlign, type BookTextCase, type BookTextRole, type BookTextStyle } from "../lib/bookLayout";
+import { DEFAULT_BOOK_TYPOGRAPHY, SECTION_PAGE_MASTERS, hasEditorialStyles, mergeEditorialStyles, pageRuleFor, suggestedSectionPageMaster, type BookBulletType, type BookGrepStyle, type BookLayout, type BookNestedStyle, type BookParagraphStyle, type BookRuleStyle, type BookTextAlign, type BookTextCase, type BookTextRole, type BookTextStyle } from "../lib/bookLayout";
 import {
   addTableColumn,
   addTableRow,
@@ -58,6 +59,7 @@ import {
   FONT_OPTIONS,
   fontCss,
   imageMarkdown,
+  PAGE_NUMBER_STYLE_OPTIONS,
   objectValue,
   richJsonLine,
   richPresentationFromValue,
@@ -494,12 +496,13 @@ function PageColorField({ value, onChange }: { value: string; onChange: (value: 
   return <span className="design-page-color"><input type="color" value={value} onChange={(event) => onChange(event.target.value)} aria-label="Page color" /><input value={value} onChange={(event) => onChange(event.target.value)} aria-label="Page color hex value" /></span>;
 }
 
-function DocumentPanel({ layout, bookLayout, sectionLayoutActive, sectionKind, sectionLabel, onLayoutChange, onSectionLayoutChange, onResetSectionLayout, onApplySectionPageMaster, onApplySectionPageToBook, onApplySectionPageToKind }: {
+function DocumentPanel({ layout, bookLayout, sectionLayoutActive, sectionKind, sectionLabel, sectionKey, onLayoutChange, onSectionLayoutChange, onResetSectionLayout, onApplySectionPageMaster, onApplySectionPageToBook, onApplySectionPageToKind }: {
   layout: BookLayout;
   bookLayout: BookLayout;
   sectionLayoutActive: boolean;
   sectionKind?: string;
   sectionLabel?: string;
+  sectionKey: string;
   onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void;
   onSectionLayoutChange: (change: (layout: BookLayout) => BookLayout) => void;
   onResetSectionLayout: () => void;
@@ -514,6 +517,18 @@ function DocumentPanel({ layout, bookLayout, sectionLayoutActive, sectionKind, s
   useEffect(() => { if (sectionLayoutActive) setScope("section"); }, [sectionLayoutActive]);
   const pageLayout = scope === "section" ? layout : bookLayout;
   const setPageLayout = scope === "section" ? onSectionLayoutChange : onLayoutChange;
+  const sectionRule = pageRuleFor(pageLayout, sectionKey);
+  const hasSectionRule = Boolean(pageLayout.pageNumbering.rules[sectionKey]);
+  const updateSectionRule = (change: Partial<ReturnType<typeof pageRuleFor>>) => setPageLayout((current) => ({
+    ...current,
+    pageNumbering: {
+      ...current.pageNumbering,
+      rules: {
+        ...current.pageNumbering.rules,
+        [sectionKey]: { ...pageRuleFor(current, sectionKey), ...change },
+      },
+    },
+  }));
   const suggestedMaster = suggestedSectionPageMaster(sectionKind ?? "");
   const suggested = SECTION_PAGE_MASTERS.find((master) => master.id === suggestedMaster) ?? null;
   return <div className="design-editor">
@@ -584,6 +599,23 @@ function DocumentPanel({ layout, bookLayout, sectionLayoutActive, sectionKind, s
       }}><Baseline size={13} /> Snap body leading to baseline<small>Round the body and quote line height to the grid</small></button>
       <p className="design-help">The baseline grid is a design aid; it never prints. Use it to keep body text, captions, and sidebars on a shared vertical rhythm.</p>
     </InspectorSection>
+    {scope === "section" && <InspectorSection icon={<FileText size={14} />} title="Running furniture" summary={sectionRule.enabled ? `Page ${pageLayout.pageNumbering.placement} · ${sectionRule.style}` : "No page number"}>
+      {(["header", "footer"] as const).map((kind) => <div className="design-furniture" key={kind}>
+        <div className="design-subgroup-head"><strong>{kind === "header" ? "Running header" : "Running footer"}</strong><span>{kind === "header" ? "Top of page" : "Bottom of page"}</span></div>
+        <div className="design-furniture-slots">
+          {(["left", "center", "right"] as const).map((side) => <input key={side} value={pageLayout[kind][side]} onChange={(event) => setPageLayout((current) => ({ ...current, [kind]: { ...current[kind], [side]: event.target.value } }))} placeholder={side} aria-label={`${kind} ${side}`} />)}
+        </div>
+      </div>)}
+      <div className="design-inline-row"><Toggle checked={sectionRule.enabled} onChange={(enabled) => updateSectionRule({ enabled })} label="Show page number" /></div>
+      {sectionRule.enabled && <div className="design-grid">
+        <Field label="Placement"><select value={pageLayout.pageNumbering.placement} onChange={(event) => setPageLayout((current) => ({ ...current, pageNumbering: { ...current.pageNumbering, placement: event.target.value as BookLayout["pageNumbering"]["placement"] } }))}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></Field>
+        <Field label="Style"><select value={sectionRule.style} onChange={(event) => updateSectionRule({ style: event.target.value as BookLayout["pageNumbering"]["style"] })}>{PAGE_NUMBER_STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+        <Field label="Starts at"><NumberField value={sectionRule.start} min={1} max={9999} step={1} onChange={(start) => updateSectionRule({ start: Math.max(1, Math.round(start)) })} /></Field>
+        {sectionRule.style === "custom" && <Field label="Format"><input value={sectionRule.customFormat} onChange={(event) => updateSectionRule({ customFormat: event.target.value })} placeholder="Page {n}" /></Field>}
+      </div>}
+      <div className="design-master-actions"><button className="wide" disabled={!sectionLayoutActive} onClick={() => setPageLayout((current) => ({ ...current, header: { ...bookLayout.header }, footer: { ...bookLayout.footer }, pageNumbering: { ...bookLayout.pageNumbering } }))}>Use book headers, footers &amp; numbering</button></div>
+      <p className="design-help">Tokens: <code>{"{{title}}"}</code>, <code>{"{{author}}"}</code>, <code>{"{{section}}"}</code>, <code>{"{{page}}"}</code>, and <code>{"{{issueLine}}"}</code>. Leave a slot blank to omit it. {hasSectionRule ? "This section carries its own number range." : "Changing the number creates an override for this section only."}</p>
+    </InspectorSection>}
     <InspectorSection icon={<Palette size={14} />} title="Document styles" summary={`${styles.length} paragraph presets`} defaultOpen>
       <div className="design-style-list compact">
         {styles.map((preset) => <div key={preset.id} className="design-style-card static"><span className="design-style-aa" style={{ fontFamily: fontCss(preset.style.fontFamily), fontWeight: preset.style.fontWeight, fontStyle: preset.style.fontStyle }}>Aa</span><span><strong>{preset.name}</strong><small>{preset.style.fontFamily} · {preset.style.fontSize}pt</small></span></div>)}
@@ -611,7 +643,7 @@ export interface LayerEntry {
   canReorder: boolean;
 }
 
-export function BooksInspector({ context, layout, bookLayout, sectionLayoutActive, sectionKind, sectionLabel, freeLayout, selectionCount, onAlignSelection, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onSectionLayoutChange, onResetSectionLayout, onApplySectionPageMaster, onApplySectionPageToBook, onApplySectionPageToKind, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onReplaceArtwork, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; bookLayout: BookLayout; sectionLayoutActive: boolean; sectionKind?: string; sectionLabel?: string; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onSectionLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onResetSectionLayout: () => void; onApplySectionPageMaster: (masterId: string) => void; onApplySectionPageToBook: () => void; onApplySectionPageToKind: () => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onReplaceArtwork?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
+export function BooksInspector({ context, layout, bookLayout, sectionLayoutActive, sectionKind, sectionLabel, sectionKey, freeLayout, selectionCount, onAlignSelection, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onSectionLayoutChange, onResetSectionLayout, onApplySectionPageMaster, onApplySectionPageToBook, onApplySectionPageToKind, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onReplaceArtwork, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; bookLayout: BookLayout; sectionLayoutActive: boolean; sectionKind?: string; sectionLabel?: string; sectionKey: string; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onSectionLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onResetSectionLayout: () => void; onApplySectionPageMaster: (masterId: string) => void; onApplySectionPageToBook: () => void; onApplySectionPageToKind: () => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onReplaceArtwork?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
   const role = context.role;
   const roleStyle = role ? layout.typography[role] : null;
   const activePreset = context.presentation?.styleId ? layout.paragraphStyles.find((preset) => preset.id === context.presentation?.styleId) ?? null : null;
@@ -684,7 +716,7 @@ export function BooksInspector({ context, layout, bookLayout, sectionLayoutActiv
       <button className="delete" onClick={(event) => onDeleteRange(context.start, context.end, event.currentTarget)} aria-label="Delete" title="Delete"><Trash2 size={14} /></button>
     </div>}
     <div className="design-inspector-body">
-      {context.kind === "none" ? <DocumentPanel layout={layout} bookLayout={bookLayout} sectionLayoutActive={sectionLayoutActive} sectionKind={sectionKind} sectionLabel={sectionLabel} onLayoutChange={onLayoutChange} onSectionLayoutChange={onSectionLayoutChange} onResetSectionLayout={onResetSectionLayout} onApplySectionPageMaster={onApplySectionPageMaster} onApplySectionPageToBook={onApplySectionPageToBook} onApplySectionPageToKind={onApplySectionPageToKind} /> : <>
+      {context.kind === "none" ? <DocumentPanel layout={layout} bookLayout={bookLayout} sectionLayoutActive={sectionLayoutActive} sectionKind={sectionKind} sectionLabel={sectionLabel} sectionKey={sectionKey} onLayoutChange={onLayoutChange} onSectionLayoutChange={onSectionLayoutChange} onResetSectionLayout={onResetSectionLayout} onApplySectionPageMaster={onApplySectionPageMaster} onApplySectionPageToBook={onApplySectionPageToBook} onApplySectionPageToKind={onApplySectionPageToKind} /> : <>
         {isText && <StyleLibrary layout={layout} context={context} onLayoutChange={onLayoutChange} onReplaceRange={onReplaceRange} />}
         {(isText || context.kind === "title") && editingStyle && <TextStyleEditor style={editingStyle} preset={context.kind === "title" ? null : activePreset} role={role} showInlineFormatting={isText} onPatch={patchStyle} onInlineFormat={onInlineFormat} onConvertRole={onConvertRole} onDelete={deleteStyle} onDuplicate={duplicateStyle} />}
         {isText && <FrameControls context={context} freeLayout={freeLayout} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} />}

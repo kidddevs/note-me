@@ -824,7 +824,8 @@ export interface BookSectionPageMaster {
   id: string;
   label: string;
   description: string;
-  layout: Pick<BookLayout, "pageColor" | "accentColor" | "pagePattern" | "pageMargins" | "freeMargins"> & Partial<Pick<BookLayout, "baselineGrid" | "pagePatternColor" | "pagePatternSpacing">>;
+  layout: Pick<BookLayout, "pageColor" | "accentColor" | "pagePattern" | "pageMargins" | "freeMargins">
+    & Partial<Pick<BookLayout, "baselineGrid" | "pagePatternColor" | "pagePatternSpacing" | "header" | "footer" | "pageNumbering">>;
 }
 
 export const SECTION_PAGE_MASTERS: BookSectionPageMaster[] = [
@@ -844,7 +845,16 @@ export const SECTION_PAGE_MASTERS: BookSectionPageMaster[] = [
     id: "cover",
     label: "Cover",
     description: "Full-bleed artboard with a narrow safety margin for the cover.",
-    layout: { pageColor: "#ffffff", accentColor: "#b04a31", pagePattern: "blank", pageMargins: { top: 0.35, right: 0.35, bottom: 0.35, left: 0.35 }, freeMargins: true },
+    layout: {
+      pageColor: "#ffffff",
+      accentColor: "#b04a31",
+      pagePattern: "blank",
+      pageMargins: { top: 0.35, right: 0.35, bottom: 0.35, left: 0.35 },
+      freeMargins: true,
+      header: { left: "", center: "", right: "" },
+      footer: { left: "", center: "", right: "" },
+      pageNumbering: { ...DEFAULT_BOOK_LAYOUT.pageNumbering, enabled: false },
+    },
   },
   {
     id: "contents",

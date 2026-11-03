@@ -204,12 +204,19 @@ test("section page layouts inherit the book and store only their differences", (
       pageColor: "#f3eadc",
       pageMargins: { top: 0.5, right: 0.6, bottom: 0.7, left: 0.8 },
       freeMargins: true,
+      header: { left: "Field Notes", center: "{{section}}", right: "" },
+      footer: { left: "", center: "", right: "" },
+      pageNumbering: { ...DEFAULT_BOOK_LAYOUT.pageNumbering, enabled: true, placement: "right", style: "roman-lower", start: 7 },
     }),
   };
   const chapterLayout = layoutForChapter(book, chapter);
   assert.equal(chapterLayout.pageColor, "#f3eadc");
   assert.equal(chapterLayout.freeMargins, true);
   assert.equal(chapterLayout.pageMargins.left, 0.8);
+  assert.equal(chapterLayout.header.left, "Field Notes");
+  assert.equal(chapterLayout.footer.center, "");
+  assert.equal(chapterLayout.pageNumbering.style, "roman-lower");
+  assert.equal(chapterLayout.pageNumbering.start, 7);
   assert.deepEqual(chapterLayout.typography, bookLayout.typography);
   assert.deepEqual(chapterLayout.paragraphStyles, bookLayout.paragraphStyles);
   assert.equal(layoutForChapter(book, { layout_json: "{}" }).pageColor, bookLayout.pageColor);
@@ -217,6 +224,9 @@ test("section page layouts inherit the book and store only their differences", (
   const diff = JSON.parse(sectionLayoutOverrideJson(bookLayout, chapterLayout));
   assert.equal(diff.pageColor, "#f3eadc");
   assert.equal(diff.freeMargins, true);
+  assert.equal(diff.header.left, "Field Notes");
+  assert.equal(diff.pageNumbering.style, "roman-lower");
+  assert.equal(diff.pageNumbering.start, 7);
   assert.equal(diff.typography, undefined);
   assert.equal(diff.paragraphStyles, undefined);
   assert.equal(hasSectionLayoutOverride(JSON.stringify(diff)), true);
@@ -233,6 +243,9 @@ test("page masters produce deterministic section page fields", () => {
   const cover = sectionPageMasterLayout(bookLayout, "cover");
   assert.equal(cover.freeMargins, true);
   assert.deepEqual(cover.pageMargins, { top: 0.35, right: 0.35, bottom: 0.35, left: 0.35 });
+  assert.equal(cover.pageNumbering.enabled, false);
+  assert.deepEqual(cover.header, { left: "", center: "", right: "" });
+  assert.deepEqual(cover.footer, { left: "", center: "", right: "" });
   assert.ok(SECTION_PAGE_MASTERS.length >= 5);
 });
 

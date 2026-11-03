@@ -56,7 +56,7 @@ import {
 import type * as React from "react";
 import type { Book, Chapter, ChapterKind, ChapterSnapshot, ChapterSnapshotReason } from "../lib/types";
 import { BOOK_GRAPHICS, BOOK_GRAPHIC_CATEGORIES, graphicDataUri, type BookGraphic, type BookGraphicVariant } from "../lib/bookAssets";
-import { hasSectionLayoutOverride, layoutForBook, layoutForChapter, mergeEditorialStyles, parseBookLayout, sectionLayoutOverrideJson, sectionPageMasterLayout, serializeBookLayout, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTypography } from "../lib/bookLayout";
+import { hasSectionLayoutOverride, layoutForBook, layoutForChapter, layoutSectionKey, mergeEditorialStyles, parseBookLayout, sectionLayoutOverrideJson, sectionPageMasterLayout, serializeBookLayout, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTypography } from "../lib/bookLayout";
 import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVars } from "../lib/bookStyles";
 import { api } from "../lib/api";
 import { htmlToMarkdown } from "../lib/richtext";
@@ -70,8 +70,12 @@ import {
   canvasTextSource,
   canvasBlocks,
   chartBlockText,
+  chapterBandOrdinal,
   chapterDisplayLabel,
   chapterKindLabel,
+  chapterPageBand,
+  chapterTitleHeading,
+  bookChromeValues,
   defaultChartData,
   DEFAULT_RICH_PRESENTATION,
   editorContextFor,
@@ -1539,6 +1543,8 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
   const applySectionPageToBook = () => {
     const current = inspectorLayoutRef.current;
+    const sectionKey = activeChapter ? layoutSectionKey(chapterPageBand(activeChapter), activeChapter.id) : null;
+    const sectionRule = sectionKey ? current.pageNumbering.rules[sectionKey] : undefined;
     changeLayout((bookLayout) => ({
       ...bookLayout,
       pageColor: current.pageColor,
@@ -1549,6 +1555,12 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       pageMargins: { ...current.pageMargins },
       baselineGrid: { ...current.baselineGrid },
       freeMargins: current.freeMargins,
+      header: { ...current.header },
+      footer: { ...current.footer },
+      pageNumbering: {
+        ...current.pageNumbering,
+        rules: { ...bookLayout.pageNumbering.rules, ...(sectionKey && sectionRule ? { [sectionKey]: sectionRule } : {}) },
+      },
     }));
     if (activeChapter) {
       void updateChapterLayout(activeChapter.id, "{}").catch((error) => notify("error", "Section page could not be cleared", String(error)));
@@ -1558,9 +1570,18 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const applySectionPageToKind = () => {
     if (!activeChapter) return;
     const overrideJson = sectionLayoutOverrideJson(bookLayoutRef.current, inspectorLayoutRef.current);
+    const override = JSON.parse(overrideJson) as Record<string, unknown> & { pageNumbering?: Partial<BookLayout["pageNumbering"]> };
+    const sourceKey = layoutSectionKey(chapterPageBand(activeChapter), activeChapter.id);
+    const sourceRule = override.pageNumbering?.rules?.[sourceKey];
     const targets = useBooks.getState().chapters.filter((chapter) => chapter.chapter_kind === activeChapter.chapter_kind && chapter.id !== activeChapter.id);
     for (const target of targets) {
-      void updateChapterLayout(target.id, overrideJson).catch((error) => notify("error", "Page master could not be applied", String(error)));
+      let targetOverride = overrideJson;
+      if (override.pageNumbering?.rules) {
+        const targetKey = layoutSectionKey(chapterPageBand(target), target.id);
+        const rules: BookLayout["pageNumbering"]["rules"] = sourceRule ? { [targetKey]: sourceRule } : {};
+        targetOverride = JSON.stringify({ ...override, pageNumbering: { ...override.pageNumbering, rules } });
+      }
+      void updateChapterLayout(target.id, targetOverride).catch((error) => notify("error", "Page master could not be applied", String(error)));
     }
     notify("success", "Page master applied", `${targets.length + 1} ${chapterKindLabel(activeChapter.chapter_kind)} ${targets.length === 0 ? "section uses" : "sections use"} this page.`);
   };
@@ -2505,6 +2526,10 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     </div>
   );
   const activeChapterIndex = chapters.findIndex((chapter) => chapter.id === activeChapter.id);
+  const activeBand = chapterPageBand(activeChapter);
+  const activeSectionKey = layoutSectionKey(activeBand, activeChapter.id);
+  const activeChrome = bookChromeValues(book, inspectorLayout, activeSectionKey, chapterTitleHeading({ ...activeChapter, title }, activeChapterIndex, chapters), activeBand, chapterBandOrdinal(chapters, activeChapterIndex));
+  const showCanvasChrome = activeChrome.header.some(Boolean) || activeChrome.footer.some(Boolean);
   const canvasBook = { ...book, layout_json: serializeBookLayout(inspectorLayout) };
   return (
     <>
@@ -2659,6 +2684,10 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                     addTextBlock(x, y);
                   }}>
                     {showGuides && <div className="books-page-margin-lines" aria-hidden="true"><span className="top" /><span className="right" /><span className="bottom" /><span className="left" /></div>}
+                    {showCanvasChrome && <div className="books-page-chrome books-canvas-page-chrome" contentEditable={false} aria-hidden="true">
+                      {activeChrome.header.some(Boolean) && <div className="books-page-chrome-row header">{activeChrome.header.map((slot, index) => <span key={`header-${index}`}>{slot}</span>)}</div>}
+                      {activeChrome.footer.some(Boolean) && <div className="books-page-chrome-row footer">{activeChrome.footer.map((slot, index) => <span key={`footer-${index}`}>{slot}</span>)}</div>}
+                    </div>}
                     <div className="books-chapter-heading-row"><input className="books-chapter-title-input" value={title} onFocus={() => { setSelectedStarts([]); setEditorSelection({ start: 0, end: title.length, titleFocused: true }); }} onChange={(event) => { const value = event.target.value; setTitle(value); setEditorSelection({ start: 0, end: value.length, titleFocused: true }); markDraft({ title: value }); }} placeholder="Section title" aria-label="Section title" /></div>
                     {manuscriptBody}
                   </div>
@@ -2666,7 +2695,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 </div>
              </div>
         </div>
-           {inspectorOpen && <BooksInspector context={editorContext} layout={inspectorLayout} bookLayout={bookLayout} sectionLayoutActive={hasSectionLayoutOverride(activeChapter.layout_json)} sectionKind={activeChapter.chapter_kind} sectionLabel={activeChapter.title || "This section"} freeLayout={freeLayout} selectionCount={selectedStarts.length} onAlignSelection={alignCanvasSelection} onClearSelection={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); }} layers={canvasLayers} onSelectLayer={(start, end, additive) => { const block = canvasBlocks(content).find((item) => item.start === start && item.end === end); if (block) selectCanvasBlock(block, additive); }} onLayerFront={(start, end) => setLayerForRange(start, end, "front")} onLayerBack={(start, end) => setLayerForRange(start, end, "back")} onLayoutChange={changeLayout} onSectionLayoutChange={changeSectionLayout} onResetSectionLayout={resetSectionLayout} onApplySectionPageMaster={applySectionPageMaster} onApplySectionPageToBook={applySectionPageToBook} onApplySectionPageToKind={applySectionPageToKind} onReplaceRange={replaceContentRange} onMoveRange={moveCanvasRange} onDeleteRange={confirmDeleteCanvasRange} onDuplicateRange={duplicateCanvasRange} onBringToFront={() => setSelectedLayer("front")} onSendToBack={() => setSelectedLayer("back")} onReplaceImage={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) void replaceCanvasArtwork(block); }} onReplaceArtwork={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) openArtworkReplacement(block); }} onInlineFormat={applyInlineFormat} onConvertRole={applyHeading} chapterWords={chapterWords} totalWords={totalWords} wordGoal={wordGoal} />}
+           {inspectorOpen && <BooksInspector context={editorContext} layout={inspectorLayout} bookLayout={bookLayout} sectionLayoutActive={hasSectionLayoutOverride(activeChapter.layout_json)} sectionKind={activeChapter.chapter_kind} sectionLabel={activeChapter.title || "This section"} sectionKey={activeSectionKey} freeLayout={freeLayout} selectionCount={selectedStarts.length} onAlignSelection={alignCanvasSelection} onClearSelection={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); }} layers={canvasLayers} onSelectLayer={(start, end, additive) => { const block = canvasBlocks(content).find((item) => item.start === start && item.end === end); if (block) selectCanvasBlock(block, additive); }} onLayerFront={(start, end) => setLayerForRange(start, end, "front")} onLayerBack={(start, end) => setLayerForRange(start, end, "back")} onLayoutChange={changeLayout} onSectionLayoutChange={changeSectionLayout} onResetSectionLayout={resetSectionLayout} onApplySectionPageMaster={applySectionPageMaster} onApplySectionPageToBook={applySectionPageToBook} onApplySectionPageToKind={applySectionPageToKind} onReplaceRange={replaceContentRange} onMoveRange={moveCanvasRange} onDeleteRange={confirmDeleteCanvasRange} onDuplicateRange={duplicateCanvasRange} onBringToFront={() => setSelectedLayer("front")} onSendToBack={() => setSelectedLayer("back")} onReplaceImage={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) void replaceCanvasArtwork(block); }} onReplaceArtwork={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) openArtworkReplacement(block); }} onInlineFormat={applyInlineFormat} onConvertRole={applyHeading} chapterWords={chapterWords} totalWords={totalWords} wordGoal={wordGoal} />}
       </div>
     </div>
     {canvasMenu && (() => {
