@@ -253,6 +253,11 @@ export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter
                   role="listitem"
                   draggable
                   className={`books-section-row ${chapter.id === activeChapterId ? "active" : ""} ${dragChapterId === chapter.id ? "dragging" : ""} ${dragOverChapterId === chapter.id ? "drop-target" : ""}`}
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest("button")) return;
+                    closeContextMenu();
+                    onSelect(chapter.id);
+                  }}
                   onContextMenu={(event) => openContextMenu(event, chapter.id)}
                   onDragStart={(event) => { setDragChapterId(chapter.id); setDragOverChapterId(null); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(chapter.id)); }}
                   onDragEnd={() => { setDragChapterId(null); setDragOverChapterId(null); }}
@@ -289,6 +294,8 @@ export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter
       )}
       </>}
       {menuChapter && <div ref={contextMenuRef} className="books-section-context" role="menu" aria-label={`Options for ${menuChapter.title || "untitled section"}`} style={contextMenuStyle ?? undefined} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => handleMenuKeyDown(event, () => closeContextMenu(true))}>
+        <button role="menuitem" onClick={() => { closeContextMenu(); onSelect(menuChapter.id); }}><BookOpen size={13} /> Open section</button>
+        <div className="books-section-menu-divider" />
         <span className="books-section-menu-kicker">Section type</span>
         {CHAPTER_KIND_OPTIONS.map((option) => (
           <button key={option.value} role="menuitem" className={menuChapter.chapter_kind === option.value ? "selected" : ""} onClick={() => void changeKind(menuChapter, option.value)}>

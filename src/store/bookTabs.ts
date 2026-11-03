@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { uid } from "../lib/format";
 
-export type BookTabScreen = "library" | "manuscript" | "outline" | "settings" | "export";
+export type BookTabScreen = "library" | "manuscript" | "cover" | "outline" | "settings" | "export";
 
 export interface BookTab {
   id: string;

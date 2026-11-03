@@ -18,20 +18,19 @@ Books Studio already has an unusually strong foundation for a local-first writin
 ### P0 — magazine production fundamentals
 
 1. **True spreads and pagination.** Magazine teams review facing pages, not isolated sections. Books Studio needs a spread proof, gutter treatment, and a predictable page-break model.
-2. **Cover studio.** Covers need structured cover lines, issue line, masthead lockup, sell lines, barcode block, and an exportable cover page. The current cover preview is useful, but not a full cover design surface.
 
 ### P1 — production polish
 
-3. **Image craft.** Crop/reposition inside frames, focal-point control, image fit presets, caption placement, and bleed-aware export.
-4. **Print packaging.** Bleed settings, crop/registration marks, PDF preflight, embedded-font checks, and page-count parity between the canvas and print output.
-5. **Free-layout export fidelity.** Widths and alignment now travel, but free X/Y placement and full-bleed pages still flatten in some exported formats.
-6. **More page masters.** Photo essay, recipe, advertisement, and opening-spread masters on top of the current feature, department, contents, cover, full-bleed, and colophon set.
+2. **Image craft.** Crop/reposition inside frames, focal-point control, image fit presets, caption placement, and bleed-aware export.
+3. **Print packaging.** Bleed settings, crop/registration marks, PDF preflight, embedded-font checks, and page-count parity between the canvas and print output.
+4. **Free-layout export fidelity.** Widths and alignment now travel, but free X/Y placement and full-bleed pages still flatten in some exported formats.
+5. **More page masters.** Photo essay, recipe, advertisement, and opening-spread masters on top of the current feature, department, contents, cover, full-bleed, and colophon set.
 
 ### P2 — newsroom and studio workflow
 
-7. **Issue planning.** Story status, assignee, due date, word budget, and a flat-plan view across pages.
-8. **Editorial review.** Comments, tracked changes, and compare-two-checkpoints views.
-9. **Asset library.** Shared photo library with usage tracking, alt text, credits, and licensing notes.
+6. **Issue planning.** Story status, assignee, due date, word budget, and a flat-plan view across pages.
+7. **Editorial review.** Comments, tracked changes, and compare-two-checkpoints views.
+8. **Asset library.** Shared photo library with usage tracking, alt text, credits, and licensing notes.
 
 ## Landed in this pass
 
@@ -44,11 +43,11 @@ Books Studio already has an unusually strong foundation for a local-first writin
 - **Issue metadata**: volume, issue, season, and year with `{{volume}}`, `{{issue}}`, `{{season}}`, `{{year}}`, and `{{issueLine}}` running-head tokens.
 - **Section page masters**: per-section paper, accent, margins, baseline grid, free margins, six magazine masters, suggested masters by section kind, apply-to-book and apply-to-kind actions, rail badges, and per-section page rules in HTML/EPUB/print.
 - **Section running furniture**: each section can carry its own three-slot running header and footer, page-number visibility, placement, style, start number, and custom format. Furniture resolves in the canvas, export preview, HTML, EPUB, and print, with a one-click return to the book chrome.
+- **Cover studio**: four cover compositions, structured masthead and issue lockup, kicker, headline, standfirst, cover lines, price, barcode, cover image, ink and accent colours, alignment, full-bleed print, and an optional cover page in HTML and EPUB exports.
 
 ## Recommended next slices
 
-1. **Cover studio** — structured cover lines, masthead lockup, issue line, barcode block, and cover export.
-2. **Spread proof + flat plan** — facing-page view, gutter preview, and an issue outline with word budgets.
-3. **Print packaging** — bleed/crop marks, PDF preflight, and parity warnings between canvas and print.
-4. **Image craft** — focal-point crop, caption placement, credits, and reusable asset library.
-5. **More page masters** — photo essay, recipe, advertisement, and opening-spread systems.
+1. **Spread proof + flat plan** — facing-page view, gutter preview, and an issue outline with word budgets.
+2. **Print packaging** — bleed/crop marks, PDF preflight, and parity warnings between canvas and print.
+3. **Image craft** — focal-point crop, caption placement, credits, and reusable asset library.
+4. **More page masters** — photo essay, recipe, advertisement, and opening-spread systems.

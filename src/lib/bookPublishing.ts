@@ -26,6 +26,7 @@ import {
   sectionAnchorId,
   type TocEntry,
 } from "./bookToc";
+import { coverCss, coverPageHtml } from "./bookCover";
 
 export type BookExportFormat = "markdown" | "html" | "epub" | "docx" | "txt";
 type ExportFormat = BookExportFormat;
@@ -1376,6 +1377,7 @@ function sectionPageRules(book: Book, chapters: Chapter[], layouts: Map<number, 
 export function bookHtml(book: Book, chapters: Chapter[]) {
   const title = escapeHtml(book.title || "Untitled manuscript");
   const layout = layoutForBook(book);
+  const coverPage = layout.cover.enabled ? coverPageHtml(book, layout) : "";
   const orderedChapters = orderBookChapters(chapters);
   const chapterLayouts = new Map(orderedChapters.map((chapter) => [chapter.id, layoutForChapter(book, chapter)]));
   const renderMarkdown = (value: string, prefix?: string, pageLayout: BookLayout = layout) => markdownToHtml(value, prefix, pageLayout.typography, pageLayout.paragraphStyles);
@@ -1422,13 +1424,15 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
 <html lang="en"><head><meta charset="utf-8"><title>${title}</title>
 <style>
 @page { size: ${trimCssSize(book.trim_size)}; margin: ${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in; }
+@page book-cover { size: ${trimCssSize(book.trim_size)}; margin: 0; }
 ${pageRules}
 * { box-sizing: border-box; }
- body { --document-accent: ${layout.accentColor}; margin: 0; color: #24211e; background-color: ${layout.pageColor}; ${pagePatternBackgroundCss(layout)} print-color-adjust: exact; -webkit-print-color-adjust: exact; font-family: ${fontCss(book.font_family)}; font-size: ${book.font_size}pt; line-height: ${book.line_height}; } ${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}
+ body { --document-accent: ${layout.accentColor}; margin: 0; color: #24211e; background-color: ${layout.pageColor}; ${pagePatternBackgroundCss(layout)} print-color-adjust: exact; -webkit-print-color-adjust: exact; font-family: ${fontCss(book.font_family)}; font-size: ${book.font_size}pt; line-height: ${book.line_height}; } ${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}${coverCss()}
 .title-page { min-height: 70vh; display: flex; flex-direction: column; justify-content: center; text-align: center; page-break-after: always; }
 h1 { margin: 0; font-size: 2.6em; line-height: 1.05; } .subtitle { margin: 1.3em 0 0; font-size: 1.15em; } .author { margin-top: 5em; font-size: .9em; text-transform: uppercase; letter-spacing: .16em; }
  .chapter, .book-matter { max-width: 100%; } .page-break { page-break-before: always; } .chapter-kicker { color: #8b6a43; font-size: .7em; letter-spacing: .18em; text-transform: uppercase; } h2 { margin: .45em 0 1.6em; font-size: 1.8em; } p { margin: 0 0 ${book.paragraph_spacing}em; text-align: justify; } img { display: block; max-width: 100%; height: auto; margin: 1.4em auto; } blockquote { margin: 1.4em 2em; font-style: italic; } .scene-break { margin: 1.8em 0; text-align: center; letter-spacing: .6em; } .book-toc { page-break-after: always; } .book-toc li { margin: .35em 0; margin-left: calc(var(--toc-indent) * 1.2em); list-style: none; } .book-chrome { margin: 0 0 2em; font-size: .68em; letter-spacing: .08em; text-transform: uppercase; } .book-chrome-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1em; min-height: 1.4em; } .book-chrome-row span:nth-child(2) { text-align: center; } .book-chrome-row span:last-child { text-align: right; } .book-chrome-row.footer { margin-top: .7em; color: #6f6259; }
 </style></head><body>
+${coverPage}
 ${titlePageHtml}
  ${contentsWithChrome}
 ${frontMatterHtml}
@@ -1723,6 +1727,7 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   const { zipSync, strToU8 } = await import("fflate");
   const bookId = `noteme-book-${book.id}`;
   const layout = layoutForBook(book);
+  const coverPage = layout.cover.enabled ? coverPageHtml(book, layout) : "";
   const orderedChapters = orderBookChapters(chapters);
   const chapterLayouts = new Map(orderedChapters.map((chapter) => [chapter.id, layoutForChapter(book, chapter)]));
   const renderMarkdown = (value: string, prefix?: string, pageLayout: BookLayout = layout) => markdownToHtml(value, prefix, pageLayout.typography, pageLayout.paragraphStyles);
@@ -1730,7 +1735,7 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   const epubImages = new Map<string, string>();
   const manifest: string[] = [];
   const spine: string[] = [];
-  const epubCss = `body{--document-accent:${layout.accentColor};font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;background-color:${layout.pageColor};${pagePatternBackgroundCss(layout)}}${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}`;
+  const epubCss = `body{--document-accent:${layout.accentColor};font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;background-color:${layout.pageColor};${pagePatternBackgroundCss(layout)}}${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}${coverCss()}`;
   const embedImages = (body: string) => body.replace(/src="(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+))"/gi, (_match, dataUri: string, mime: string, encoded: string) => {
     const existingPath = epubImages.get(dataUri);
     if (existingPath) return `src="${existingPath}"`;
@@ -1749,6 +1754,7 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
     const bodyStyle = `margin:${pageLayout.pageMargins.top}in ${pageLayout.pageMargins.right}in ${pageLayout.pageMargins.bottom}in ${pageLayout.pageMargins.left}in;background-color:${pageLayout.pageColor};--document-accent:${pageLayout.accentColor};${pagePatternBackgroundCss(pageLayout)}`;
     chapterFiles[file] = strToU8(`<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${escapeHtml(title)}</title><style>${epubCss}</style></head><body style="${bodyStyle}">${embedImages(body)}</body></html>`);
   };
+  if (coverPage) addSection("cover", "Cover", coverPage, layout);
   const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   if (titlePageChapter) {
      const titleLayout = chapterLayouts.get(titlePageChapter.id) ?? layout;

@@ -258,6 +258,41 @@ test("per-section running furniture overrides book chrome in HTML, EPUB, and pri
   assert.match(files["OEBPS/chapter-3.xhtml"], /A\. Writer/);
 });
 
+test("designed covers travel into HTML and EPUB when enabled", async () => {
+  const coverLayout = JSON.stringify({
+    publication: { volume: "02", issue: "04", season: "Summer", year: "2026" },
+    cover: {
+      enabled: true,
+      template: "masthead",
+      masthead: "Field Notes",
+      kicker: "The attention issue",
+      headline: "The Slow Issue",
+      issueLine: "Volume 02 · Issue 04 · Summer 2026",
+      coverLines: [{ label: "Feature", text: "A case for slow looking" }],
+      price: "$12",
+      showBarcode: true,
+      accentColor: "#f2c6a0",
+    },
+  });
+  const coverBook = book({ layout_json: coverLayout, trim_size: "8.5x11", cover_color: "#7c2f24" });
+  const html = bookHtml(coverBook, chapters());
+  assert.match(html, /class="book-cover-page"/);
+  assert.match(html, /Field Notes/);
+  assert.match(html, /A case for slow looking/);
+  assert.match(html, /@page book-cover/);
+  assert.ok(html.indexOf('<section class="book-cover-page"') < html.indexOf('class="title-page', html.indexOf("</style>")));
+
+  const files = textFiles(await bookEpub(coverBook, chapters()));
+  assert.ok(files["OEBPS/cover.xhtml"]);
+  assert.match(files["OEBPS/cover.xhtml"], /Field Notes/);
+  assert.match(files["OEBPS/cover.xhtml"], /book-cover-bars/);
+});
+
+test("cover pages stay out of the export unless enabled", () => {
+  const html = bookHtml(book(), chapters());
+  assert.doesNotMatch(html, /class="book-cover-page"/);
+});
+
 test("print HTML adds an explicit print contract to the styled book document", () => {
   const output = bookPrintHtml(book(), chapters());
   assert.match(output, /id="noteme-print-contract"/);

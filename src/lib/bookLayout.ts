@@ -156,6 +156,34 @@ export interface BookPublication {
   year: string;
 }
 
+export type BookCoverTemplate = "masthead" | "photo-led" | "type-led" | "minimal";
+export type BookCoverAlignment = "left" | "center";
+
+export interface BookCoverLine {
+  label: string;
+  text: string;
+}
+
+export interface BookCoverDesign {
+  enabled: boolean;
+  template: BookCoverTemplate;
+  masthead: string;
+  kicker: string;
+  headline: string;
+  standfirst: string;
+  issueLine: string;
+  showIssueLine: boolean;
+  coverLines: BookCoverLine[];
+  price: string;
+  showBarcode: boolean;
+  alignment: BookCoverAlignment;
+  textColor: string;
+  accentColor: string;
+  image: string;
+  imageFit: "cover" | "contain";
+  vignette: boolean;
+}
+
 export interface BookLayout {
   header: BookChrome;
   footer: BookChrome;
@@ -168,6 +196,7 @@ export interface BookLayout {
   pagePatternSpacing: number;
   baselineGrid: BookBaselineGrid;
   publication: BookPublication;
+  cover: BookCoverDesign;
   freeMargins: boolean;
   typography: BookTypography;
   paragraphStyles: BookParagraphStyle[];
@@ -444,6 +473,26 @@ export function paperPresetLayout(layout: BookLayout, preset: BookPaperPreset): 
   };
 }
 
+export const DEFAULT_BOOK_COVER: BookCoverDesign = {
+  enabled: false,
+  template: "masthead",
+  masthead: "",
+  kicker: "",
+  headline: "",
+  standfirst: "",
+  issueLine: "",
+  showIssueLine: true,
+  coverLines: [],
+  price: "",
+  showBarcode: true,
+  alignment: "left",
+  textColor: "",
+  accentColor: "",
+  image: "",
+  imageFit: "cover",
+  vignette: true,
+};
+
 export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   header: { left: "", center: "", right: "" },
   footer: { left: "", center: "", right: "" },
@@ -464,6 +513,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   pagePatternSpacing: 0.28,
   baselineGrid: { enabled: false, spacing: 0.167, color: "#c9c0b4" },
   publication: { volume: "", issue: "", season: "", year: "" },
+  cover: DEFAULT_BOOK_COVER,
   freeMargins: false,
   typography: DEFAULT_BOOK_TYPOGRAPHY,
   paragraphStyles: DEFAULT_PARAGRAPH_STYLES,
@@ -674,6 +724,46 @@ function publication(value: unknown, fallback: BookPublication): BookPublication
   };
 }
 
+const COVER_TEMPLATES: BookCoverTemplate[] = ["masthead", "photo-led", "type-led", "minimal"];
+
+function optionalColor(value: unknown) {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : "";
+}
+
+function coverLines(value: unknown): BookCoverLine[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 12).map((item) => {
+    const source = isRecord(item) ? item : {};
+    return {
+      label: text(source.label).slice(0, 80),
+      text: text(source.text).slice(0, 260),
+    };
+  }).filter((line) => line.label || line.text);
+}
+
+function coverDesign(value: unknown, fallback: BookCoverDesign): BookCoverDesign {
+  const source = isRecord(value) ? value : {};
+  return {
+    enabled: boolean(source.enabled, fallback.enabled),
+    template: COVER_TEMPLATES.includes(source.template as BookCoverTemplate) ? source.template as BookCoverTemplate : fallback.template,
+    masthead: text(source.masthead).slice(0, 300),
+    kicker: text(source.kicker).slice(0, 200),
+    headline: text(source.headline).slice(0, 300),
+    standfirst: text(source.standfirst).slice(0, 600),
+    issueLine: text(source.issueLine).slice(0, 200),
+    showIssueLine: boolean(source.showIssueLine, fallback.showIssueLine),
+    coverLines: Array.isArray(source.coverLines) ? coverLines(source.coverLines) : fallback.coverLines.map((line) => ({ ...line })),
+    price: text(source.price).slice(0, 60),
+    showBarcode: boolean(source.showBarcode, fallback.showBarcode),
+    alignment: source.alignment === "center" ? "center" : "left",
+    textColor: optionalColor(source.textColor),
+    accentColor: optionalColor(source.accentColor),
+    image: text(source.image).slice(0, 12_000_000),
+    imageFit: source.imageFit === "contain" ? "contain" : "cover",
+    vignette: boolean(source.vignette, fallback.vignette),
+  };
+}
+
 function textStyle(value: unknown, fallback: BookTextStyle): BookTextStyle {
   const source = isRecord(value) ? value : {};
   return {
@@ -787,6 +877,7 @@ export function parseBookLayout(value?: string, typographyFallback: BookTypograp
     pagePatternSpacing: decimal(source.pagePatternSpacing, DEFAULT_BOOK_LAYOUT.pagePatternSpacing, 0.15, 0.6),
     baselineGrid: baselineGrid(source.baselineGrid, DEFAULT_BOOK_LAYOUT.baselineGrid),
     publication: publication(source.publication, DEFAULT_BOOK_LAYOUT.publication),
+    cover: coverDesign(source.cover, DEFAULT_BOOK_LAYOUT.cover),
     freeMargins: boolean(source.freeMargins, DEFAULT_BOOK_LAYOUT.freeMargins),
     typography: Object.fromEntries((Object.keys(typographyFallback) as BookTextRole[]).map((role) => [role, textStyle(sourceTypography[role], typographyFallback[role])])) as BookTypography,
     paragraphStyles: paragraphStyles(source.paragraphStyles),

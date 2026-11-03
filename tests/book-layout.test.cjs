@@ -177,6 +177,39 @@ test("missing paragraph style libraries fall back to the built-in presets", () =
   assert.ok(parsed.paragraphStyles.every((preset) => preset.style.ruleAbove && preset.style.border && preset.style.bullets));
 });
 
+test("cover design normalizes structured cover copy and artwork", () => {
+  const defaults = parseBookLayout("{}").cover;
+  assert.equal(defaults.enabled, false);
+  assert.equal(defaults.template, "masthead");
+  assert.equal(defaults.showIssueLine, true);
+  assert.equal(defaults.showBarcode, true);
+  assert.deepEqual(defaults.coverLines, []);
+  const parsed = parseBookLayout(JSON.stringify({
+    cover: {
+      enabled: true,
+      template: "type-led",
+      masthead: "FIELD NOTES",
+      kicker: "Independent magazine",
+      headline: "The slow issue",
+      issueLine: "Issue 04",
+      coverLines: [{ label: "Feature", text: "A case for slow looking" }, { label: "", text: "" }],
+      price: "$12",
+      textColor: "not-a-color",
+      accentColor: "#f2c6a0",
+      imageFit: "contain",
+      alignment: "center",
+    },
+  })).cover;
+  assert.equal(parsed.enabled, true);
+  assert.equal(parsed.template, "type-led");
+  assert.equal(parsed.masthead, "FIELD NOTES");
+  assert.equal(parsed.textColor, "");
+  assert.equal(parsed.accentColor, "#f2c6a0");
+  assert.equal(parsed.imageFit, "contain");
+  assert.equal(parsed.alignment, "center");
+  assert.deepEqual(parsed.coverLines, [{ label: "Feature", text: "A case for slow looking" }]);
+});
+
 test("the editorial style kit merges once and is idempotent", () => {
   const once = mergeEditorialStyles(DEFAULT_BOOK_LAYOUT.paragraphStyles);
   assert.equal(once.length, DEFAULT_BOOK_LAYOUT.paragraphStyles.length + EDITORIAL_PARAGRAPH_STYLES.length);
