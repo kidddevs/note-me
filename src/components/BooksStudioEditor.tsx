@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowDown,
@@ -9,6 +9,7 @@ import {
   BookOpen,
   BringToFront,
   ChevronRight,
+  ChevronLeft,
   BookmarkPlus,
   Clock3,
   Copy,
@@ -901,6 +902,53 @@ function ManuscriptCanvas({ content, selection, selectedStarts, typography, para
   </div>;
 }
 
+
+function ScrollableBar({ className, ariaLabel, children }: { className: string; ariaLabel: string; children: ReactNode }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const measure = () => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const max = element.scrollWidth - element.clientWidth;
+    setEdges({ left: element.scrollLeft > 2, right: max - element.scrollLeft > 2 });
+  };
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    element.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      element.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  const nudge = (direction: -1 | 1) => {
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollBy({ left: direction * Math.max(140, element.clientWidth * 0.62), behavior: "smooth" });
+  };
+  return <div className={`books-bar-shell ${edges.left ? "can-left" : ""} ${edges.right ? "can-right" : ""}`}>
+    <div
+      ref={scrollRef}
+      className={className}
+      role="toolbar"
+      aria-label={ariaLabel}
+      onWheel={(event) => {
+        const element = scrollRef.current;
+        if (!element || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+        if (element.scrollWidth <= element.clientWidth) return;
+        event.preventDefault();
+        element.scrollLeft += event.deltaY;
+      }}
+    >{children}</div>
+    {edges.left && <button type="button" className="books-bar-chevron left" onClick={() => nudge(-1)} aria-label={`Scroll ${ariaLabel} left`} title="Scroll left"><ChevronLeft size={13} /></button>}
+    {edges.right && <button type="button" className="books-bar-chevron right" onClick={() => nudge(1)} aria-label={`Scroll ${ariaLabel} right`} title="Scroll right"><ChevronRight size={13} /></button>}
+  </div>;
+}
 
 export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onFocusModeChange, onOpenOutline, onOpenSettings, onNewChapter, onNavigateSection }: { book: Book; chapters: Chapter[]; activeChapter: Chapter | null; focusMode: boolean; onFocusModeChange: (focused: boolean) => void; onOpenOutline: () => void; onOpenSettings: () => void; onNewChapter: () => void; onNavigateSection: (direction: -1 | 1) => void }) {
   const updateChapter = useBooks((state) => state.updateChapter);
@@ -2554,7 +2602,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       </div>
        <div className="books-editor-workspace">
          <div className="books-writing-column">
-            <div className="books-writing-topline">
+            <ScrollableBar className="books-writing-topline" ariaLabel="Section controls">
               <div className="books-section-stepper" aria-label="Section navigation"><button onClick={() => onNavigateSection(-1)} disabled={activeChapterIndex <= 0} aria-label="Previous section" title="Previous section (⌘⌥↑)"><ArrowLeft size={12} /> Previous</button><button onClick={() => onNavigateSection(1)} disabled={activeChapterIndex < 0 || activeChapterIndex >= chapters.length - 1} aria-label="Next section" title="Next section (⌘⌥↓)">Next <ChevronRight size={12} /></button></div>
               <span className="books-doc-stats">{chapterWords.toLocaleString()} words <i>·</i> {Math.max(1, Math.ceil(chapterWords / 250))} min read</span>
               <div className="books-sprint-control">
@@ -2599,7 +2647,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 notify("info", "Design mode", "Drag any object to arrange it. Double-click the page to add a text box. Resize from the handles around a selection.");
               }} title="Design mode: freely arrange text boxes, artwork, charts, and images" aria-pressed={freeLayout}><Palette size={12} /> Design canvas</button>
               {hasSectionLayoutOverride(activeChapter.layout_json) && <button className="books-page-master-chip" onClick={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); setInspectorOpen(true); }} title="This section uses a custom page master"><LayoutTemplate size={12} /> Custom page</button>}
-            </div>
+            </ScrollableBar>
              {findOpen && (
               <div className="books-find-bar">
                 <div className="books-find-row">
@@ -2621,7 +2669,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 )}
               </div>
             )}
-              <div className="books-format-toolbar design-toolbar" role="toolbar" aria-label="Canvas tools">
+              <ScrollableBar className="books-format-toolbar design-toolbar" ariaLabel="Canvas tools">
                 <div className="design-tool-group" aria-label="Tools">
                   <button className="active" title="Selection tool" aria-label="Selection tool"><MousePointer2 size={14} /></button>
                   <button onClick={focusSelectedText} disabled={!selectedTextBlock} title="Type tool: edit the selected text box" aria-label="Type tool"><TextCursorInput size={14} /></button>
@@ -2658,7 +2706,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                   </div>
                   <button className="books-page-settings-button" onClick={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); setInspectorOpen(true); }} title="Page background and document design" aria-label="Page settings"><PaintBucket size={12} /> Page</button>
                 </div>
-              </div>
+              </ScrollableBar>
             {assetOpen && <BooksAssetDrawer onClose={() => { setAssetOpen(false); setArtworkReplaceTarget(null); }} onInsert={insertAsset} replacing={Boolean(artworkReplaceTarget)} />}
              <div className="books-page-editor" ref={pageEditorRef}>
                 <div className="books-page-zoom-shell" style={{ width: frameSize.width * (canvasZoom / 100), height: frameSize.height * (canvasZoom / 100) }}>

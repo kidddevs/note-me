@@ -125,6 +125,7 @@ export function CoverScreen({ book, chapters, onOpenChapter }: { book: Book; cha
   const cover = layout.cover;
   const resolved = resolveCover({ ...book, cover_color: coverColor }, layout);
   const coverChapter = chapters.find((chapter) => chapter.chapter_kind === "cover") ?? null;
+  const featureChapter = chapters.find((chapter) => chapter.id !== coverChapter?.id && chapter.title.trim() && ["feature", "interview", "profile", "photo_essay", "department", "column", "editorial"].includes(chapter.chapter_kind)) ?? null;
   const coverLines = cover.coverLines;
   return (
     <div className="books-screen books-cover-screen">
@@ -162,6 +163,11 @@ export function CoverScreen({ book, chapters, onOpenChapter }: { book: Book; cha
               <label>Kicker<input value={cover.kicker} onChange={(event) => setCover({ kicker: event.target.value })} placeholder={book.genre || "Editorial"} /></label>
               <label>Issue line<input value={cover.issueLine} onChange={(event) => setCover({ issueLine: event.target.value })} placeholder={coverIssueLine(layout.publication) || "Issue 01 · Spring"} /></label>
               <label className="books-form-full">Headline<input value={cover.headline} onChange={(event) => setCover({ headline: event.target.value })} placeholder={book.subtitle || "A cover headline"} /></label>
+              {(coverChapter?.title || featureChapter?.title) && <div className="books-cover-suggestions books-form-full">
+                <span>Pull a headline</span>
+                {coverChapter?.title && <button type="button" onClick={() => setCover({ headline: coverChapter.title })}>Issue: {coverChapter.title}</button>}
+                {featureChapter?.title && <button type="button" onClick={() => setCover({ headline: featureChapter.title })}>Feature: {featureChapter.title}</button>}
+              </div>}
               <label className="books-form-full">Standfirst<textarea value={cover.standfirst} onChange={(event) => setCover({ standfirst: event.target.value })} placeholder={book.description || "A short line that invites the reader inside."} /></label>
             </div>
             <label className="books-toggle-row books-cover-inline-toggle"><span><strong>Show issue line</strong><small>Display the volume, issue, season, and year lockup.</small></span><input type="checkbox" checked={cover.showIssueLine} onChange={(event) => setCover({ showIssueLine: event.target.checked })} /></label>
