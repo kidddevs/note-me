@@ -6100,6 +6100,43 @@ kbd {
 .books-cover-screen.is-previewing .cover-stage-hint { display: none; }
 .books-cover-screen.is-previewing .cover-stage-scroll { padding: 26px; }
 
+/* 3D mockup */
+.cover-mockup-overlay { position: fixed; inset: 0; z-index: 220; display: flex; flex-direction: column; overflow: hidden; background: radial-gradient(circle at 50% 26%, #33312d 0, #191918 48%, #080808 100%); color: #f5f0e8; }
+.cover-mockup-overlay::before { position: absolute; inset: 0; background: radial-gradient(circle at 50% 24%, rgba(224, 193, 145, 0.12), transparent 45%); content: ""; pointer-events: none; }
+.cover-mockup-header { position: relative; z-index: 4; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 20px 24px 12px; background: linear-gradient(to bottom, rgba(0, 0, 0, 0.48), transparent); }
+.cover-mockup-title { display: flex; flex-direction: column; gap: 2px; }
+.cover-mockup-title > span { color: #c7a26e; font-size: 8.5px; font-weight: 750; letter-spacing: 0.16em; text-transform: uppercase; }
+.cover-mockup-title strong { color: #fbf7f0; font-family: Didot, Georgia, serif; font-size: 24px; font-weight: 500; letter-spacing: -0.01em; }
+.cover-mockup-title small { color: rgba(245, 240, 232, 0.58); font-size: 9px; }
+.cover-mockup-header-actions { display: flex; align-items: center; gap: 12px; }
+.cover-mockup-live { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: rgba(245, 240, 232, 0.78); font-size: 8px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; }
+.cover-mockup-live i { width: 6px; height: 6px; border-radius: 50%; background: #7ed4a8; box-shadow: 0 0 0 3px rgba(126, 212, 168, 0.16); }
+.cover-mockup-header-actions > button { display: flex; width: 32px; height: 32px; align-items: center; justify-content: center; padding: 0; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px; background: rgba(255, 255, 255, 0.07); color: #f5f0e8; cursor: pointer; }
+.cover-mockup-header-actions > button:hover { background: rgba(255, 255, 255, 0.14); }
+.cover-mockup-stage { position: relative; z-index: 2; display: flex; min-height: 0; flex: 1; align-items: center; justify-content: center; overflow: hidden; perspective: 1900px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.cover-mockup-stage:active { cursor: grabbing; }
+.cover-mockup-scene { position: relative; z-index: 2; flex: none; transform-style: preserve-3d; transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.cover-mockup-scene.is-dragging { transition: none; }
+.cover-mockup-book { position: absolute; inset: 0; transform-style: preserve-3d; }
+.cover-mockup-face { position: absolute; top: 0; left: 0; overflow: hidden; background: #f5efe4; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.cover-mockup-face-front { box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55); }
+.cover-mockup-face-spine,
+.cover-mockup-face-pages { transform-origin: 0 50%; }
+.cover-mockup-face-pages { background: repeating-linear-gradient(90deg, #f1e8d8 0 1px, #d6cab5 1px 2px); }
+.cover-mockup-face-top { background: repeating-linear-gradient(0deg, #f1e8d8 0 1px, #d6cab5 1px 2px); transform-origin: 50% 0; }
+.cover-mockup-face-pages span { position: absolute; inset: 0; background: linear-gradient(to right, rgba(0, 0, 0, 0.24), transparent 30%, transparent 70%, rgba(0, 0, 0, 0.3)); }
+.cover-mockup-page { position: absolute; top: 0; left: 0; overflow: hidden; transform-origin: 0 0; }
+.cover-mockup-page .cover-doc { box-shadow: none !important; }
+.cover-mockup-glare { position: absolute; inset: 0; background: linear-gradient(105deg, rgba(255, 255, 255, 0.16), transparent 23%, transparent 66%, rgba(0, 0, 0, 0.2)); mix-blend-mode: soft-light; pointer-events: none; }
+.cover-mockup-floor { position: absolute; bottom: 11%; left: 50%; z-index: 1; height: 90px; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.78), transparent 68%); filter: blur(16px); transform: translateX(-50%); }
+.cover-mockup-hint { position: absolute; bottom: 18px; left: 50%; z-index: 3; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px; background: rgba(10, 10, 10, 0.42); color: rgba(245, 240, 232, 0.58); font-size: 8px; transform: translateX(-50%); backdrop-filter: blur(8px); }
+.cover-mockup-footer { position: relative; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 24px 20px; background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent); }
+.cover-mockup-views { display: flex; gap: 3px; padding: 3px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
+.cover-mockup-views button { height: 26px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: rgba(245, 240, 232, 0.68); font: inherit; font-size: 8.5px; font-weight: 600; cursor: pointer; }
+.cover-mockup-views button:hover { background: rgba(255, 255, 255, 0.09); color: #fff; }
+.cover-mockup-views button.active { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.cover-mockup-foot-note { color: rgba(245, 240, 232, 0.4); font-size: 8px; }
+
 /* Inspector */
 .cover-inspector { display: flex; width: 318px; flex-shrink: 0; flex-direction: column; border-left: 1px solid var(--border); background: var(--surface); }
 .cover-inspector-head { display: flex; min-height: 51px; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border-subtle); }
@@ -6333,6 +6370,12 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
   .cover-template-modal-head h2 { font-size: 23px; }
   .cover-template-modal-foot { align-items: flex-start; flex-direction: column; gap: 8px; }
   .cover-source-strip small { display: none; }
+  .cover-mockup-header { padding: 14px 16px 8px; }
+  .cover-mockup-title strong { font-size: 19px; }
+  .cover-mockup-live { display: none; }
+  .cover-mockup-footer { align-items: flex-start; flex-direction: column; gap: 8px; padding: 10px 16px 14px; }
+  .cover-mockup-views { max-width: 100%; overflow-x: auto; }
+  .cover-mockup-foot-note { display: none; }
 }
 
 @media print {

@@ -277,3 +277,19 @@ test("image lab markup carries filters, masks, focal point, tint, and flips", ()
   assert.ok(COVER_IMAGE_PRESETS.length >= 6);
   assert.ok(COVER_IMAGE_PRESETS.find((preset) => preset.id === "duotone").patch.tintStrength > 0);
 });
+
+test("mockup panels render at their real trim dimensions", () => {
+  const baseCover = { ...cover(), pageCount: 320, paperStock: "cream-60", spineWidthOverride: 0 };
+  const metrics = coverMetrics("6x9", baseCover);
+  const doc = createCoverDocument("atelier", book(), baseCover);
+  const layout = { ...baseCover, doc };
+  const front = coverDocMarkup(book(), layout, "front");
+  const back = coverDocMarkup(book(), layout, "back");
+  const spine = coverDocMarkup(book(), layout, "spine");
+  assert.match(front, /width:6in;height:9in/);
+  assert.match(back, /width:6in;height:9in/);
+  assert.match(spine, new RegExp(`width:${metrics.spineWidth}in;height:9in`));
+  assert.match(front, /data-panel="front"/);
+  assert.match(back, /data-panel="back"/);
+  assert.match(spine, /data-panel="spine"/);
+});

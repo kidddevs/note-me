@@ -49,6 +49,7 @@ import {
   Plus,
   Printer,
   Redo2,
+  Rotate3D,
   RotateCcw,
   RotateCw,
   Ruler,
@@ -373,6 +374,7 @@ export function CoverScreen({
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [artworkOpen, setArtworkOpen] = useState(false);
+  const [mockupOpen, setMockupOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [autoFit, setAutoFit] = useState(true);
   const [dpi, setDpi] = useState(300);
@@ -987,6 +989,7 @@ export function CoverScreen({
       else if (artworkOpen) setArtworkOpen(false);
       else if (downloadOpen) setDownloadOpen(false);
       else if (templateOpen) setTemplateOpen(false);
+      else if (mockupOpen) setMockupOpen(false);
       else if (selectedIds.length > 1) { setSelectedLayerId(selectedLayerId); setExtraSelectedIds([]); }
       else selectLayer(null);
       return;
@@ -1038,7 +1041,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, symbolOpen, artworkOpen, downloadOpen, templateOpen, selectedLayerId, selectedIds, undo, redo]);
+  }, [previewing, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, selectedLayerId, selectedIds, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -1087,6 +1090,7 @@ export function CoverScreen({
             <button type="button" className={`cover-icon-button ${doc.showRulers ? "active" : ""}`} title="Toggle rulers" aria-label="Toggle rulers" onClick={() => updateDoc({ ...doc, showRulers: !doc.showRulers }, { key: "rulers" })}><Ruler size={15} /></button>
             <button type="button" className={`cover-icon-button ${doc.showGrid ? "active" : ""}`} title="Toggle grid" aria-label="Toggle grid" onClick={() => updateDoc({ ...doc, showGrid: !doc.showGrid }, { key: "grid" })}><Grid3X3 size={15} /></button>
             <button type="button" className={`cover-icon-button ${previewing ? "active" : ""}`} title={previewing ? "Exit preview" : "Preview cover"} aria-label={previewing ? "Exit preview" : "Preview cover"} onClick={() => { setPreviewing((value) => !value); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><ScanLine size={15} /></button>
+            <button type="button" className="cover-icon-button" title="3D book mockup" aria-label="3D book mockup" onClick={() => { setMockupOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><Rotate3D size={16} /></button>
           </div>
           <div className="cover-bar-right">
             <span className="cover-dimension-chip">{formatDimension(metrics.fullWidth)} × {formatDimension(metrics.fullHeight)} in</span>
@@ -1293,6 +1297,122 @@ export function CoverScreen({
       </div>
 
       {templateOpen && <TemplateModal book={book} cover={cover} onApply={applyTemplate} onClose={() => setTemplateOpen(false)} />}
+      {mockupOpen && <BookMockup book={book} cover={cover} onClose={() => setMockupOpen(false)} />}
+    </div>
+  );
+}
+
+/* ========================================================================== */
+
+function BookMockup({ book, cover, onClose }: { book: Book; cover: BookCoverDesign; onClose: () => void }) {
+  const metrics = useMemo(() => coverMetrics(book.trim_size, cover), [book.trim_size, cover.pageCount, cover.paperStock, cover.spineWidthOverride, cover.bleed]);
+  const scale = Math.min(86, 600 / metrics.trimHeight);
+  const [rotation, setRotation] = useState({ x: -7, y: -30 });
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef<{ x: number; y: number; rotationX: number; rotationY: number } | null>(null);
+  const frontMarkup = useMemo(() => coverDocMarkup(book, cover, "front", { instanceId: "mockup-front" }), [book, cover]);
+  const backMarkup = useMemo(() => coverDocMarkup(book, cover, "back", { instanceId: "mockup-back" }), [book, cover]);
+  const spineMarkup = useMemo(() => coverDocMarkup(book, cover, "spine", { instanceId: "mockup-spine" }), [book, cover]);
+  const trimWidth = metrics.trimWidth * scale;
+  const trimHeight = metrics.trimHeight * scale;
+  const spineWidth = Math.max(3, metrics.spineWidth * scale);
+
+  const beginDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { x: event.clientX, y: event.clientY, rotationX: rotation.x, rotationY: rotation.y };
+    setDragging(true);
+  };
+  const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    setRotation({
+      x: Math.max(-38, Math.min(38, drag.rotationX - (event.clientY - drag.y) * 0.28)),
+      y: drag.rotationY + (event.clientX - drag.x) * 0.42,
+    });
+  };
+  const endDrag = () => {
+    dragRef.current = null;
+    setDragging(false);
+  };
+  const setView = (x: number, y: number) => setRotation({ x, y });
+
+  return (
+    <div className="cover-mockup-overlay" role="dialog" aria-modal="true" aria-label="3D book mockup">
+      <style>{COVER_CSS}</style>
+      <header className="cover-mockup-header">
+        <div className="cover-mockup-title">
+          <span>3D book mockup</span>
+          <strong>{book.title || "Untitled manuscript"}</strong>
+          <small>{book.author || "Author"} · {cover.pageCount.toLocaleString()} pages · {formatDimension(metrics.spineWidth)} in spine</small>
+        </div>
+        <div className="cover-mockup-header-actions">
+          <span className="cover-mockup-live"><i /> Live preview</span>
+          <button type="button" onClick={onClose} aria-label="Close mockup"><X size={18} /></button>
+        </div>
+      </header>
+      <div
+        className="cover-mockup-stage"
+        onPointerDown={beginDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onDoubleClick={() => setView(-7, -30)}
+      >
+        <div className="cover-mockup-floor" style={{ width: Math.max(320, trimWidth * 1.7) }} />
+        <div
+          className={`cover-mockup-scene ${dragging ? "is-dragging" : ""}`}
+          style={{
+            width: trimWidth,
+            height: trimHeight,
+            transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,
+            ["--mockup-spine" as string]: `${spineWidth}px`,
+          }}
+        >
+          <div className="cover-mockup-book">
+            <div
+              className="cover-mockup-face cover-mockup-face-back"
+              style={{ width: trimWidth, height: trimHeight, transform: `translateZ(${-spineWidth / 2}px) rotateY(180deg)` }}
+            >
+              <div className="cover-mockup-page" style={{ width: metrics.trimWidth * 96, height: metrics.trimHeight * 96, transform: `scale(${scale / 96})` }} dangerouslySetInnerHTML={{ __html: backMarkup }} />
+            </div>
+            <div
+              className="cover-mockup-face cover-mockup-face-spine"
+              style={{ width: spineWidth, height: trimHeight, transform: `translateZ(${-spineWidth / 2}px) rotateY(-90deg)` }}
+            >
+              <div className="cover-mockup-page" style={{ width: metrics.spineWidth * 96, height: metrics.trimHeight * 96, transform: `scale(${scale / 96})` }} dangerouslySetInnerHTML={{ __html: spineMarkup }} />
+            </div>
+            <div
+              className="cover-mockup-face cover-mockup-face-pages"
+              style={{ width: spineWidth, height: trimHeight, left: trimWidth, transform: `translateZ(${-spineWidth / 2}px) rotateY(-90deg)` }}
+            >
+              <span />
+            </div>
+            <div
+              className="cover-mockup-face cover-mockup-face-top"
+              style={{ width: trimWidth, height: spineWidth, transform: `translateZ(${-spineWidth / 2}px) rotateX(90deg)` }}
+            />
+            <div
+              className="cover-mockup-face cover-mockup-face-front"
+              style={{ width: trimWidth, height: trimHeight, transform: `translateZ(${spineWidth / 2}px)` }}
+            >
+              <div className="cover-mockup-page" style={{ width: metrics.trimWidth * 96, height: metrics.trimHeight * 96, transform: `scale(${scale / 96})` }} dangerouslySetInnerHTML={{ __html: frontMarkup }} />
+              <span className="cover-mockup-glare" />
+            </div>
+          </div>
+        </div>
+        <div className="cover-mockup-hint"><Move size={13} /> Drag to rotate · Double-click to reset</div>
+      </div>
+      <footer className="cover-mockup-footer">
+        <div className="cover-mockup-views" role="group" aria-label="Mockup views">
+          <button type="button" onClick={() => setView(-4, 0)}>Front</button>
+          <button type="button" className={rotation.y === -30 ? "active" : ""} onClick={() => setView(-7, -30)}>Three-quarter</button>
+          <button type="button" onClick={() => setView(-4, 90)}>Spine</button>
+          <button type="button" onClick={() => setView(-4, 180)}>Back</button>
+        </div>
+        <span className="cover-mockup-foot-note">Full wrap preview · spine calculated from {cover.pageCount.toLocaleString()} pages</span>
+      </footer>
     </div>
   );
 }
