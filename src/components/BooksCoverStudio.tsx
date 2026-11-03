@@ -33,6 +33,7 @@ import {
   Feather,
   FileDown,
   FileImage,
+  FileText,
   FlipHorizontal2,
   FlipVertical2,
   Frame,
@@ -142,6 +143,7 @@ import {
   type BookLayout,
 } from "../lib/bookLayout";
 import { bookInputFromBook, TRIM_SIZES } from "../lib/bookPublishing";
+import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import { useBooks } from "../store/books";
 import { notify } from "../store/toast";
 
@@ -958,6 +960,19 @@ export function CoverScreen({
     void saveNow(layoutRef.current).then(() => window.setTimeout(start, 120)).catch(() => start());
   };
 
+  const handleDownloadPdf = async (marks: boolean) => {
+    setBusyDownload(marks ? "pdf-marks" : "pdf");
+    try {
+      const filename = await downloadCoverPdf(book, layoutRef.current.cover, { dpi, marks });
+      if (filename) notify("success", "Print PDF ready", filename);
+      setDownloadOpen(false);
+    } catch (error) {
+      notify("error", "Print PDF could not be generated", String(error));
+    } finally {
+      setBusyDownload(null);
+    }
+  };
+
   const addTextTool = () => {
     makeTextLayer();
     setTool("select");
@@ -1100,7 +1115,11 @@ export function CoverScreen({
                   </div>
                   <button type="button" role="menuitem" onClick={() => void handleDownload("wrap", "jpeg")}><FileDown size={14} /><span><strong>Full wrap JPEG</strong><small>Smaller file for proofs & sharing</small></span></button>
                   <div className="cover-download-sep" />
-                  <button type="button" role="menuitem" onClick={() => { setDownloadOpen(false); printCover(); }}><Printer size={14} /><span><strong>Print / Save as PDF</strong><small>Uses the full print wrap</small></span></button>
+                  <div className="cover-download-subhead">Print-ready PDF <small>Vector page · embedded image</small></div>
+                  <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPdf(true)}><FileText size={14} /><span><strong>Full wrap PDF with marks</strong><small>Crop marks, fold marks, colour bar & slug</small></span></button>
+                  <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPdf(false)}><FileText size={14} /><span><strong>Full wrap PDF</strong><small>Trim + bleed without printer marks</small></span></button>
+                  <div className="cover-download-sep" />
+                  <button type="button" role="menuitem" onClick={() => { setDownloadOpen(false); printCover(); }}><Printer size={14} /><span><strong>Print / Save via browser</strong><small>Uses the full print wrap</small></span></button>
                 </div>
               )}
             </div>

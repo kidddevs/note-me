@@ -2474,14 +2474,77 @@ function drawBarcodeLayer(ctx: CanvasRenderingContext2D, layer: CoverBarcodeLaye
 export interface CoverCanvasOptions {
   dpi?: number;
   bleed?: boolean;
+  marks?: boolean;
+  slug?: number;
+}
+
+function drawProductionMarks(ctx: CanvasRenderingContext2D, book: Book, cover: BookCoverDesign, metrics: CoverMetrics, slug: number) {
+  const left = metrics.bleed;
+  const top = metrics.bleed;
+  const right = left + metrics.trimWidthTotal;
+  const bottom = top + metrics.trimHeight;
+  const gap = 0.055;
+  const length = 0.14;
+  ctx.save();
+  ctx.strokeStyle = "#101010";
+  ctx.lineWidth = 0.004;
+  ctx.lineCap = "butt";
+  const line = (x1: number, y1: number, x2: number, y2: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  };
+  for (const y of [top, bottom]) {
+    line(left - gap - length, y, left - gap, y);
+    line(right + gap, y, right + gap + length, y);
+  }
+  for (const x of [left, right]) {
+    line(x, top - gap - length, x, top - gap);
+    line(x, bottom + gap, x, bottom + gap + length);
+  }
+  for (const x of [left + metrics.trimWidth, left + metrics.trimWidth + metrics.spineWidth]) {
+    line(x, top - gap - length, x, top - gap);
+    line(x, bottom + gap, x, bottom + gap + length);
+  }
+
+  const swatches = ["#00aeef", "#ec008c", "#fff200", "#111111", "#808080", "#c0c0c0", "#f4f1ea"];
+  const swatchWidth = 0.105;
+  const swatchHeight = Math.max(0.045, slug - gap - 0.035);
+  const swatchY = bottom + gap + 0.012;
+  swatches.forEach((swatch, index) => {
+    ctx.fillStyle = swatch;
+    ctx.fillRect(left + index * swatchWidth, swatchY, swatchWidth - 0.006, swatchHeight);
+    ctx.strokeStyle = "#101010";
+    ctx.lineWidth = 0.0035;
+    ctx.strokeRect(left + index * swatchWidth, swatchY, swatchWidth - 0.006, swatchHeight);
+  });
+
+  const label = `PRINT-READY WRAP  ·  ${book.title || "Untitled"}${book.author ? `  ·  ${book.author}` : ""}  ·  trim ${metrics.trimWidthTotal} × ${metrics.trimHeight} in  ·  spine ${metrics.spineWidth} in  ·  ${cover.pageCount.toLocaleString()} pages  ·  bleed ${cover.bleed} in`;
+  ctx.fillStyle = "#101010";
+  ctx.font = `0.052px 'Helvetica Neue', Arial, sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  const textX = left + swatches.length * swatchWidth + 0.12;
+  ctx.fillText(label, textX, swatchY + swatchHeight / 2, Math.max(0.4, metrics.fullWidth + slug - textX - 0.1));
+
+  ctx.font = `600 0.06px 'Helvetica Neue', Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.fillText("BACK", left + metrics.trimWidth / 2, -slug / 2);
+  ctx.fillText("SPINE", left + metrics.trimWidth + metrics.spineWidth / 2, -slug / 2);
+  ctx.fillText("FRONT", left + metrics.trimWidth + metrics.spineWidth + metrics.trimWidth / 2, -slug / 2);
+  ctx.restore();
 }
 
 export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, target: ExportTarget = "wrap", options: CoverCanvasOptions = {}) {
   if (typeof document === "undefined") throw new Error("Cover rendering is only available in the app.");
   const metrics = coverMetrics(book.trim_size, cover);
-  const rect = target === "wrap" && options.bleed === false
-    ? { x: metrics.bleed, y: metrics.bleed, width: metrics.trimWidthTotal, height: metrics.trimHeight }
-    : coverPanelRect(metrics, target);
+  const slug = options.marks && target === "wrap" ? Math.max(0.15, options.slug ?? 0.25) : 0;
+  const rect = slug > 0
+    ? { x: -slug, y: -slug, width: metrics.fullWidth + slug * 2, height: metrics.fullHeight + slug * 2 }
+    : target === "wrap" && options.bleed === false
+      ? { x: metrics.bleed, y: metrics.bleed, width: metrics.trimWidthTotal, height: metrics.trimHeight }
+      : coverPanelRect(metrics, target);
   const dpi = clamp(options.dpi ?? 300, 72, 450);
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(rect.width * dpi));
@@ -2491,7 +2554,7 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   ctx.scale(dpi, dpi);
   ctx.translate(-rect.x, -rect.y);
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, metrics.fullWidth, metrics.fullHeight);
+  ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
   applyFill(ctx, cover.doc.background, 0, 0, metrics.fullWidth, metrics.fullHeight);
   const imageSources = cover.doc.layers
     .flatMap((layer) => layer.type === "image" && layer.src ? [layer.src] : layer.type === "artwork" ? [coverArtworkDataUrl(layer)] : []);
@@ -2563,6 +2626,7 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "source-over";
+  if (slug > 0) drawProductionMarks(ctx, book, cover, metrics, slug);
   return canvas;
 }
 
@@ -2583,7 +2647,7 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
-async function saveBlob(blob: Blob, filename: string) {
+export async function saveCoverBlob(blob: Blob, filename: string) {
   const tauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   if (tauri) {
     try {
@@ -2611,7 +2675,7 @@ export async function downloadCoverFile(book: Book, cover: BookCoverDesign, targ
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime, 0.94));
   if (!blob) throw new Error("The cover image could not be generated.");
   const filename = coverExportFilename(book, target, format === "jpeg" ? "jpg" : "png");
-  return saveBlob(blob, filename);
+  return saveCoverBlob(blob, filename);
 }
 
 export async function coverPreviewDataUrl(book: Book, cover: BookCoverDesign, target: ExportTarget = "wrap") {
