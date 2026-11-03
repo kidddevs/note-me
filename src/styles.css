@@ -6192,6 +6192,17 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-toggle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 10px; }
 .cover-select-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .cover-select-grid .full { grid-column: 1 / -1; }
+.cover-image-preset-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+.cover-image-preset-grid button { height: 24px; overflow: hidden; padding: 0 3px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text-3); font: inherit; font-size: 7.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.cover-image-preset-grid button:hover { border-color: var(--book-accent); background: var(--book-accent-soft); color: var(--book-accent); }
+.cover-image-sliders { display: flex; flex-direction: column; gap: 5px; }
+.cover-tint-editor { display: flex; flex-direction: column; gap: 5px; padding: 7px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-2); }
+.cover-focus-block { display: flex; flex-direction: column; gap: 5px; padding-top: 3px; }
+.cover-field-heading { color: var(--text-3); font-size: 7.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+.cover-image-flip-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+.cover-image-flip-row button { display: flex; height: 25px; align-items: center; justify-content: center; gap: 3px; padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-3); font: inherit; font-size: 7.5px; font-weight: 600; cursor: pointer; }
+.cover-image-flip-row button:hover { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-image-flip-row button.active { border-color: var(--book-accent); background: var(--book-accent-soft); color: var(--book-accent); }
 .cover-token-row { display: flex; flex-wrap: wrap; gap: 3px; }
 .cover-token-row button { height: 20px; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text-3); font: inherit; font-size: 7.5px; cursor: pointer; }
 .cover-token-row button:hover { border-color: var(--book-accent); color: var(--book-accent); }

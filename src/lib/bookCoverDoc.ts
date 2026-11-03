@@ -19,6 +19,7 @@ export type CoverDashStyle = "solid" | "dashed" | "dotted";
 export type CoverBlendMode = "normal" | "multiply" | "screen" | "overlay" | "soft-light" | "darken" | "lighten";
 export type CoverFontId = "serif" | "display" | "sans" | "condensed" | "mono" | "humanist" | "script" | "slab";
 export type CoverFillType = "solid" | "gradient" | "none";
+export type CoverImageMask = "none" | "circle" | "arch" | "diamond" | "hexagon";
 
 export interface CoverFillStop {
   color: string;
@@ -72,6 +73,17 @@ export interface CoverImageLayer extends CoverLayerBase {
   grayscale: boolean;
   sepia: boolean;
   brightness: number;
+  contrast: number;
+  saturation: number;
+  hue: number;
+  blur: number;
+  tint: string;
+  tintStrength: number;
+  mask: CoverImageMask;
+  focusX: number;
+  focusY: number;
+  flipX: boolean;
+  flipY: boolean;
 }
 
 export interface CoverShapeLayer extends CoverLayerBase {
@@ -184,6 +196,55 @@ export const COVER_SYMBOLS: string[] = [
   "✤", "✥", "✱", "➤", "♪", "♫", "☯", "☮", "♨", "⚑", "⚐", "⌛",
 ];
 
+export interface CoverImagePreset {
+  id: string;
+  label: string;
+  description: string;
+  patch: Partial<CoverImageLayer>;
+}
+
+export const COVER_IMAGE_PRESETS: CoverImagePreset[] = [
+  { id: "original", label: "Original", description: "No grading", patch: { grayscale: false, sepia: false, brightness: 100, contrast: 100, saturation: 100, hue: 0, tintStrength: 0 } },
+  { id: "warm", label: "Warm film", description: "Golden highlights", patch: { grayscale: false, sepia: false, brightness: 103, contrast: 104, saturation: 108, hue: 0, tint: "#e6a25e", tintStrength: 0.18 } },
+  { id: "cool", label: "Cool editorial", description: "Blue shadows", patch: { grayscale: false, sepia: false, brightness: 100, contrast: 106, saturation: 92, hue: -6, tint: "#5f8fbf", tintStrength: 0.22 } },
+  { id: "mono", label: "Mono", description: "Clean black & white", patch: { grayscale: true, sepia: false, brightness: 104, contrast: 112, saturation: 100, hue: 0, tintStrength: 0 } },
+  { id: "duotone", label: "Duotone", description: "Two-ink poster", patch: { grayscale: true, sepia: false, brightness: 106, contrast: 118, saturation: 100, hue: 0, tint: "#c96b3b", tintStrength: 0.62 } },
+  { id: "fade", label: "Faded", description: "Soft matte print", patch: { grayscale: false, sepia: true, brightness: 108, contrast: 86, saturation: 82, hue: 0, tint: "#d8b98f", tintStrength: 0.12 } },
+  { id: "noir", label: "Noir", description: "Deep contrast", patch: { grayscale: true, sepia: false, brightness: 90, contrast: 132, saturation: 100, hue: 0, tintStrength: 0 } },
+];
+
+export function coverImageFilterCss(layer: Pick<CoverImageLayer, "grayscale" | "sepia" | "brightness" | "contrast" | "saturation" | "hue" | "blur">) {
+  return [
+    layer.grayscale ? "grayscale(1)" : "",
+    layer.sepia ? "sepia(0.72)" : "",
+    layer.brightness !== 100 ? `brightness(${layer.brightness}%)` : "",
+    layer.contrast !== 100 ? `contrast(${layer.contrast}%)` : "",
+    layer.saturation !== 100 ? `saturate(${layer.saturation}%)` : "",
+    layer.hue !== 0 ? `hue-rotate(${layer.hue}deg)` : "",
+    layer.blur > 0 ? `blur(${roundInches(layer.blur * 96)}px)` : "",
+  ].filter(Boolean).join(" ");
+}
+
+export function coverImageFilterCanvas(layer: Pick<CoverImageLayer, "grayscale" | "sepia" | "brightness" | "contrast" | "saturation" | "hue" | "blur">, dpi: number) {
+  return [
+    layer.grayscale ? "grayscale(1)" : "",
+    layer.sepia ? "sepia(0.72)" : "",
+    layer.brightness !== 100 ? `brightness(${layer.brightness}%)` : "",
+    layer.contrast !== 100 ? `contrast(${layer.contrast}%)` : "",
+    layer.saturation !== 100 ? `saturate(${layer.saturation}%)` : "",
+    layer.hue !== 0 ? `hue-rotate(${layer.hue}deg)` : "",
+    layer.blur > 0 ? `blur(${Math.max(0.2, roundInches(layer.blur * dpi))}px)` : "",
+  ].filter(Boolean).join(" ");
+}
+
+export function coverImageMaskCss(mask: CoverImageMask) {
+  if (mask === "circle") return "border-radius:50%;";
+  if (mask === "arch") return "border-radius:50% 50% 0 0 / 34% 34% 0 0;";
+  if (mask === "diamond") return "clip-path:polygon(50% 0, 100% 50%, 50% 100%, 0 50%);";
+  if (mask === "hexagon") return "clip-path:polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);";
+  return "";
+}
+
 export interface CoverTemplatePreset {
   id: string;
   label: string;
@@ -215,6 +276,7 @@ const FONT_IDS = COVER_FONTS.map((font) => font.id);
 const BLEND_MODES: CoverBlendMode[] = ["normal", "multiply", "screen", "overlay", "soft-light", "darken", "lighten"];
 const SHAPES: CoverShapeKind[] = ["rectangle", "ellipse", "triangle", "diamond", "star", "burst", "heart", "arch"];
 const DASH_STYLES: CoverDashStyle[] = ["solid", "dashed", "dotted"];
+const IMAGE_MASKS: CoverImageMask[] = ["none", "circle", "arch", "diamond", "hexagon"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -469,6 +531,17 @@ export function imageLayer(input: Partial<CoverImageLayer> & Pick<CoverImageLaye
     grayscale: input.grayscale ?? false,
     sepia: input.sepia ?? false,
     brightness: input.brightness ?? 100,
+    contrast: input.contrast ?? 100,
+    saturation: input.saturation ?? 100,
+    hue: input.hue ?? 0,
+    blur: input.blur ?? 0,
+    tint: input.tint ?? "#ffffff",
+    tintStrength: input.tintStrength ?? 0,
+    mask: input.mask ?? "none",
+    focusX: input.focusX ?? 0.5,
+    focusY: input.focusY ?? 0.5,
+    flipX: input.flipX ?? false,
+    flipY: input.flipY ?? false,
   };
 }
 
@@ -582,6 +655,17 @@ function normalizeLayer(value: unknown, index: number): CoverLayer | null {
       grayscale: boolean(value.grayscale, false),
       sepia: boolean(value.sepia, false),
       brightness: decimal(value.brightness, 100, 20, 180),
+      contrast: decimal(value.contrast, 100, 20, 220),
+      saturation: decimal(value.saturation, 100, 0, 220),
+      hue: integer(value.hue, 0, -180, 180),
+      blur: decimal(value.blur, 0, 0, 0.08),
+      tint: color(value.tint, "#ffffff"),
+      tintStrength: decimal(value.tintStrength, 0, 0, 1),
+      mask: oneOf(value.mask, IMAGE_MASKS, "none"),
+      focusX: decimal(value.focusX, 0.5, 0, 1),
+      focusY: decimal(value.focusY, 0.5, 0, 1),
+      flipX: boolean(value.flipX, false),
+      flipY: boolean(value.flipY, false),
     };
   }
   if (type === "shape") {
@@ -1991,9 +2075,41 @@ function shapeSvgMarkup(layer: CoverShapeLayer, layerId: string) {
   return `<svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;overflow:visible">${defs}<path d="${path}" fill="${fill}" ${stroke} ${dash}/></svg>`;
 }
 
-function imageFilterStyle(layer: CoverImageLayer) {
-  const filters = [layer.grayscale ? "grayscale(1)" : "", layer.sepia ? "sepia(0.8)" : "", layer.brightness !== 100 ? `brightness(${layer.brightness}%)` : ""].filter(Boolean);
-  return filters.length ? `filter:${filters.join(" ")};` : "";
+function clipImageMask(ctx: CanvasRenderingContext2D, mask: CoverImageMask, x: number, y: number, width: number, height: number, radius: number) {
+  if (mask === "circle") {
+    ctx.beginPath();
+    ctx.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+    ctx.clip();
+    return;
+  }
+  if (mask === "arch") {
+    const r = Math.min(width / 2, height);
+    ctx.beginPath();
+    ctx.moveTo(x, y + height);
+    ctx.lineTo(x, y + r);
+    ctx.arc(x + width / 2, y + r, r, Math.PI, 0);
+    ctx.lineTo(x + width, y + height);
+    ctx.closePath();
+    ctx.clip();
+    return;
+  }
+  if (mask === "diamond" || mask === "hexagon") {
+    const points = mask === "diamond"
+      ? [[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]]
+      : [[0.25, 0], [0.75, 0], [1, 0.5], [0.75, 1], [0.25, 1], [0, 0.5]];
+    ctx.beginPath();
+    points.forEach(([px, py], index) => {
+      const pointX = x + px * width;
+      const pointY = y + py * height;
+      if (index === 0) ctx.moveTo(pointX, pointY);
+      else ctx.lineTo(pointX, pointY);
+    });
+    ctx.closePath();
+    ctx.clip();
+    return;
+  }
+  roundRectPath(ctx, x, y, width, height, radius);
+  ctx.clip();
 }
 
 export function coverLayerInnerHtml(book: Book, cover: BookCoverDesign, layer: CoverLayer, idPrefix = "cover") {
@@ -2007,7 +2123,11 @@ export function coverLayerInnerHtml(book: Book, cover: BookCoverDesign, layer: C
     if (!layer.src) {
       return `<div class="cover-doc-image-empty"><span>Image</span></div>`;
     }
-    return `<img class="cover-doc-image" src="${escapeHtml(layer.src)}" alt="" draggable="false" style="width:100%;height:100%;object-fit:${layer.fit};border-radius:${layer.radius}in;${imageFilterStyle(layer)}" />`;
+    const filter = coverImageFilterCss(layer);
+    const tint = layer.tintStrength > 0
+      ? `<span class="cover-doc-image-tint" style="position:absolute;inset:0;background:${escapeHtml(layer.tint)};opacity:${layer.tintStrength};mix-blend-mode:color;pointer-events:none"></span>`
+      : "";
+    return `<div class="cover-doc-image-frame" style="position:relative;width:100%;height:100%;overflow:hidden;isolation:isolate;border-radius:${layer.radius}in;${coverImageMaskCss(layer.mask)}"><img class="cover-doc-image" src="${escapeHtml(layer.src)}" alt="" draggable="false" style="width:100%;height:100%;object-fit:${layer.fit};object-position:${Math.round(layer.focusX * 100)}% ${Math.round(layer.focusY * 100)}%;${filter ? `filter:${filter};` : ""}transform:scale(${layer.flipX ? -1 : 1},${layer.flipY ? -1 : 1})" />${tint}</div>`;
   }
   if (layer.type === "shape") {
     return shapeSvgMarkup(layer, `${idPrefix}-${layer.id}`);
@@ -2162,7 +2282,7 @@ function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, widt
   ctx.closePath();
 }
 
-function drawImageFit(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, width: number, height: number, fit: "cover" | "contain", radius: number) {
+function drawImageFit(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, width: number, height: number, fit: "cover" | "contain", radius: number, options: { focusX?: number; focusY?: number; mask?: CoverImageMask; flipX?: boolean; flipY?: boolean; filter?: string; tint?: string; tintStrength?: number } = {}) {
   const imageRatio = image.width / image.height;
   const boxRatio = width / height;
   let drawWidth = width;
@@ -2172,12 +2292,29 @@ function drawImageFit(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x:
   } else {
     drawHeight = width / imageRatio;
   }
-  const dx = x + (width - drawWidth) / 2;
-  const dy = y + (height - drawHeight) / 2;
+  const focusX = clamp(options.focusX ?? 0.5, 0, 1);
+  const focusY = clamp(options.focusY ?? 0.5, 0, 1);
+  const extraX = Math.max(0, drawWidth - width);
+  const extraY = Math.max(0, drawHeight - height);
+  const dx = fit === "cover" ? x - extraX * focusX : x + (width - drawWidth) / 2;
+  const dy = fit === "cover" ? y - extraY * focusY : y + (height - drawHeight) / 2;
   ctx.save();
-  roundRectPath(ctx, x, y, width, height, radius);
-  ctx.clip();
+  clipImageMask(ctx, options.mask ?? "none", x, y, width, height, radius);
+  if (options.filter) ctx.filter = options.filter;
+  if (options.flipX || options.flipY) {
+    ctx.translate(x + width / 2, y + height / 2);
+    ctx.scale(options.flipX ? -1 : 1, options.flipY ? -1 : 1);
+    ctx.translate(-(x + width / 2), -(y + height / 2));
+  }
   ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
+  ctx.filter = "none";
+  if (options.tint && (options.tintStrength ?? 0) > 0) {
+    ctx.globalCompositeOperation = "color";
+    ctx.globalAlpha = clamp(options.tintStrength ?? 0, 0, 1);
+    ctx.fillStyle = options.tint;
+    ctx.fillRect(x, y, width, height);
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 }
 
@@ -2378,9 +2515,16 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
     } else if (layer.type === "image") {
       const image = imageBySource.get(layer.src);
       if (image) {
-        ctx.filter = [layer.grayscale ? "grayscale(1)" : "", layer.sepia ? "sepia(0.8)" : "", layer.brightness !== 100 ? `brightness(${layer.brightness}%)` : ""].filter(Boolean).join(" ") || "none";
-        drawImageFit(ctx, image, 0, 0, spread.width, spread.height, layer.fit, layer.radius);
-        ctx.filter = "none";
+        drawImageFit(ctx, image, 0, 0, spread.width, spread.height, layer.fit, layer.radius, {
+          focusX: layer.focusX,
+          focusY: layer.focusY,
+          mask: layer.mask,
+          flipX: layer.flipX,
+          flipY: layer.flipY,
+          filter: coverImageFilterCanvas(layer, dpi),
+          tint: layer.tint,
+          tintStrength: layer.tintStrength,
+        });
       } else {
         ctx.fillStyle = "rgba(0,0,0,.08)";
         roundRectPath(ctx, 0, 0, spread.width, spread.height, layer.radius);

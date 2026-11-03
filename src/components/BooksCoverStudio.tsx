@@ -33,6 +33,8 @@ import {
   Feather,
   FileDown,
   FileImage,
+  FlipHorizontal2,
+  FlipVertical2,
   Frame,
   Grid3X3,
   ImagePlus,
@@ -70,6 +72,7 @@ import { BOOK_GRAPHIC_CATEGORIES, BOOK_GRAPHICS, graphicDataUri, type BookGraphi
 import { coverCss, coverMarkup } from "../lib/bookCover";
 import {
   COVER_FONTS,
+  COVER_IMAGE_PRESETS,
   COVER_PAPER_STOCKS,
   COVER_SYMBOLS,
   COVER_TEMPLATE_PRESETS,
@@ -106,6 +109,7 @@ import {
   type CoverFill,
   type CoverGuideline,
   type CoverImageLayer,
+  type CoverImageMask,
   type CoverLayer,
   type CoverLayerType,
   type CoverLineLayer,
@@ -2163,17 +2167,43 @@ function LayerInspector({
       )}
 
       {layer.type === "image" && (
-        <Section title="Image" hint="Crop, tone & frame">
+        <Section title="Image lab" hint="Crop, tone & frame">
           <button type="button" className="cover-wide-button" onClick={onReplaceImage}><Upload size={13} /> Replace image</button>
+          <div className="cover-image-preset-grid">
+            {COVER_IMAGE_PRESETS.map((preset) => (
+              <button key={preset.id} type="button" title={preset.description} onClick={() => onUpdate(preset.patch, { key: `image-preset:${layer.id}:${preset.id}` })}>{preset.label}</button>
+            ))}
+          </div>
           <div className="cover-select-grid">
             <label className="cover-select-field"><span>Fit</span><select value={layer.fit} onChange={(event) => onUpdate({ fit: event.target.value === "contain" ? "contain" : "cover" }, { key: `fit:${layer.id}` })}><option value="cover">Fill frame</option><option value="contain">Fit inside</option></select></label>
+            <label className="cover-select-field"><span>Mask</span><select value={layer.mask} onChange={(event) => onUpdate({ mask: event.target.value as CoverImageMask }, { key: `mask:${layer.id}` })}><option value="none">Rectangle</option><option value="circle">Circle</option><option value="arch">Arch</option><option value="diamond">Diamond</option><option value="hexagon">Hexagon</option></select></label>
             <NumberField label="Radius" value={layer.radius} onChange={(radius) => onUpdate({ radius: Math.max(0, radius) }, { key: `radius:${layer.id}` })} step={0.01} min={0} suffix="in" />
+          </div>
+          <div className="cover-image-sliders">
+            <SliderField label="Brightness" value={layer.brightness} onChange={(brightness) => onUpdate({ brightness }, { key: `brightness:${layer.id}` })} min={20} max={180} step={1} suffix="%" />
+            <SliderField label="Contrast" value={layer.contrast} onChange={(contrast) => onUpdate({ contrast }, { key: `contrast:${layer.id}` })} min={20} max={220} step={1} suffix="%" />
+            <SliderField label="Saturation" value={layer.saturation} onChange={(saturation) => onUpdate({ saturation }, { key: `saturation:${layer.id}` })} min={0} max={220} step={1} suffix="%" />
+            <SliderField label="Hue" value={layer.hue} onChange={(hue) => onUpdate({ hue }, { key: `hue:${layer.id}` })} min={-180} max={180} step={1} suffix="°" />
+            <SliderField label="Blur" value={layer.blur} onChange={(blur) => onUpdate({ blur }, { key: `blur:${layer.id}` })} min={0} max={0.08} step={0.002} suffix="in" />
           </div>
           <div className="cover-toggle-grid">
             <label className="cover-toggle-row"><span>Grayscale</span><input type="checkbox" checked={layer.grayscale} onChange={(event) => onUpdate({ grayscale: event.target.checked }, { key: `gray:${layer.id}` })} /></label>
             <label className="cover-toggle-row"><span>Sepia</span><input type="checkbox" checked={layer.sepia} onChange={(event) => onUpdate({ sepia: event.target.checked }, { key: `sepia:${layer.id}` })} /></label>
           </div>
-          <SliderField label="Brightness" value={layer.brightness} onChange={(brightness) => onUpdate({ brightness }, { key: `brightness:${layer.id}` })} min={20} max={180} step={1} suffix="%" />
+          <div className="cover-tint-editor">
+            <ColorField label="Duotone tint" value={layer.tint} onChange={(tint) => onUpdate({ tint }, { key: `tint:${layer.id}` })} />
+            <SliderField label="Tint strength" value={layer.tintStrength} onChange={(tintStrength) => onUpdate({ tintStrength }, { key: `tint-strength:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
+          </div>
+          <div className="cover-focus-block">
+            <span className="cover-field-heading">Crop focus</span>
+            <SliderField label="Horizontal" value={layer.focusX} onChange={(focusX) => onUpdate({ focusX }, { key: `focus-x:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
+            <SliderField label="Vertical" value={layer.focusY} onChange={(focusY) => onUpdate({ focusY }, { key: `focus-y:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
+            <div className="cover-image-flip-row">
+              <button type="button" className={layer.flipX ? "active" : ""} onClick={() => onUpdate({ flipX: !layer.flipX }, { key: `flip-x:${layer.id}` })}><FlipHorizontal2 size={13} /> Flip H</button>
+              <button type="button" className={layer.flipY ? "active" : ""} onClick={() => onUpdate({ flipY: !layer.flipY }, { key: `flip-y:${layer.id}` })}><FlipVertical2 size={13} /> Flip V</button>
+              <button type="button" onClick={() => onUpdate({ brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0, grayscale: false, sepia: false, tint: "#ffffff", tintStrength: 0, mask: "none", focusX: 0.5, focusY: 0.5, flipX: false, flipY: false }, { key: `image-reset:${layer.id}` })}><RotateCcw size={12} /> Reset</button>
+            </div>
+          </div>
         </Section>
       )}
 

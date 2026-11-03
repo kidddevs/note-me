@@ -2,7 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   barcodeSvgMarkup,
+  COVER_IMAGE_PRESETS,
   coverDocMarkup,
+  coverImageFilterCss,
+  coverImageMaskCss,
+  imageLayer,
   coverMetrics,
   createCoverDocument,
   ean13Bits,
@@ -188,4 +192,88 @@ test("artwork layers render the shared book-graphic library", () => {
   const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
   assert.match(markup, /cover-doc-artwork/);
   assert.match(markup, /data:image\/svg\+xml;base64,/);
+});
+
+
+test("image layers normalise the tone lab and crop controls", () => {
+  const doc = parseCoverDocument({
+    layers: [{
+      id: "photo",
+      type: "image",
+      name: "Photo",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: 3,
+      height: 4,
+      src: "data:image/png;base64,aaa",
+      contrast: 145,
+      saturation: 80,
+      hue: 12,
+      blur: 0.5,
+      tint: "#ff0000",
+      tintStrength: 2,
+      mask: "circle",
+      focusX: 2,
+      focusY: -1,
+      flipX: true,
+    }],
+  });
+  const layer = doc.layers[0];
+  assert.equal(layer.contrast, 145);
+  assert.equal(layer.saturation, 80);
+  assert.equal(layer.hue, 12);
+  assert.equal(layer.blur, 0.08);
+  assert.equal(layer.tint, "#ff0000");
+  assert.equal(layer.tintStrength, 1);
+  assert.equal(layer.mask, "circle");
+  assert.equal(layer.focusX, 1);
+  assert.equal(layer.focusY, 0);
+  assert.equal(layer.flipX, true);
+
+  const legacy = parseCoverDocument({
+    layers: [{ id: "old", type: "image", name: "Old", panel: "front", x: 0, y: 0, width: 2, height: 3, src: "data:," }],
+  });
+  assert.equal(legacy.layers[0].contrast, 100);
+  assert.equal(legacy.layers[0].saturation, 100);
+  assert.equal(legacy.layers[0].hue, 0);
+  assert.equal(legacy.layers[0].blur, 0);
+  assert.equal(legacy.layers[0].mask, "none");
+  assert.equal(legacy.layers[0].focusX, 0.5);
+});
+
+test("image lab markup carries filters, masks, focal point, tint, and flips", () => {
+  const layer = imageLayer({
+    id: "photo",
+    name: "Photo",
+    panel: "front",
+    x: 0,
+    y: 0,
+    width: 3,
+    height: 4,
+    src: "data:image/png;base64,aaa",
+    grayscale: true,
+    contrast: 125,
+    brightness: 108,
+    saturation: 80,
+    hue: 12,
+    blur: 0.02,
+    mask: "diamond",
+    focusX: 0.35,
+    focusY: 0.7,
+    tint: "#c96b3b",
+    tintStrength: 0.55,
+    flipX: true,
+  });
+  const doc = parseCoverDocument({ layers: [layer] });
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.match(markup, /object-position:35% 70%/);
+  assert.match(markup, /filter:grayscale\(1\) brightness\(108%\) contrast\(125%\) saturate\(80%\) hue-rotate\(12deg\) blur\(1\.92px\)/);
+  assert.match(markup, /clip-path:polygon\(50% 0/);
+  assert.match(markup, /cover-doc-image-tint/);
+  assert.match(markup, /scale\(-1,1\)/);
+  assert.match(coverImageFilterCss({ grayscale: false, sepia: false, brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0.02 }), /blur\(1\.92px\)/);
+  assert.equal(coverImageMaskCss("arch"), "border-radius:50% 50% 0 0 / 34% 34% 0 0;");
+  assert.ok(COVER_IMAGE_PRESETS.length >= 6);
+  assert.ok(COVER_IMAGE_PRESETS.find((preset) => preset.id === "duotone").patch.tintStrength > 0);
 });
