@@ -11,9 +11,11 @@ import {
 import {
   AlignCenter,
   AlignEndVertical,
+  AlignHorizontalDistributeCenter,
   AlignLeft,
   AlignRight,
   AlignStartVertical,
+  AlignVerticalDistributeCenter,
   ArrowDown,
   ArrowUp,
   Barcode,
@@ -31,6 +33,7 @@ import {
   Feather,
   FileDown,
   FileImage,
+  Frame,
   Grid3X3,
   ImagePlus,
   Italic,
@@ -101,6 +104,7 @@ import {
   type CoverBarcodeLayer,
   type CoverBlendMode,
   type CoverFill,
+  type CoverGuideline,
   type CoverImageLayer,
   type CoverLayer,
   type CoverLayerType,
@@ -113,6 +117,20 @@ import {
   type CoverTextLayer,
   type CoverVerticalAlign,
 } from "../lib/bookCoverDoc";
+import {
+  alignCoverLayers,
+  coverGuidePanelPosition,
+  coverGuideSpreadPosition,
+  coverGuideVisible,
+  coverPanelSize,
+  coverPanelRectFor,
+  coverSelectionBounds,
+  coverSpreadRect,
+  distributeCoverLayers,
+  snapCoverRect,
+  type CoverAlignMode,
+  type CoverDistributeAxis,
+} from "../lib/bookCoverGeometry";
 import {
   layoutForBook,
   serializeBookLayout,
@@ -139,20 +157,28 @@ interface CoverStageProps {
   cover: BookCoverDesign;
   panel: CoverPanel;
   selectedId: string | null;
+  selectedIds: string[];
   showGuides: boolean;
   showGrid: boolean;
   showBleed: boolean;
   previewing: boolean;
   zoom: number;
   autoFit: boolean;
-  onSelect: (id: string | null) => void;
+  onSelect: (id: string | null, additive?: boolean) => void;
   onZoom: (value: number) => void;
   onFit: () => void;
-  onLayerChange: (id: string, patch: Partial<CoverLayer>, options?: CommitOptions) => void;
+  onLayersChange: (updates: Array<{ id: string; patch: Partial<CoverLayer> }>, options?: CommitOptions) => void;
   onInteractionStart: (key: string) => void;
   onInteractionEnd: () => void;
   onEditText: (id: string) => void;
   onDropImage: (dataUrl: string, x: number, y: number) => void;
+  onGuideAdd: (axis: "x" | "y", spreadPosition: number) => void;
+  onGuideChange: (id: string, spreadPosition: number) => void;
+  onGuideDelete: (id: string) => void;
+  onAlignSelection: (mode: CoverAlignMode) => void;
+  onDistributeSelection: (axis: CoverDistributeAxis) => void;
+  onDuplicateSelection: () => void;
+  onDeleteSelection: () => void;
 }
 
 interface InspectorProps {
@@ -160,6 +186,7 @@ interface InspectorProps {
   cover: BookCoverDesign;
   metrics: ReturnType<typeof coverMetrics>;
   selected: CoverLayer | null;
+  selectedCount: number;
   pageEstimate: number;
   onSelect: (id: string | null) => void;
   onUpdateLayer: (id: string, patch: Partial<CoverLayer>, options?: CommitOptions) => void;
@@ -182,7 +209,8 @@ interface InspectorProps {
 interface LayerPanelProps {
   doc: BookCoverDocument;
   selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  selectedIds: string[];
+  onSelect: (id: string | null, additive?: boolean) => void;
   onAdd: () => void;
   onToggleVisible: (id: string) => void;
   onToggleLocked: (id: string) => void;
@@ -330,6 +358,7 @@ export function CoverScreen({
   const [layout, setLayout] = useState<BookLayout>(() => layoutForBook(book));
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [extraSelectedIds, setExtraSelectedIds] = useState<string[]>([]);
   const [panel, setPanel] = useState<CoverPanel>("wrap");
   const [tool, setTool] = useState<string>("select");
   const [showLayers, setShowLayers] = useState(true);
@@ -365,6 +394,11 @@ export function CoverScreen({
   const doc = cover.doc;
   const metrics = useMemo(() => coverMetrics(book.trim_size, cover), [book.trim_size, cover.pageCount, cover.paperStock, cover.spineWidthOverride, cover.bleed]);
   const selected = doc.layers.find((layer) => layer.id === selectedLayerId) ?? null;
+  const selectedIds = useMemo(
+    () => selectedLayerId ? [selectedLayerId, ...extraSelectedIds.filter((id) => id !== selectedLayerId)] : [],
+    [selectedLayerId, extraSelectedIds],
+  );
+  const selectedLayers = useMemo(() => doc.layers.filter((layer) => selectedIds.includes(layer.id)), [doc.layers, selectedIds]);
   const pageEstimate = useMemo(() => pageCountFor(book, chapters), [book, chapters]);
   const coverChapter = chapters.find((chapter) => chapter.chapter_kind === "cover") ?? null;
   const designPanel: Exclude<CoverPanel, "wrap"> = panel === "wrap" ? "front" : panel;
@@ -434,6 +468,15 @@ export function CoverScreen({
     applyLayout({ ...layoutRef.current, cover: nextCover }, options, current);
   }, []);
 
+  const updateLayers = useCallback((updates: Array<{ id: string; patch: Partial<CoverLayer> }>, options: CommitOptions = {}) => {
+    if (updates.length === 0) return;
+    const current = layoutRef.current.cover;
+    const patches = new Map(updates.map((update) => [update.id, update.patch]));
+    const layers = current.doc.layers.map((layer) => patches.has(layer.id) ? ({ ...layer, ...patches.get(layer.id) } as CoverLayer) : layer);
+    const nextCover = { ...current, doc: { ...current.doc, layers } };
+    applyLayout({ ...layoutRef.current, cover: nextCover }, options, current);
+  }, []);
+
   const restoreCover = (snapshot: BookCoverDesign) => {
     const next = { ...layoutRef.current, cover: snapshot };
     layoutRef.current = next;
@@ -472,6 +515,7 @@ export function CoverScreen({
     layoutRef.current = initial;
     setLayout(initial);
     setSelectedLayerId(null);
+    setExtraSelectedIds([]);
     setPanel("wrap");
     setHistory([]);
     setFuture([]);
@@ -490,12 +534,34 @@ export function CoverScreen({
   }, [book.id]);
 
   useEffect(() => {
-    if (selectedLayerId && !doc.layers.some((layer) => layer.id === selectedLayerId)) setSelectedLayerId(null);
+    const layerIds = new Set(doc.layers.map((layer) => layer.id));
+    setExtraSelectedIds((ids) => ids.filter((id) => layerIds.has(id)));
+    if (selectedLayerId && !layerIds.has(selectedLayerId)) setSelectedLayerId(null);
   }, [doc.layers, selectedLayerId]);
 
-  const selectLayer = (id: string | null) => {
+  const selectLayer = (id: string | null, additive = false) => {
+    if (!id) {
+      setSelectedLayerId(null);
+      setExtraSelectedIds([]);
+      return;
+    }
+    if (additive) {
+      if (selectedLayerId === id) {
+        const [next, ...rest] = extraSelectedIds;
+        setSelectedLayerId(next ?? null);
+        setExtraSelectedIds(rest);
+        return;
+      }
+      if (extraSelectedIds.includes(id)) {
+        setExtraSelectedIds(extraSelectedIds.filter((item) => item !== id));
+        return;
+      }
+      if (!selectedLayerId) setSelectedLayerId(id);
+      else setExtraSelectedIds([...extraSelectedIds, id]);
+      return;
+    }
     setSelectedLayerId(id);
-    if (!id) return;
+    setExtraSelectedIds([]);
     const layer = layoutRef.current.cover.doc.layers.find((item) => item.id === id);
     if (layer && layer.panel !== "wrap" && panel !== "wrap" && layer.panel !== panel) {
       setPanel(layer.panel);
@@ -507,6 +573,7 @@ export function CoverScreen({
     const current = layoutRef.current.cover;
     updateDoc({ ...current.doc, templateId: current.doc.templateId || "custom", layers: [...current.doc.layers, layer] }, { key: `add:${layer.type}` });
     setSelectedLayerId(layer.id);
+    setExtraSelectedIds([]);
     if (targetPanel !== "wrap" && panel !== "wrap" && panel !== targetPanel) setPanel(targetPanel);
   };
 
@@ -727,6 +794,7 @@ export function CoverScreen({
     updateCover({ doc: nextDoc, enabled: true }, { key: `template:${templateId}`, history: true });
     setTemplateOpen(false);
     setSelectedLayerId(null);
+    setExtraSelectedIds([]);
     setPanel("wrap");
     setAutoFit(true);
     notify("success", templateId === "blank" ? "Blank cover created" : "Cover template applied", "Your previous design is available in undo.");
@@ -744,25 +812,91 @@ export function CoverScreen({
     updateLayer(id, { locked: !layer.locked }, { key: `lock:${id}` });
   };
 
-  const duplicateLayer = (id: string) => {
+  const duplicateLayers = (ids: string[]) => {
     const current = layoutRef.current.cover;
-    const layer = current.doc.layers.find((item) => item.id === id);
-    if (!layer) return;
-    const clone = {
+    const sources = current.doc.layers.filter((layer) => ids.includes(layer.id));
+    if (sources.length === 0) return;
+    const clones = sources.map((layer, index) => ({
       ...layer,
       id: newCoverLayerId(layer.type),
       name: `${layer.name} copy`,
-      x: layer.x + 0.12,
-      y: layer.y + 0.12,
-    } as CoverLayer;
-    updateDoc({ ...current.doc, layers: [...current.doc.layers, clone] }, { key: `duplicate:${id}` });
-    setSelectedLayerId(clone.id);
+      x: layer.x + 0.12 + index * 0.04,
+      y: layer.y + 0.12 + index * 0.04,
+    } as CoverLayer));
+    updateDoc({ ...current.doc, layers: [...current.doc.layers, ...clones] }, { key: `duplicate:${ids.join(",")}` });
+    setSelectedLayerId(clones[clones.length - 1]?.id ?? null);
+    setExtraSelectedIds(clones.slice(0, -1).map((layer) => layer.id));
   };
 
-  const deleteLayer = (id: string) => {
+  const duplicateLayer = (id: string) => duplicateLayers([id]);
+  const duplicateSelection = () => duplicateLayers(selectedIds);
+
+  const deleteLayers = (ids: string[]) => {
+    if (ids.length === 0) return;
     const current = layoutRef.current.cover;
-    updateDoc({ ...current.doc, layers: current.doc.layers.filter((layer) => layer.id !== id) }, { key: `delete:${id}` });
+    updateDoc({ ...current.doc, layers: current.doc.layers.filter((layer) => !ids.includes(layer.id)) }, { key: `delete:${ids.join(",")}` });
     setSelectedLayerId(null);
+    setExtraSelectedIds([]);
+  };
+
+  const deleteLayer = (id: string) => deleteLayers([id]);
+  const deleteSelection = () => deleteLayers(selectedIds);
+
+  const selectAllLayers = () => {
+    const ids = doc.layers.filter((layer) => layer.visible && !layer.locked).map((layer) => layer.id);
+    if (ids.length === 0) return;
+    setSelectedLayerId(ids[ids.length - 1]);
+    setExtraSelectedIds(ids.slice(0, -1));
+  };
+
+  const alignSelection = (mode: CoverAlignMode) => {
+    if (selectedLayers.length === 0) return;
+    const bounds = selectedLayers.length > 1
+      ? coverSelectionBounds(metrics, selectedLayers)
+      : coverPanelRectFor(metrics, selectedLayers[0].panel);
+    const patches = alignCoverLayers(metrics, selectedLayers, mode, bounds);
+    updateLayers(patches.map((patch) => ({ id: patch.id, patch: { x: patch.x, y: patch.y } })), { key: `align:${mode}:${selectedIds.join(",")}` });
+  };
+
+  const distributeSelection = (axis: CoverDistributeAxis) => {
+    const patches = distributeCoverLayers(metrics, selectedLayers, axis);
+    if (patches.length === 0) return;
+    updateLayers(patches.map((patch) => ({ id: patch.id, patch: { x: patch.x, y: patch.y } })), { key: `distribute:${axis}:${selectedIds.join(",")}` });
+  };
+
+  const nudgeSelection = (dx: number, dy: number) => {
+    const current = layoutRef.current.cover;
+    const layers = current.doc.layers.filter((layer) => selectedIds.includes(layer.id) && !layer.locked);
+    if (layers.length === 0) return;
+    updateLayers(layers.map((layer) => ({
+      id: layer.id,
+      patch: { x: layer.x + dx, y: layer.y + dy },
+    })), { key: `nudge:${selectedIds.join(",")}` });
+  };
+
+  const addGuide = (axis: "x" | "y", spreadPosition: number) => {
+    const current = layoutRef.current.cover;
+    const targetPanel = panel;
+    const origin = targetPanel === "wrap" ? 0 : axis === "x" ? metrics.panelOrigins[targetPanel].x : metrics.panelOrigins[targetPanel].y;
+    const size = coverPanelSize(metrics, targetPanel);
+    const limit = axis === "x" ? size.width : size.height;
+    const position = Math.max(0, Math.min(limit, spreadPosition - origin));
+    updateDoc({ ...current.doc, guides: [...current.doc.guides, { id: newCoverLayerId("guide"), axis, panel: targetPanel, position }] }, { key: "guide:add" });
+  };
+
+  const changeGuide = (id: string, spreadPosition: number) => {
+    const current = layoutRef.current.cover;
+    const guide = current.doc.guides.find((item) => item.id === id);
+    if (!guide) return;
+    const size = coverPanelSize(metrics, guide.panel);
+    const limit = guide.axis === "x" ? size.width : size.height;
+    const position = Math.max(0, Math.min(limit, coverGuidePanelPosition(metrics, guide, spreadPosition)));
+    updateDoc({ ...current.doc, guides: current.doc.guides.map((item) => item.id === id ? { ...item, position } : item) }, { key: `guide:${id}` });
+  };
+
+  const deleteGuide = (id: string) => {
+    const current = layoutRef.current.cover;
+    updateDoc({ ...current.doc, guides: current.doc.guides.filter((guide) => guide.id !== id) }, { key: `guide-delete:${id}` });
   };
 
   const reorderLayer = (id: string, direction: "up" | "down") => {
@@ -794,6 +928,7 @@ export function CoverScreen({
 
   const requestEditText = (id: string) => {
     setSelectedLayerId(id);
+    setExtraSelectedIds([]);
     setFocusContent((value) => value + 1);
   };
 
@@ -833,7 +968,8 @@ export function CoverScreen({
       else if (artworkOpen) setArtworkOpen(false);
       else if (downloadOpen) setDownloadOpen(false);
       else if (templateOpen) setTemplateOpen(false);
-      else setSelectedLayerId(null);
+      else if (selectedIds.length > 1) { setSelectedLayerId(selectedLayerId); setExtraSelectedIds([]); }
+      else selectLayer(null);
       return;
     }
     if (editing) return;
@@ -848,24 +984,27 @@ export function CoverScreen({
       redo();
       return;
     }
-    if (meta && event.key.toLocaleLowerCase() === "d" && selectedLayerId) {
+    if (meta && event.key.toLocaleLowerCase() === "a") {
       event.preventDefault();
-      duplicateLayer(selectedLayerId);
+      selectAllLayers();
       return;
     }
-    if ((event.key === "Delete" || event.key === "Backspace") && selectedLayerId) {
+    if (meta && event.key.toLocaleLowerCase() === "d" && selectedIds.length > 0) {
       event.preventDefault();
-      deleteLayer(selectedLayerId);
+      duplicateSelection();
       return;
     }
-    if (selectedLayerId && event.key.startsWith("Arrow")) {
-      const layer = layoutRef.current.cover.doc.layers.find((item) => item.id === selectedLayerId);
-      if (!layer || layer.locked) return;
+    if ((event.key === "Delete" || event.key === "Backspace") && selectedIds.length > 0) {
+      event.preventDefault();
+      deleteSelection();
+      return;
+    }
+    if (selectedIds.length > 0 && event.key.startsWith("Arrow")) {
       event.preventDefault();
       const step = event.shiftKey ? 0.1 : 0.02;
       const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
       const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
-      updateLayer(layer.id, { x: layer.x + dx, y: layer.y + dy }, { key: `nudge:${layer.id}` });
+      nudgeSelection(dx, dy);
       return;
     }
     if (meta || event.altKey) return;
@@ -880,7 +1019,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, symbolOpen, artworkOpen, downloadOpen, templateOpen, selectedLayerId, undo, redo]);
+  }, [previewing, symbolOpen, artworkOpen, downloadOpen, templateOpen, selectedLayerId, selectedIds, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -925,7 +1064,8 @@ export function CoverScreen({
               ))}
             </div>
             <span className="cover-bar-divider" />
-            <button type="button" className={`cover-icon-button ${doc.showGuides ? "active" : ""}`} title="Toggle guides" aria-label="Toggle guides" onClick={() => updateDoc({ ...doc, showGuides: !doc.showGuides }, { key: "guides" })}><Ruler size={15} /></button>
+            <button type="button" className={`cover-icon-button ${doc.showGuides ? "active" : ""}`} title="Toggle guides" aria-label="Toggle guides" onClick={() => updateDoc({ ...doc, showGuides: !doc.showGuides }, { key: "guides" })}><Frame size={15} /></button>
+            <button type="button" className={`cover-icon-button ${doc.showRulers ? "active" : ""}`} title="Toggle rulers" aria-label="Toggle rulers" onClick={() => updateDoc({ ...doc, showRulers: !doc.showRulers }, { key: "rulers" })}><Ruler size={15} /></button>
             <button type="button" className={`cover-icon-button ${doc.showGrid ? "active" : ""}`} title="Toggle grid" aria-label="Toggle grid" onClick={() => updateDoc({ ...doc, showGrid: !doc.showGrid }, { key: "grid" })}><Grid3X3 size={15} /></button>
             <button type="button" className={`cover-icon-button ${previewing ? "active" : ""}`} title={previewing ? "Exit preview" : "Preview cover"} aria-label={previewing ? "Exit preview" : "Preview cover"} onClick={() => { setPreviewing((value) => !value); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><ScanLine size={15} /></button>
           </div>
@@ -999,6 +1139,7 @@ export function CoverScreen({
             <LayerPanel
               doc={doc}
               selectedId={selectedLayerId}
+              selectedIds={selectedIds}
               onSelect={selectLayer}
               onAdd={() => fileInputRef.current?.click()}
               onToggleVisible={toggleVisible}
@@ -1020,6 +1161,7 @@ export function CoverScreen({
             cover={cover}
             panel={panel}
             selectedId={selectedLayerId}
+            selectedIds={selectedIds}
             showGuides={doc.showGuides && !previewing}
             showGrid={doc.showGrid && !previewing}
             showBleed={doc.showBleed}
@@ -1029,10 +1171,17 @@ export function CoverScreen({
             onSelect={selectLayer}
             onZoom={(value) => { setAutoFit(false); setZoom(value); }}
             onFit={() => setAutoFit(true)}
-            onLayerChange={updateLayer}
+            onLayersChange={updateLayers}
             onInteractionStart={onInteractionStart}
             onInteractionEnd={NOOP}
             onEditText={requestEditText}
+            onGuideAdd={addGuide}
+            onGuideChange={changeGuide}
+            onGuideDelete={deleteGuide}
+            onAlignSelection={alignSelection}
+            onDistributeSelection={distributeSelection}
+            onDuplicateSelection={duplicateSelection}
+            onDeleteSelection={deleteSelection}
             onDropImage={(dataUrl, x, y) => {
               const target = designPanel;
               addLayer(imageLayer({
@@ -1054,6 +1203,7 @@ export function CoverScreen({
               cover={cover}
               metrics={metrics}
               selected={selected}
+              selectedCount={selectedIds.length}
               pageEstimate={pageEstimate}
               onSelect={selectLayer}
               onUpdateLayer={updateLayer}
@@ -1212,7 +1362,7 @@ function ArtworkPicker({ onAdd, onClose }: { onAdd: (graphic: BookGraphic) => vo
 
 /* ========================================================================== */
 
-function LayerPanel({ doc, selectedId, onSelect, onAdd, onToggleVisible, onToggleLocked, onDuplicate, onDelete, onReorder, onReorderDrag, onCollapse }: LayerPanelProps) {
+function LayerPanel({ doc, selectedId, selectedIds, onSelect, onAdd, onToggleVisible, onToggleLocked, onDuplicate, onDelete, onReorder, onReorderDrag, onCollapse }: LayerPanelProps) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const layers = [...doc.layers].reverse();
@@ -1229,7 +1379,7 @@ function LayerPanel({ doc, selectedId, onSelect, onAdd, onToggleVisible, onToggl
         {layers.map((layer) => (
           <div
             key={layer.id}
-            className={`cover-layer-row ${selectedId === layer.id ? "active" : ""} ${overId === layer.id ? "drop-target" : ""} ${layer.visible ? "" : "is-hidden"}`}
+            className={`cover-layer-row ${selectedIds.includes(layer.id) ? "active" : ""} ${selectedId === layer.id ? "primary" : ""} ${overId === layer.id ? "drop-target" : ""} ${layer.visible ? "" : "is-hidden"}`}
             draggable
             onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", layer.id); setDragId(layer.id); }}
             onDragOver={(event) => { event.preventDefault(); setOverId(layer.id); }}
@@ -1241,7 +1391,7 @@ function LayerPanel({ doc, selectedId, onSelect, onAdd, onToggleVisible, onToggl
               setOverId(null);
             }}
             onDragEnd={() => { setDragId(null); setOverId(null); }}
-            onClick={() => onSelect(layer.id)}
+            onClick={(event) => onSelect(layer.id, event.shiftKey || event.metaKey || event.ctrlKey)}
           >
             <button type="button" className={`cover-layer-eye ${layer.visible ? "" : "off"}`} onClick={(event) => { event.stopPropagation(); onToggleVisible(layer.id); }} title={layer.visible ? "Hide layer" : "Show layer"} aria-label={layer.visible ? "Hide layer" : "Show layer"}>{layer.visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
             <span className="cover-layer-type-icon"><LayerIcon type={layer.type} size={13} /></span>
@@ -1255,22 +1405,22 @@ function LayerPanel({ doc, selectedId, onSelect, onAdd, onToggleVisible, onToggl
           <span className="cover-background-swatch" style={{ background: coverFillCss(doc.background) }} />
         </button>
       </div>
-      {selectedId && (
+      {selectedIds.length > 0 && (
         <div className="cover-layer-actions">
-          <button type="button" onClick={() => onReorder(selectedId, "up")} title="Move layer up" aria-label="Move layer up"><ArrowUp size={13} /></button>
-          <button type="button" onClick={() => onReorder(selectedId, "down")} title="Move layer down" aria-label="Move layer down"><ArrowDown size={13} /></button>
-          <button type="button" onClick={() => onDuplicate(selectedId)} title="Duplicate layer" aria-label="Duplicate layer"><Copy size={13} /></button>
-          <button type="button" className="danger" onClick={() => onDelete(selectedId)} title="Delete layer" aria-label="Delete layer"><Trash2 size={13} /></button>
+          <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "up")} title="Move layer up" aria-label="Move layer up"><ArrowUp size={13} /></button>
+          <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "down")} title="Move layer down" aria-label="Move layer down"><ArrowDown size={13} /></button>
+          <button type="button" onClick={() => onDuplicate(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Duplicate selected layers" : "Duplicate layer"} aria-label="Duplicate layer"><Copy size={13} /></button>
+          <button type="button" className="danger" onClick={() => onDelete(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Delete selected layers" : "Delete layer"} aria-label="Delete layer"><Trash2 size={13} /></button>
         </div>
       )}
-      <div className="cover-layer-hint"><Move size={11} /> Drag to reorder · Double-click text to edit</div>
+      <div className="cover-layer-hint"><Move size={11} /> {selectedIds.length > 1 ? `${selectedIds.length} layers selected` : "Drag to reorder · Shift-click to multi-select"}</div>
     </aside>
   );
 }
 
 /* ========================================================================== */
 
-function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, showBleed, previewing, zoom, autoFit, onSelect, onZoom, onFit, onLayerChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage }: CoverStageProps) {
+function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [interaction, setInteraction] = useState<{
@@ -1280,12 +1430,18 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
     startClientX: number;
     startClientY: number;
     startLayer: CoverLayer;
+    startLayers: CoverLayer[];
     startScale: number;
     startAngle?: number;
     startRotation?: number;
     centerX?: number;
     centerY?: number;
   } | null>(null);
+  const [guideDraft, setGuideDraft] = useState<{ id: string; axis: "x" | "y"; spread: number } | null>(null);
+  const [guideInteraction, setGuideInteraction] = useState<{ mode: "new" | "move"; id: string; axis: "x" | "y"; startClientX: number; startClientY: number } | null>(null);
+  const guideMovedRef = useRef(false);
+  const guidePositionRef = useRef(0);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const [snapGuides, setSnapGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] });
   const movedRef = useRef(false);
   const metrics = useMemo(() => coverMetrics(book.trim_size, cover), [book.trim_size, cover.pageCount, cover.paperStock, cover.spineWidthOverride, cover.bleed]);
@@ -1325,6 +1481,42 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
   }, [effectiveZoom, onZoom]);
 
   useEffect(() => {
+    if (!guideInteraction) return;
+    const move = (event: PointerEvent) => {
+      const sheet = sheetRef.current;
+      if (!sheet) return;
+      const rect = sheet.getBoundingClientRect();
+      const scale = rect.width / metrics.fullWidth;
+      if (scale <= 0) return;
+      const spread = (guideInteraction.axis === "x" ? event.clientX - rect.left : event.clientY - rect.top) / scale;
+      guidePositionRef.current = Math.round(spread * 1000) / 1000;
+      if (Math.abs(event.clientX - guideInteraction.startClientX) > 3 || Math.abs(event.clientY - guideInteraction.startClientY) > 3) guideMovedRef.current = true;
+      if (guideInteraction.mode === "new") {
+        setGuideDraft({ id: guideInteraction.id, axis: guideInteraction.axis, spread: guidePositionRef.current });
+      } else {
+        onGuideChange(guideInteraction.id, guidePositionRef.current);
+      }
+    };
+    const up = () => {
+      if (guideInteraction.mode === "new" && guideMovedRef.current) {
+        const limit = guideInteraction.axis === "x" ? metrics.fullWidth : metrics.fullHeight;
+        if (guidePositionRef.current >= 0 && guidePositionRef.current <= limit) onGuideAdd(guideInteraction.axis, guidePositionRef.current);
+      }
+      setGuideDraft(null);
+      setGuideInteraction(null);
+      guideMovedRef.current = false;
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [guideInteraction, metrics.fullWidth, metrics.fullHeight, onGuideAdd, onGuideChange]);
+
+  useEffect(() => {
     if (!interaction) return;
     const move = (event: PointerEvent) => {
       const layer = interaction.startLayer;
@@ -1345,35 +1537,37 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
         if (!event.altKey) {
           const targetsX = [0, stageWidth / 2, stageWidth];
           const targetsY = [0, stageHeight / 2, stageHeight];
-          let bestX = 0.055;
-          let bestY = 0.055;
-          let snapX: number | null = null;
-          let snapY: number | null = null;
-          for (const target of targetsX) {
-            for (const anchor of [x, x + layer.width / 2, x + layer.width]) {
-              const delta = target - anchor;
-              if (Math.abs(delta) < bestX) { bestX = Math.abs(delta); snapX = target; }
-            }
+          if (layer.panel === "wrap") {
+            targetsX.push(metrics.bleed, metrics.bleed + metrics.trimWidth, metrics.bleed + metrics.trimWidth + metrics.spineWidth, metrics.fullWidth - metrics.bleed);
+            targetsY.push(metrics.bleed, metrics.fullHeight - metrics.bleed);
           }
-          for (const target of targetsY) {
-            for (const anchor of [y, y + layer.height / 2, y + layer.height]) {
-              const delta = target - anchor;
-              if (Math.abs(delta) < bestY) { bestY = Math.abs(delta); snapY = target; }
-            }
+          const otherLayers = cover.doc.layers.filter((item) => item.id !== layer.id && item.visible && item.panel === layer.panel && !selectedIds.includes(item.id));
+          for (const other of otherLayers) {
+            targetsX.push(other.x, other.x + other.width / 2, other.x + other.width);
+            targetsY.push(other.y, other.y + other.height / 2, other.y + other.height);
           }
-          if (snapX !== null) {
-            const nearest = [x, x + layer.width / 2, x + layer.width].reduce((best, anchor) => Math.abs(snapX! - anchor) < Math.abs(snapX! - best) ? anchor : best, x);
-            x += snapX - nearest;
-            vertical.push(snapX);
+          const origin = layer.panel === "wrap" ? { x: 0, y: 0 } : metrics.panelOrigins[layer.panel];
+          for (const guide of cover.doc.guides) {
+            let position = guide.position;
+            if (guide.panel !== layer.panel && layer.panel !== "wrap" && guide.panel === "wrap") position -= guide.axis === "x" ? origin.x : origin.y;
+            else if (guide.panel !== layer.panel && layer.panel === "wrap" && guide.panel !== "wrap") position += guide.axis === "x" ? metrics.panelOrigins[guide.panel].x : metrics.panelOrigins[guide.panel].y;
+            else if (guide.panel !== layer.panel) continue;
+            if (guide.axis === "x") targetsX.push(position);
+            else targetsY.push(position);
           }
-          if (snapY !== null) {
-            const nearest = [y, y + layer.height / 2, y + layer.height].reduce((best, anchor) => Math.abs(snapY! - anchor) < Math.abs(snapY! - best) ? anchor : best, y);
-            y += snapY - nearest;
-            horizontal.push(snapY);
-          }
+          const snapped = snapCoverRect({ x, y, width: layer.width, height: layer.height }, targetsX, targetsY);
+          x = snapped.x;
+          y = snapped.y;
+          vertical.push(...snapped.vertical);
+          horizontal.push(...snapped.horizontal);
         }
         setSnapGuides({ vertical, horizontal });
-        onLayerChange(layer.id, { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 }, { history: false });
+        const moveX = x - layer.x;
+        const moveY = y - layer.y;
+        onLayersChange(interaction.startLayers.map((item) => ({
+          id: item.id,
+          patch: { x: Math.round((item.x + moveX) * 1000) / 1000, y: Math.round((item.y + moveY) * 1000) / 1000 },
+        })), { history: false });
         return;
       }
       if (interaction.mode === "resize") {
@@ -1397,14 +1591,14 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
           if (handle.includes("n")) y -= 0.04 - height;
           height = 0.04;
         }
-        onLayerChange(layer.id, { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000, width: Math.round(width * 1000) / 1000, height: Math.round(height * 1000) / 1000 }, { history: false });
+        onLayersChange([{ id: layer.id, patch: { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000, width: Math.round(width * 1000) / 1000, height: Math.round(height * 1000) / 1000 } }], { history: false });
         return;
       }
       if (interaction.mode === "rotate" && interaction.centerX !== undefined && interaction.centerY !== undefined && interaction.startAngle !== undefined) {
         const angle = (Math.atan2(event.clientY - interaction.centerY, event.clientX - interaction.centerX) * 180) / Math.PI;
         let rotation = (interaction.startRotation ?? 0) + angle - interaction.startAngle;
         if (event.shiftKey) rotation = Math.round(rotation / 15) * 15;
-        onLayerChange(layer.id, { rotation: Math.round(rotation * 10) / 10 }, { history: false });
+        onLayersChange([{ id: layer.id, patch: { rotation: Math.round(rotation * 10) / 10 } }], { history: false });
       }
     };
     const up = () => {
@@ -1421,13 +1615,20 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [interaction, metrics, onLayerChange, onInteractionEnd, onInteractionStart]);
+  }, [interaction, cover.doc.guides, metrics, onLayersChange, onInteractionEnd, onInteractionStart, selectedIds]);
 
   const beginMove = (event: ReactPointerEvent<HTMLDivElement>, layer: CoverLayer) => {
     if (previewing || layer.locked) return;
     if ((event.target as HTMLElement).closest(".cover-selection-handle, .cover-rotate-handle")) return;
     event.stopPropagation();
-    onSelect(layer.id);
+    if (event.shiftKey || event.metaKey || event.ctrlKey) {
+      onSelect(layer.id, true);
+      return;
+    }
+    const wasSelected = selectedIds.includes(layer.id);
+    if (!wasSelected) onSelect(layer.id);
+    const ids = wasSelected ? selectedIds : [layer.id];
+    const startLayers = cover.doc.layers.filter((item) => ids.includes(item.id) && !item.locked && item.visible);
     const sheet = (event.currentTarget.closest("[data-cover-sheet]") as HTMLElement | null) ?? stageRef.current;
     if (!sheet) return;
     const rect = sheet.getBoundingClientRect();
@@ -1439,6 +1640,7 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
       startClientX: event.clientX,
       startClientY: event.clientY,
       startLayer: layer,
+      startLayers: startLayers.length ? startLayers : [layer],
       startScale: scale,
     });
   };
@@ -1459,6 +1661,7 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
       startClientX: event.clientX,
       startClientY: event.clientY,
       startLayer: layer,
+      startLayers: [layer],
       startScale: scale,
     });
   };
@@ -1482,6 +1685,7 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
       startClientX: event.clientX,
       startClientY: event.clientY,
       startLayer: layer,
+      startLayers: [layer],
       startScale: scale,
       startAngle: angle,
       startRotation: layer.rotation,
@@ -1490,11 +1694,7 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
     });
   };
 
-  const spreadRectFor = (layer: CoverLayer) => {
-    if (layer.panel === "wrap") return { x: layer.x, y: layer.y, width: layer.width, height: layer.height };
-    const origin = metrics.panelOrigins[layer.panel];
-    return { x: origin.x + layer.x, y: origin.y + layer.y, width: layer.width, height: layer.height };
-  };
+  const spreadRectFor = (layer: CoverLayer) => coverSpreadRect(metrics, layer);
 
   const onDrop = async (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1517,6 +1717,22 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
     }
   };
 
+  const beginNewGuide = (event: ReactPointerEvent<HTMLDivElement>, axis: "x" | "y") => {
+    if (previewing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    guideMovedRef.current = false;
+    setGuideInteraction({ mode: "new", id: `draft-${axis}`, axis, startClientX: event.clientX, startClientY: event.clientY });
+  };
+
+  const beginGuideMove = (event: ReactPointerEvent<HTMLSpanElement>, guide: CoverGuideline) => {
+    if (previewing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    guideMovedRef.current = false;
+    setGuideInteraction({ mode: "move", id: guide.id, axis: guide.axis, startClientX: event.clientX, startClientY: event.clientY });
+  };
+
   return (
     <main className={`cover-stage ${previewing ? "is-previewing" : ""}`} ref={viewportRef}>
       <div className="cover-stage-meta">
@@ -1526,9 +1742,29 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
         <span className="cover-stage-spacer" />
         <span>{formatDimension(metrics.spineWidth)} in spine · {cover.pageCount.toLocaleString()} pages</span>
       </div>
+      {selectedIds.length > 1 && !previewing && (
+        <div className="cover-selection-bar" role="toolbar" aria-label="Selection tools">
+          <span className="cover-selection-count">{selectedIds.length} layers</span>
+          <span className="cover-selection-sep" />
+          <button type="button" title="Align left edges" aria-label="Align left edges" onClick={() => onAlignSelection("left")}><AlignLeft size={14} /></button>
+          <button type="button" title="Align horizontal centres" aria-label="Align horizontal centres" onClick={() => onAlignSelection("center-x")}><AlignCenter size={14} /></button>
+          <button type="button" title="Align right edges" aria-label="Align right edges" onClick={() => onAlignSelection("right")}><AlignRight size={14} /></button>
+          <button type="button" title="Align top edges" aria-label="Align top edges" onClick={() => onAlignSelection("top")}><AlignStartVertical size={14} /></button>
+          <button type="button" title="Align vertical centres" aria-label="Align vertical centres" onClick={() => onAlignSelection("middle")}><AlignCenter size={14} /></button>
+          <button type="button" title="Align bottom edges" aria-label="Align bottom edges" onClick={() => onAlignSelection("bottom")}><AlignEndVertical size={14} /></button>
+          <span className="cover-selection-sep" />
+          <button type="button" title="Distribute horizontally" aria-label="Distribute horizontally" disabled={selectedIds.length < 3} onClick={() => onDistributeSelection("horizontal")}><AlignHorizontalDistributeCenter size={14} /></button>
+          <button type="button" title="Distribute vertically" aria-label="Distribute vertically" disabled={selectedIds.length < 3} onClick={() => onDistributeSelection("vertical")}><AlignVerticalDistributeCenter size={14} /></button>
+          <span className="cover-selection-sep" />
+          <button type="button" title="Duplicate selected layers" aria-label="Duplicate selected layers" onClick={onDuplicateSelection}><Copy size={14} /></button>
+          <button type="button" className="danger" title="Delete selected layers" aria-label="Delete selected layers" onClick={onDeleteSelection}><Trash2 size={14} /></button>
+          <button type="button" title="Deselect all" aria-label="Deselect all" onClick={() => onSelect(null)}><X size={14} /></button>
+        </div>
+      )}
       <div className="cover-stage-scroll" ref={stageRef}>
         <div className="cover-stage-canvas" style={{ width: contentWidth, height: contentHeight }}>
           <div
+            ref={sheetRef}
             className="cover-stage-sheet"
             data-cover-sheet
             onPointerDown={(event) => { if (event.target === event.currentTarget) onSelect(null); }}
@@ -1546,7 +1782,8 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
             {cover.doc.layers.map((layer) => {
               if (!layer.visible) return null;
               const rect = spreadRectFor(layer);
-              const isSelected = selectedId === layer.id && !previewing;
+              const isSelected = selectedIds.includes(layer.id) && !previewing;
+              const isPrimary = selectedId === layer.id && !previewing;
               return (
                 <div
                   key={layer.id}
@@ -1569,7 +1806,7 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
                   {isSelected && (
                     <>
                       <span className="cover-selection-outline" />
-                      {!layer.locked && (
+                      {isPrimary && !layer.locked && (
                         <>
                           {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const).map((handle) => (
                             <button key={handle} type="button" className={`cover-selection-handle handle-${handle}`} onPointerDown={(event) => beginResize(event, layer, handle)} aria-label={`Resize ${handle}`} />
@@ -1595,6 +1832,53 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
                 <span className="cover-panel-label label-back" style={{ left: `${metrics.bleed + 0.08}in`, top: `${metrics.bleed + 0.07}in` }}>BACK COVER</span>
                 <span className="cover-panel-label label-spine" style={{ left: `${metrics.bleed + metrics.trimWidth + metrics.spineWidth / 2}in`, top: `${metrics.bleed + 0.07}in` }}>SPINE</span>
                 <span className="cover-panel-label label-front" style={{ left: `${metrics.bleed + metrics.trimWidth + metrics.spineWidth + 0.08}in`, top: `${metrics.bleed + 0.07}in` }}>FRONT COVER</span>
+                {cover.doc.guides.filter((guide) => coverGuideVisible(guide, panel)).map((guide) => {
+                  const position = coverGuideSpreadPosition(metrics, guide);
+                  return (
+                    <span
+                      key={guide.id}
+                      className={`cover-custom-guide ${guide.axis === "x" ? "vertical" : "horizontal"}`}
+                      style={guide.axis === "x"
+                        ? { left: `${position}in`, top: 0, height: `${metrics.fullHeight}in` }
+                        : { top: `${position}in`, left: 0, width: `${metrics.fullWidth}in` }}
+                      onPointerDown={(event) => beginGuideMove(event, guide)}
+                      onDoubleClick={(event) => { event.stopPropagation(); onGuideDelete(guide.id); }}
+                      title="Drag to move · Double-click to remove"
+                    />
+                  );
+                })}
+              </>
+            )}
+            {guideDraft && (
+              <span
+                className={`cover-custom-guide draft ${guideDraft.axis === "x" ? "vertical" : "horizontal"}`}
+                style={guideDraft.axis === "x"
+                  ? { left: `${guideDraft.spread}in`, top: 0, height: `${metrics.fullHeight}in` }
+                  : { top: `${guideDraft.spread}in`, left: 0, width: `${metrics.fullWidth}in` }}
+              />
+            )}
+            {cover.doc.showRulers && !previewing && (
+              <>
+                <div
+                  className="cover-ruler cover-ruler-top"
+                  style={{ left: `${viewRect.x}in`, top: 0, width: `${viewRect.width}in`, height: `${16 / effectiveZoom}px` }}
+                  onPointerDown={(event) => beginNewGuide(event, "y")}
+                  title="Drag down to add a horizontal guide"
+                >
+                  {Array.from({ length: Math.floor(viewRect.width) + 2 }, (_, index) => Math.floor(viewRect.x) + index).map((inch) => (
+                    <span key={inch} style={{ left: `${inch - viewRect.x}in`, fontSize: `${8 / effectiveZoom}px` }}>{inch}</span>
+                  ))}
+                </div>
+                <div
+                  className="cover-ruler cover-ruler-left"
+                  style={{ left: `${viewRect.x}in`, top: 0, height: `${viewRect.height}in`, width: `${16 / effectiveZoom}px` }}
+                  onPointerDown={(event) => beginNewGuide(event, "x")}
+                  title="Drag right to add a vertical guide"
+                >
+                  {Array.from({ length: Math.floor(viewRect.height) + 2 }, (_, index) => Math.floor(viewRect.y) + index).map((inch) => (
+                    <span key={inch} style={{ top: `${inch - viewRect.y}in`, fontSize: `${8 / effectiveZoom}px` }}>{inch}</span>
+                  ))}
+                </div>
               </>
             )}
             {snapGuides.vertical.map((position, index) => {
@@ -1615,7 +1899,7 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
           <button type="button" onClick={() => onZoom(Math.min(3, effectiveZoom + 0.1))} aria-label="Zoom in"><ZoomIn size={14} /></button>
           <button type="button" className={autoFit ? "active" : ""} onClick={onFit}><Maximize2 size={13} /> Fit</button>
         </div>
-        <span className="cover-stage-hint"><Move size={12} /> Drag to move · ⌘-scroll to zoom · Hold Alt to disable snapping</span>
+        <span className="cover-stage-hint"><Move size={12} /> Drag to move · Shift-click multi-select · Drag from rulers for guides · Alt disables snapping</span>
       </div>
     </main>
   );
@@ -1623,11 +1907,11 @@ function CoverStage({ book, cover, panel, selectedId, showGuides, showGrid, show
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, focusContent }: InspectorProps) {
   return (
     <aside className="cover-inspector" aria-label={selected ? "Layer properties" : "Cover properties"}>
       <div className="cover-inspector-head">
-        <div><span className="cover-panel-eyebrow">{selected ? layerLabel(selected.type) : "Cover"}</span><strong>{selectedLayerName(selected)}</strong></div>
+        <div><span className="cover-panel-eyebrow">{selected ? layerLabel(selected.type) : "Cover"}{selectedCount > 1 ? ` · ${selectedCount} selected` : ""}</span><strong>{selectedLayerName(selected)}</strong></div>
         {selected ? <button type="button" onClick={() => onSelect(null)} title="Document settings" aria-label="Document settings"><SlidersHorizontal size={15} /></button> : <span className="cover-inspector-badge">Document</span>}
       </div>
       <div className="cover-inspector-scroll">
@@ -2068,6 +2352,7 @@ function DocumentInspector({
         <label className="cover-toggle-row"><span><strong>Include cover in print &amp; export</strong><small>Adds the full wrap to print, and the front panel to digital exports.</small></span><input type="checkbox" checked={cover.enabled} onChange={(event) => onUpdateCover({ enabled: event.target.checked }, { key: "enabled" })} /></label>
         <div className="cover-toggle-grid">
           <label className="cover-toggle-row"><span>Guides</span><input type="checkbox" checked={doc.showGuides} onChange={(event) => onUpdateDoc({ ...doc, showGuides: event.target.checked }, { key: "guides" })} /></label>
+          <label className="cover-toggle-row"><span>Rulers</span><input type="checkbox" checked={doc.showRulers} onChange={(event) => onUpdateDoc({ ...doc, showRulers: event.target.checked }, { key: "rulers" })} /></label>
           <label className="cover-toggle-row"><span>Grid</span><input type="checkbox" checked={doc.showGrid} onChange={(event) => onUpdateDoc({ ...doc, showGrid: event.target.checked }, { key: "grid" })} /></label>
           <label className="cover-toggle-row"><span>Bleed overlay</span><input type="checkbox" checked={doc.showBleed} onChange={(event) => onUpdateDoc({ ...doc, showBleed: event.target.checked }, { key: "bleed-overlay" })} /></label>
         </div>

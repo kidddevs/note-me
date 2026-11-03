@@ -111,14 +111,23 @@ export interface CoverBarcodeLayer extends CoverLayerBase {
 
 export type CoverLayer = CoverTextLayer | CoverImageLayer | CoverShapeLayer | CoverLineLayer | CoverSymbolLayer | CoverArtworkLayer | CoverBarcodeLayer;
 
+export interface CoverGuideline {
+  id: string;
+  axis: "x" | "y";
+  panel: CoverPanel;
+  position: number;
+}
+
 export interface BookCoverDocument {
   version: 1;
   templateId: string;
   background: CoverFill;
   layers: CoverLayer[];
+  guides: CoverGuideline[];
   showGuides: boolean;
   showGrid: boolean;
   showBleed: boolean;
+  showRulers: boolean;
 }
 
 export interface CoverMetrics {
@@ -325,9 +334,11 @@ export function emptyCoverDocument(): BookCoverDocument {
     templateId: "",
     background: coverFill("#f5efe4"),
     layers: [],
+    guides: [],
     showGuides: true,
     showGrid: false,
     showBleed: true,
+    showRulers: false,
   };
 }
 
@@ -631,14 +642,29 @@ export function parseCoverDocument(value: unknown, fallback: BookCoverDocument =
   const layers = Array.isArray(source.layers)
     ? source.layers.slice(0, 120).map((layer, index) => normalizeLayer(layer, index)).filter((layer): layer is CoverLayer => Boolean(layer))
     : fallback.layers.map((layer) => ({ ...layer }));
+  const guides = Array.isArray(source.guides)
+    ? source.guides.slice(0, 80).map((guide, index) => normalizeGuide(guide, index)).filter((guide): guide is CoverGuideline => Boolean(guide))
+    : fallback.guides.map((guide) => ({ ...guide }));
   return {
     version: 1,
     templateId: text(source.templateId, fallback.templateId, 80),
     background: normalizeFill(source.background, fallback.background),
     layers,
+    guides,
     showGuides: boolean(source.showGuides, fallback.showGuides),
     showGrid: boolean(source.showGrid, fallback.showGrid),
     showBleed: boolean(source.showBleed, fallback.showBleed),
+    showRulers: boolean(source.showRulers, fallback.showRulers),
+  };
+}
+
+function normalizeGuide(value: unknown, index: number): CoverGuideline | null {
+  if (!isRecord(value)) return null;
+  return {
+    id: text(value.id, `guide-${index}`, 80),
+    axis: oneOf(value.axis, ["x", "y"], "x"),
+    panel: oneOf(value.panel, PANELS, "front"),
+    position: decimal(value.position, 0, -100, 100),
   };
 }
 
@@ -711,11 +737,15 @@ export function layerForPanel(layer: CoverLayer, panel: CoverPanel) {
 export function reflowSpineLayers(doc: BookCoverDocument, previousSpineWidth: number, nextSpineWidth: number): BookCoverDocument {
   if (previousSpineWidth <= 0 || Math.abs(previousSpineWidth - nextSpineWidth) < 0.0005) return doc;
   const ratio = nextSpineWidth / previousSpineWidth;
+  const shift = (nextSpineWidth - previousSpineWidth) / 2;
   return {
     ...doc,
     layers: doc.layers.map((layer) => layer.panel === "spine"
       ? { ...layer, x: roundInches((layer.x + layer.width / 2) * ratio - layer.width / 2) }
       : layer),
+    guides: doc.guides.map((guide) => guide.panel === "spine" && guide.axis === "x"
+      ? { ...guide, position: roundInches(guide.position + shift) }
+      : guide),
   };
 }
 
@@ -1103,6 +1133,7 @@ function atelierTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetr
   return {
     version: 1,
     templateId: "atelier",
+    guides: [],
     background: {
       type: "gradient",
       color: paper,
@@ -1112,6 +1143,7 @@ function atelierTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetr
     showGuides: true,
     showGrid: false,
     showBleed: true,
+    showRulers: false,
   };
 }
 
@@ -1241,6 +1273,7 @@ function noirTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics
   return {
     version: 1,
     templateId: "noir",
+    guides: [],
     background: {
       type: "gradient",
       color: "#14161a",
@@ -1250,6 +1283,7 @@ function noirTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics
     showGuides: true,
     showGrid: false,
     showBleed: true,
+    showRulers: false,
   };
 }
 
@@ -1414,6 +1448,7 @@ function photoTemplate(book: Book, cover: BookCoverDesign, metrics: CoverMetrics
   return {
     version: 1,
     templateId: "photo",
+    guides: [],
     background: {
       type: "gradient",
       color: "#1b2b33",
@@ -1423,6 +1458,7 @@ function photoTemplate(book: Book, cover: BookCoverDesign, metrics: CoverMetrics
     showGuides: true,
     showGrid: false,
     showBleed: true,
+    showRulers: false,
   };
 }
 
@@ -1538,11 +1574,13 @@ function minimalTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetr
   return {
     version: 1,
     templateId: "minimal",
+    guides: [],
     background: { type: "solid", color: "#fbfaf7", gradient: coverFill("#fbfaf7").gradient },
     layers,
     showGuides: true,
     showGrid: false,
     showBleed: true,
+    showRulers: false,
   };
 }
 
@@ -1725,6 +1763,7 @@ function heritageTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMet
   return {
     version: 1,
     templateId: "heritage",
+    guides: [],
     background: {
       type: "gradient",
       color: "#1f3a2d",
@@ -1734,6 +1773,7 @@ function heritageTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMet
     showGuides: true,
     showGrid: false,
     showBleed: true,
+    showRulers: false,
   };
 }
 
@@ -1868,11 +1908,13 @@ function boldTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics
   return {
     version: 1,
     templateId: "bold",
+    guides: [],
     background: { type: "solid", color: cream, gradient: coverFill(cream).gradient },
     layers,
     showGuides: true,
     showGrid: false,
     showBleed: true,
+    showRulers: false,
   };
 }
 

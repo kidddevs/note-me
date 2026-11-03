@@ -13,6 +13,7 @@
   "include": [
     "src/lib/bookLayout.ts",
     "src/lib/bookCoverDoc.ts",
+    "src/lib/bookCoverGeometry.ts",
     "src/lib/bookCover.ts",
     "src/lib/bookPublishing.ts",
     "src/lib/bookExport.ts",
