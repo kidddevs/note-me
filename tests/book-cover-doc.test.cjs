@@ -6,10 +6,13 @@ const {
   coverDocMarkup,
   coverImageFilterCss,
   coverImageMaskCss,
+  coverLayerLocked,
+  coverLayerVisible,
   imageLayer,
   coverMetrics,
   createCoverDocument,
   ean13Bits,
+  emptyCoverDocument,
   estimateManuscriptPages,
   isbn13CheckDigit,
   normalizeIsbn13,
@@ -292,4 +295,32 @@ test("mockup panels render at their real trim dimensions", () => {
   assert.match(front, /data-panel="front"/);
   assert.match(back, /data-panel="back"/);
   assert.match(spine, /data-panel="spine"/);
+});
+
+
+test("layer groups persist, sanitise broken membership, and hide children", () => {
+  const doc = parseCoverDocument({
+    groups: [{ id: "g1", name: "Front type", visible: false, locked: true, collapsed: false }],
+    layers: [
+      { id: "grouped", type: "text", name: "Grouped", panel: "front", x: 0.5, y: 0.5, width: 2, height: 1, text: "Hidden by group", groupId: "g1" },
+      { id: "orphan", type: "text", name: "Orphan", panel: "front", x: 3, y: 0.5, width: 2, height: 1, text: "Visible", groupId: "missing" },
+    ],
+  });
+  assert.equal(doc.groups.length, 1);
+  assert.equal(doc.groups[0].name, "Front type");
+  assert.equal(doc.layers[0].groupId, "g1");
+  assert.equal(doc.layers[1].groupId, null);
+  assert.equal(coverLayerVisible(doc, doc.layers[0]), false);
+  assert.equal(coverLayerLocked(doc, doc.layers[0]), true);
+  assert.equal(coverLayerVisible(doc, doc.layers[1]), true);
+  assert.equal(coverLayerLocked(doc, doc.layers[1]), false);
+
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.doesNotMatch(markup, /Hidden by group/);
+  assert.match(markup, /Visible/);
+});
+
+test("new cover documents start with an empty group list", () => {
+  assert.deepEqual(emptyCoverDocument().groups, []);
+  assert.deepEqual(createCoverDocument("atelier", book(), cover()).groups, []);
 });

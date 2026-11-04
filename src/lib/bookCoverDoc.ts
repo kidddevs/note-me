@@ -46,6 +46,15 @@ export interface CoverLayerBase {
   blendMode: CoverBlendMode;
   visible: boolean;
   locked: boolean;
+  groupId: string | null;
+}
+
+export interface CoverLayerGroup {
+  id: string;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  collapsed: boolean;
 }
 
 export interface CoverTextLayer extends CoverLayerBase {
@@ -135,6 +144,7 @@ export interface BookCoverDocument {
   templateId: string;
   background: CoverFill;
   layers: CoverLayer[];
+  groups: CoverLayerGroup[];
   guides: CoverGuideline[];
   showGuides: boolean;
   showGrid: boolean;
@@ -393,6 +403,7 @@ export function noCoverFill(): CoverFill {
 export function emptyCoverDocument(): BookCoverDocument {
   return {
     version: 1,
+    groups: [],
     templateId: "",
     background: coverFill("#f5efe4"),
     layers: [],
@@ -484,7 +495,7 @@ function gradientMeta(gradient: BookCoverGradient) {
 
 /* ---------------------------------------------------------------- layers */
 
-function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" | "blendMode" | "visible" | "locked"> & Partial<Pick<CoverLayerBase, "rotation" | "opacity" | "blendMode" | "visible" | "locked">>): Omit<CoverLayerBase, "type"> {
+function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId"> & Partial<Pick<CoverLayerBase, "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId">>): Omit<CoverLayerBase, "type"> {
   return {
     id: input.id,
     name: input.name,
@@ -498,6 +509,7 @@ function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" |
     blendMode: input.blendMode ?? "normal",
     visible: input.visible ?? true,
     locked: input.locked ?? false,
+    groupId: input.groupId ?? null,
   };
 }
 
@@ -619,6 +631,7 @@ function normalizeLayerBase(source: Record<string, unknown>, type: CoverLayerTyp
     blendMode: oneOf(source.blendMode, BLEND_MODES, "normal"),
     visible: boolean(source.visible, true),
     locked: boolean(source.locked, false),
+    groupId: text(source.groupId, "", 80) || null,
   };
 }
 
@@ -723,9 +736,14 @@ export function parseCoverDocument(value: unknown, fallback: BookCoverDocument =
     }
   }
   const source = isRecord(parsed) ? parsed : {};
-  const layers = Array.isArray(source.layers)
+  const groups = Array.isArray(source.groups)
+    ? source.groups.slice(0, 60).map((group, index) => normalizeGroup(group, index)).filter((group): group is CoverLayerGroup => Boolean(group))
+    : fallback.groups.map((group) => ({ ...group }));
+  const groupIds = new Set(groups.map((group) => group.id));
+  const layers = (Array.isArray(source.layers)
     ? source.layers.slice(0, 120).map((layer, index) => normalizeLayer(layer, index)).filter((layer): layer is CoverLayer => Boolean(layer))
-    : fallback.layers.map((layer) => ({ ...layer }));
+    : fallback.layers.map((layer) => ({ ...layer })))
+    .map((layer) => layer.groupId && !groupIds.has(layer.groupId) ? { ...layer, groupId: null } : layer);
   const guides = Array.isArray(source.guides)
     ? source.guides.slice(0, 80).map((guide, index) => normalizeGuide(guide, index)).filter((guide): guide is CoverGuideline => Boolean(guide))
     : fallback.guides.map((guide) => ({ ...guide }));
@@ -734,11 +752,23 @@ export function parseCoverDocument(value: unknown, fallback: BookCoverDocument =
     templateId: text(source.templateId, fallback.templateId, 80),
     background: normalizeFill(source.background, fallback.background),
     layers,
+    groups,
     guides,
     showGuides: boolean(source.showGuides, fallback.showGuides),
     showGrid: boolean(source.showGrid, fallback.showGrid),
     showBleed: boolean(source.showBleed, fallback.showBleed),
     showRulers: boolean(source.showRulers, fallback.showRulers),
+  };
+}
+
+function normalizeGroup(value: unknown, index: number): CoverLayerGroup | null {
+  if (!isRecord(value)) return null;
+  return {
+    id: text(value.id, `group-${index + 1}`, 80),
+    name: text(value.name, "Group", 80),
+    visible: boolean(value.visible, true),
+    locked: boolean(value.locked, false),
+    collapsed: boolean(value.collapsed, false),
   };
 }
 
@@ -816,6 +846,18 @@ export function layerCenter(metrics: CoverMetrics, layer: CoverLayer) {
 
 export function layerForPanel(layer: CoverLayer, panel: CoverPanel) {
   return panel === "wrap" || layer.panel === panel || layer.panel === "wrap";
+}
+
+export function coverLayerGroup(doc: BookCoverDocument, layer: CoverLayer) {
+  return layer.groupId ? doc.groups.find((group) => group.id === layer.groupId) ?? null : null;
+}
+
+export function coverLayerVisible(doc: BookCoverDocument, layer: CoverLayer) {
+  return layer.visible && (coverLayerGroup(doc, layer)?.visible ?? true);
+}
+
+export function coverLayerLocked(doc: BookCoverDocument, layer: CoverLayer) {
+  return layer.locked || (coverLayerGroup(doc, layer)?.locked ?? false);
 }
 
 export function reflowSpineLayers(doc: BookCoverDocument, previousSpineWidth: number, nextSpineWidth: number): BookCoverDocument {
@@ -1216,6 +1258,7 @@ function atelierTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetr
   addSpineBasics(layers, book, metrics, ink, accent, { author: true, rule: true, ornament: "✦" });
   return {
     version: 1,
+    groups: [],
     templateId: "atelier",
     guides: [],
     background: {
@@ -1356,6 +1399,7 @@ function noirTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics
   addSpineBasics(layers, book, metrics, ink, accent, { rule: true, ornament: "✦" });
   return {
     version: 1,
+    groups: [],
     templateId: "noir",
     guides: [],
     background: {
@@ -1531,6 +1575,7 @@ function photoTemplate(book: Book, cover: BookCoverDesign, metrics: CoverMetrics
   addSpineBasics(layers, book, metrics, ink, accent, { rule: false, ornament: "✦" });
   return {
     version: 1,
+    groups: [],
     templateId: "photo",
     guides: [],
     background: {
@@ -1657,6 +1702,7 @@ function minimalTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetr
   addSpineBasics(layers, book, metrics, ink, accent, { author: true, rule: true, ornament: "" });
   return {
     version: 1,
+    groups: [],
     templateId: "minimal",
     guides: [],
     background: { type: "solid", color: "#fbfaf7", gradient: coverFill("#fbfaf7").gradient },
@@ -1846,6 +1892,7 @@ function heritageTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMet
   addSpineBasics(layers, book, metrics, ink, accent, { author: true, rule: false, ornament: "❦" });
   return {
     version: 1,
+    groups: [],
     templateId: "heritage",
     guides: [],
     background: {
@@ -1991,6 +2038,7 @@ function boldTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics
   addSpineBasics(layers, book, metrics, cream, cream, { rule: false, ornament: "✦" });
   return {
     version: 1,
+    groups: [],
     templateId: "bold",
     guides: [],
     background: { type: "solid", color: cream, gradient: coverFill(cream).gradient },
@@ -2173,7 +2221,6 @@ export function coverLayerStyle(layer: CoverLayer): Record<string, string> {
 let coverMarkupInstance = 0;
 
 function layerMarkup(book: Book, cover: BookCoverDesign, layer: CoverLayer, offsetX: number, offsetY: number, clipped: boolean, instanceId: string) {
-  if (!layer.visible) return "";
   const style = coverLayerStyle(layer);
   style.left = `${roundInches(layer.x - offsetX)}in`;
   style.top = `${roundInches(layer.y - offsetY)}in`;
@@ -2186,7 +2233,7 @@ export function coverDocMarkup(book: Book, cover: BookCoverDesign, panel: CoverP
   coverMarkupInstance += 1;
   const instanceId = options.instanceId ?? `cover-doc-${coverMarkupInstance}`;
   const backgroundLayer = `<div class="cover-doc-background" style="position:absolute;left:${-rect.x}in;top:${-rect.y}in;width:${metrics.fullWidth}in;height:${metrics.fullHeight}in;background:${coverFillCss(cover.doc.background)}"></div>`;
-  const layers = cover.doc.layers.filter((layer) => layerForPanel(layer, panel)).map((layer) => {
+  const layers = cover.doc.layers.filter((layer) => layerForPanel(layer, panel) && coverLayerVisible(cover.doc, layer)).map((layer) => {
     const origin = layer.panel === "wrap" ? { x: 0, y: 0 } : coverPanelRect(metrics, layer.panel as Exclude<CoverPanel, "wrap">);
     const offsetX = rect.x - origin.x;
     const offsetY = rect.y - origin.y;
@@ -2561,7 +2608,7 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   const images = await Promise.all(imageSources.map(loadImage));
   const imageBySource = new Map(imageSources.map((source, index) => [source, images[index]]));
   const barcodeImage = cover.barcodeImage ? await loadImage(cover.barcodeImage) : null;
-  const layers = cover.doc.layers.filter((layer) => layer.visible && layerForPanel(layer, target));
+  const layers = cover.doc.layers.filter((layer) => coverLayerVisible(cover.doc, layer) && layerForPanel(layer, target));
   for (const layer of layers) {
     const spread = layerSpreadRect(metrics, layer);
     if (spread.x + spread.width < rect.x || spread.x > rect.x + rect.width || spread.y + spread.height < rect.y || spread.y > rect.y + rect.height) continue;

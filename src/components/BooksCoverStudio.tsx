@@ -36,6 +36,9 @@ import {
   FileText,
   FlipHorizontal2,
   FlipVertical2,
+  Folder,
+  FolderMinus,
+  FolderPlus,
   Frame,
   Grid3X3,
   ImagePlus,
@@ -86,6 +89,8 @@ import {
   coverFill,
   coverFillCss,
   coverLayerInnerHtml,
+  coverLayerLocked,
+  coverLayerVisible,
   coverMetrics,
   coverPanelRect,
   createCoverDocument,
@@ -111,6 +116,7 @@ import {
   type CoverFill,
   type CoverGuideline,
   type CoverImageLayer,
+  type CoverLayerGroup,
   type CoverImageMask,
   type CoverLayer,
   type CoverLayerType,
@@ -184,6 +190,7 @@ interface CoverStageProps {
   onGuideDelete: (id: string) => void;
   onAlignSelection: (mode: CoverAlignMode) => void;
   onDistributeSelection: (axis: CoverDistributeAxis) => void;
+  onGroupSelection: () => void;
   onDuplicateSelection: () => void;
   onDeleteSelection: () => void;
 }
@@ -217,10 +224,19 @@ interface LayerPanelProps {
   doc: BookCoverDocument;
   selectedId: string | null;
   selectedIds: string[];
+  activeGroupId: string | null;
   onSelect: (id: string | null, additive?: boolean) => void;
   onAdd: () => void;
+  onAddGroup: () => void;
+  onSelectGroup: (id: string) => void;
   onToggleVisible: (id: string) => void;
   onToggleLocked: (id: string) => void;
+  onToggleGroupVisible: (id: string) => void;
+  onToggleGroupLocked: (id: string) => void;
+  onToggleGroupCollapsed: (id: string) => void;
+  onRenameGroup: (id: string, name: string) => void;
+  onUngroup: (id: string) => void;
+  onAssignGroup: (layerId: string, groupId: string | null) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onReorder: (id: string, direction: "up" | "down") => void;
@@ -366,6 +382,7 @@ export function CoverScreen({
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [extraSelectedIds, setExtraSelectedIds] = useState<string[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [panel, setPanel] = useState<CoverPanel>("wrap");
   const [tool, setTool] = useState<string>("select");
   const [showLayers, setShowLayers] = useState(true);
@@ -551,6 +568,7 @@ export function CoverScreen({
     if (!id) {
       setSelectedLayerId(null);
       setExtraSelectedIds([]);
+      setActiveGroupId(null);
       return;
     }
     if (additive) {
@@ -571,6 +589,7 @@ export function CoverScreen({
     setSelectedLayerId(id);
     setExtraSelectedIds([]);
     const layer = layoutRef.current.cover.doc.layers.find((item) => item.id === id);
+    setActiveGroupId(layer?.groupId ?? null);
     if (layer && layer.panel !== "wrap" && panel !== "wrap" && layer.panel !== panel) {
       setPanel(layer.panel);
       setAutoFit(true);
@@ -579,8 +598,9 @@ export function CoverScreen({
 
   const addLayer = (layer: CoverLayer, targetPanel: CoverPanel = layer.panel) => {
     const current = layoutRef.current.cover;
-    updateDoc({ ...current.doc, templateId: current.doc.templateId || "custom", layers: [...current.doc.layers, layer] }, { key: `add:${layer.type}` });
-    setSelectedLayerId(layer.id);
+    const groupedLayer = activeGroupId && !layer.groupId ? { ...layer, groupId: activeGroupId } : layer;
+    updateDoc({ ...current.doc, templateId: current.doc.templateId || "custom", layers: [...current.doc.layers, groupedLayer] }, { key: `add:${layer.type}` });
+    setSelectedLayerId(groupedLayer.id);
     setExtraSelectedIds([]);
     if (targetPanel !== "wrap" && panel !== "wrap" && panel !== targetPanel) setPanel(targetPanel);
   };
@@ -851,10 +871,92 @@ export function CoverScreen({
   const deleteSelection = () => deleteLayers(selectedIds);
 
   const selectAllLayers = () => {
-    const ids = doc.layers.filter((layer) => layer.visible && !layer.locked).map((layer) => layer.id);
+    const ids = doc.layers.filter((layer) => coverLayerVisible(doc, layer) && !coverLayerLocked(doc, layer)).map((layer) => layer.id);
     if (ids.length === 0) return;
     setSelectedLayerId(ids[ids.length - 1]);
     setExtraSelectedIds(ids.slice(0, -1));
+  };
+
+  const addGroup = () => {
+    const current = layoutRef.current.cover;
+    const group: CoverLayerGroup = {
+      id: newCoverLayerId("group"),
+      name: `Group ${current.doc.groups.length + 1}`,
+      visible: true,
+      locked: false,
+      collapsed: false,
+    };
+    updateDoc({ ...current.doc, groups: [...current.doc.groups, group] }, { key: "group:add" });
+    setActiveGroupId(group.id);
+    setSelectedLayerId(null);
+    setExtraSelectedIds([]);
+  };
+
+  const groupSelection = () => {
+    if (selectedIds.length === 0) {
+      notify("info", "Select layers first", "Shift-click layers, then group them.");
+      return;
+    }
+    const current = layoutRef.current.cover;
+    const ids = new Set(selectedIds);
+    const indexes = current.doc.layers.map((layer, index) => ids.has(layer.id) ? index : -1).filter((index) => index >= 0);
+    const topIndex = Math.max(...indexes);
+    const selectedInOrder = current.doc.layers.filter((layer) => ids.has(layer.id));
+    const rest = current.doc.layers.filter((layer) => !ids.has(layer.id));
+    const insertAt = current.doc.layers.slice(0, topIndex + 1).filter((layer) => !ids.has(layer.id)).length;
+    const group: CoverLayerGroup = {
+      id: newCoverLayerId("group"),
+      name: `Group ${current.doc.groups.length + 1}`,
+      visible: true,
+      locked: false,
+      collapsed: false,
+    };
+    const ordered = [...rest.slice(0, insertAt), ...selectedInOrder, ...rest.slice(insertAt)].map((layer) => ids.has(layer.id) ? { ...layer, groupId: group.id } : layer);
+    updateDoc({ ...current.doc, groups: [...current.doc.groups, group], layers: ordered }, { key: `group:create:${selectedIds.join(",")}` });
+    setActiveGroupId(group.id);
+  };
+
+  const toggleGroup = (id: string, patch: Partial<CoverLayerGroup>) => {
+    const current = layoutRef.current.cover;
+    updateDoc({
+      ...current.doc,
+      groups: current.doc.groups.map((group) => group.id === id ? { ...group, ...patch } : group),
+    }, { key: `group:update:${id}:${Object.keys(patch).join(",")}` });
+  };
+
+  const renameGroup = (id: string, name: string) => {
+    const trimmed = name.trim().slice(0, 80) || "Group";
+    toggleGroup(id, { name: trimmed });
+  };
+
+  const toggleGroupVisible = (id: string) => {
+    const group = layoutRef.current.cover.doc.groups.find((item) => item.id === id);
+    if (group) toggleGroup(id, { visible: !group.visible });
+  };
+
+  const toggleGroupLocked = (id: string) => {
+    const group = layoutRef.current.cover.doc.groups.find((item) => item.id === id);
+    if (group) toggleGroup(id, { locked: !group.locked });
+  };
+
+  const toggleGroupCollapsed = (id: string) => {
+    const group = layoutRef.current.cover.doc.groups.find((item) => item.id === id);
+    if (group) toggleGroup(id, { collapsed: !group.collapsed });
+  };
+
+  const ungroup = (id: string) => {
+    const current = layoutRef.current.cover;
+    updateDoc({
+      ...current.doc,
+      groups: current.doc.groups.filter((group) => group.id !== id),
+      layers: current.doc.layers.map((layer) => layer.groupId === id ? { ...layer, groupId: null } : layer),
+    }, { key: `group:ungroup:${id}` });
+    if (activeGroupId === id) setActiveGroupId(null);
+  };
+
+  const assignGroup = (layerId: string, groupId: string | null) => {
+    updateLayer(layerId, { groupId }, { key: `group:assign:${layerId}` });
+    if (groupId) setActiveGroupId(groupId);
   };
 
   const alignSelection = (mode: CoverAlignMode) => {
@@ -874,7 +976,7 @@ export function CoverScreen({
 
   const nudgeSelection = (dx: number, dy: number) => {
     const current = layoutRef.current.cover;
-    const layers = current.doc.layers.filter((layer) => selectedIds.includes(layer.id) && !layer.locked);
+    const layers = current.doc.layers.filter((layer) => selectedIds.includes(layer.id) && !coverLayerLocked(current.doc, layer));
     if (layers.length === 0) return;
     updateLayers(layers.map((layer) => ({
       id: layer.id,
@@ -1009,6 +1111,18 @@ export function CoverScreen({
     if (meta && event.key.toLocaleLowerCase() === "a") {
       event.preventDefault();
       selectAllLayers();
+      return;
+    }
+    if (meta && event.key.toLocaleLowerCase() === "g") {
+      event.preventDefault();
+      if (event.shiftKey) {
+        const current = layoutRef.current.cover;
+        const ids = new Set(selectedIds);
+        const groupIds = new Set(current.doc.layers.filter((layer) => ids.has(layer.id) && layer.groupId).map((layer) => layer.groupId as string));
+        groupIds.forEach(ungroup);
+      } else {
+        groupSelection();
+      }
       return;
     }
     if (meta && event.key.toLocaleLowerCase() === "d" && selectedIds.length > 0) {
@@ -1167,10 +1281,19 @@ export function CoverScreen({
               doc={doc}
               selectedId={selectedLayerId}
               selectedIds={selectedIds}
+              activeGroupId={activeGroupId}
               onSelect={selectLayer}
               onAdd={() => fileInputRef.current?.click()}
+              onAddGroup={addGroup}
+              onSelectGroup={(id) => setActiveGroupId(id)}
               onToggleVisible={toggleVisible}
               onToggleLocked={toggleLocked}
+              onToggleGroupVisible={toggleGroupVisible}
+              onToggleGroupLocked={toggleGroupLocked}
+              onToggleGroupCollapsed={toggleGroupCollapsed}
+              onRenameGroup={renameGroup}
+              onUngroup={ungroup}
+              onAssignGroup={assignGroup}
               onDuplicate={duplicateLayer}
               onDelete={deleteLayer}
               onReorder={reorderLayer}
@@ -1207,6 +1330,7 @@ export function CoverScreen({
             onGuideDelete={deleteGuide}
             onAlignSelection={alignSelection}
             onDistributeSelection={distributeSelection}
+            onGroupSelection={groupSelection}
             onDuplicateSelection={duplicateSelection}
             onDeleteSelection={deleteSelection}
             onDropImage={(dataUrl, x, y) => {
@@ -1505,43 +1629,145 @@ function ArtworkPicker({ onAdd, onClose }: { onAdd: (graphic: BookGraphic) => vo
 
 /* ========================================================================== */
 
-function LayerPanel({ doc, selectedId, selectedIds, onSelect, onAdd, onToggleVisible, onToggleLocked, onDuplicate, onDelete, onReorder, onReorderDrag, onCollapse }: LayerPanelProps) {
+function LayerPanel({
+  doc,
+  selectedId,
+  selectedIds,
+  activeGroupId,
+  onSelect,
+  onAdd,
+  onAddGroup,
+  onSelectGroup,
+  onToggleVisible,
+  onToggleLocked,
+  onToggleGroupVisible,
+  onToggleGroupLocked,
+  onToggleGroupCollapsed,
+  onRenameGroup,
+  onUngroup,
+  onAssignGroup,
+  onDuplicate,
+  onDelete,
+  onReorder,
+  onReorderDrag,
+  onCollapse,
+}: LayerPanelProps) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [overGroupId, setOverGroupId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const layers = [...doc.layers].reverse();
+  const groupsById = new Map(doc.groups.map((group) => [group.id, group]));
+
+  const commitRename = (groupId: string) => {
+    onRenameGroup(groupId, renameValue);
+    setRenamingId(null);
+  };
+
+  const renderLayerRow = (layer: CoverLayer, inGroup: boolean) => {
+    const visible = coverLayerVisible(doc, layer);
+    const locked = coverLayerLocked(doc, layer);
+    return (
+      <div
+        key={layer.id}
+        className={`cover-layer-row ${inGroup ? "in-group" : ""} ${selectedIds.includes(layer.id) ? "active" : ""} ${selectedId === layer.id ? "primary" : ""} ${overId === layer.id ? "drop-target" : ""} ${visible ? "" : "is-hidden"}`}
+        draggable
+        onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", layer.id); setDragId(layer.id); }}
+        onDragOver={(event) => { event.preventDefault(); setOverId(layer.id); }}
+        onDragLeave={() => setOverId((value) => value === layer.id ? null : value)}
+        onDrop={(event) => {
+          event.preventDefault();
+          const source = event.dataTransfer.getData("text/plain") || dragId;
+          if (source) onReorderDrag(source, layer.id);
+          setDragId(null);
+          setOverId(null);
+          setOverGroupId(null);
+        }}
+        onDragEnd={() => { setDragId(null); setOverId(null); setOverGroupId(null); }}
+        onClick={(event) => onSelect(layer.id, event.shiftKey || event.metaKey || event.ctrlKey)}
+      >
+        <button type="button" className={`cover-layer-eye ${visible ? "" : "off"}`} onClick={(event) => { event.stopPropagation(); onToggleVisible(layer.id); }} title={layer.visible ? (visible ? "Hide layer" : "Hidden by group") : "Show layer"} aria-label={layer.visible ? "Hide layer" : "Show layer"}>{visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
+        <span className="cover-layer-type-icon"><LayerIcon type={layer.type} size={13} /></span>
+        <span className="cover-layer-name" title={layer.name}>{layer.name || layerLabel(layer.type)}<small>{layer.panel === "wrap" ? "whole wrap" : layer.panel}</small></span>
+        <button type="button" className={`cover-layer-lock ${locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); onToggleLocked(layer.id); }} title={layer.locked ? "Unlock layer" : locked ? "Locked by group" : "Lock layer"} aria-label={layer.locked ? "Unlock layer" : "Lock layer"}>{locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
+      </div>
+    );
+  };
+
+  const renderGroupRow = (group: CoverLayerGroup, count: number) => (
+    <div
+      key={`group-${group.id}`}
+      className={`cover-group-row ${activeGroupId === group.id ? "active" : ""} ${group.visible ? "" : "is-hidden"} ${overGroupId === group.id ? "drop-target" : ""}`}
+      onClick={() => onSelectGroup(group.id)}
+      onDragOver={(event) => { event.preventDefault(); setOverGroupId(group.id); }}
+      onDragLeave={() => setOverGroupId((value) => value === group.id ? null : value)}
+      onDrop={(event) => {
+        event.preventDefault();
+        const source = event.dataTransfer.getData("text/plain") || dragId;
+        if (source) onAssignGroup(source, group.id);
+        setDragId(null);
+        setOverGroupId(null);
+        setOverId(null);
+      }}
+    >
+      <button type="button" className="cover-group-chevron" onClick={(event) => { event.stopPropagation(); onToggleGroupCollapsed(group.id); }} aria-label={group.collapsed ? "Expand group" : "Collapse group"}>{group.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</button>
+      <span className="cover-group-icon"><Folder size={13} /></span>
+      <span
+        className="cover-group-name"
+        onDoubleClick={(event) => { event.stopPropagation(); setRenamingId(group.id); setRenameValue(group.name); }}
+        title="Double-click to rename"
+      >
+        {renamingId === group.id ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(event) => setRenameValue(event.target.value)}
+            onBlur={() => commitRename(group.id)}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitRename(group.id);
+              if (event.key === "Escape") { setRenamingId(null); setRenameValue(""); }
+            }}
+          />
+        ) : <>{group.name}<small>{count} {count === 1 ? "layer" : "layers"}</small></>}
+      </span>
+      <button type="button" className={`cover-layer-eye ${group.visible ? "" : "off"}`} onClick={(event) => { event.stopPropagation(); onToggleGroupVisible(group.id); }} title={group.visible ? "Hide group" : "Show group"} aria-label={group.visible ? "Hide group" : "Show group"}>{group.visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
+      <button type="button" className={`cover-layer-lock ${group.locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); onToggleGroupLocked(group.id); }} title={group.locked ? "Unlock group" : "Lock group"} aria-label={group.locked ? "Unlock group" : "Lock group"}>{group.locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
+      <button type="button" className="cover-group-ungroup" onClick={(event) => { event.stopPropagation(); onUngroup(group.id); }} title="Ungroup" aria-label="Ungroup"><FolderMinus size={12} /></button>
+    </div>
+  );
+
+  const rows: ReactNode[] = [];
+  const renderedGroups = new Set<string>();
+  for (const layer of layers) {
+    const group = layer.groupId ? groupsById.get(layer.groupId) : null;
+    if (group) {
+      if (renderedGroups.has(group.id)) continue;
+      renderedGroups.add(group.id);
+      const children = layers.filter((item) => item.groupId === group.id);
+      rows.push(renderGroupRow(group, children.length));
+      if (!group.collapsed) rows.push(...children.map((child) => renderLayerRow(child, true)));
+    } else {
+      rows.push(renderLayerRow(layer, false));
+    }
+  }
+  for (const group of doc.groups) {
+    if (!renderedGroups.has(group.id)) rows.push(renderGroupRow(group, 0));
+  }
+
   return (
     <aside className="cover-layer-panel" aria-label="Layers">
       <div className="cover-panel-heading">
-        <div><span className="cover-panel-eyebrow">Layers</span><strong>{doc.layers.length + 1}</strong></div>
+        <div><span className="cover-panel-eyebrow">Layers</span><strong>{doc.layers.length + doc.groups.length + 1}</strong></div>
         <div className="cover-panel-heading-actions">
+          <button type="button" onClick={onAddGroup} title="New group" aria-label="New group"><FolderPlus size={15} /></button>
           <button type="button" onClick={onAdd} title="Add image layer" aria-label="Add image layer"><Plus size={15} /></button>
           <button type="button" onClick={onCollapse} title="Hide layers" aria-label="Hide layers"><ChevronLeft size={15} /></button>
         </div>
       </div>
       <div className="cover-layer-list">
-        {layers.map((layer) => (
-          <div
-            key={layer.id}
-            className={`cover-layer-row ${selectedIds.includes(layer.id) ? "active" : ""} ${selectedId === layer.id ? "primary" : ""} ${overId === layer.id ? "drop-target" : ""} ${layer.visible ? "" : "is-hidden"}`}
-            draggable
-            onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", layer.id); setDragId(layer.id); }}
-            onDragOver={(event) => { event.preventDefault(); setOverId(layer.id); }}
-            onDragLeave={() => setOverId((value) => value === layer.id ? null : value)}
-            onDrop={(event) => {
-              event.preventDefault();
-              if (dragId) onReorderDrag(dragId, layer.id);
-              setDragId(null);
-              setOverId(null);
-            }}
-            onDragEnd={() => { setDragId(null); setOverId(null); }}
-            onClick={(event) => onSelect(layer.id, event.shiftKey || event.metaKey || event.ctrlKey)}
-          >
-            <button type="button" className={`cover-layer-eye ${layer.visible ? "" : "off"}`} onClick={(event) => { event.stopPropagation(); onToggleVisible(layer.id); }} title={layer.visible ? "Hide layer" : "Show layer"} aria-label={layer.visible ? "Hide layer" : "Show layer"}>{layer.visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
-            <span className="cover-layer-type-icon"><LayerIcon type={layer.type} size={13} /></span>
-            <span className="cover-layer-name" title={layer.name}>{layer.name || layerLabel(layer.type)}<small>{layer.panel === "wrap" ? "whole wrap" : layer.panel}</small></span>
-            <button type="button" className={`cover-layer-lock ${layer.locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); onToggleLocked(layer.id); }} title={layer.locked ? "Unlock layer" : "Lock layer"} aria-label={layer.locked ? "Unlock layer" : "Lock layer"}>{layer.locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
-          </div>
-        ))}
+        {rows}
         <button type="button" className="cover-background-row" onClick={() => onSelect(null)}>
           <span className="cover-layer-type-icon"><Palette size={13} /></span>
           <span className="cover-layer-name">Background<small>paper &amp; gradient</small></span>
@@ -1556,14 +1782,14 @@ function LayerPanel({ doc, selectedId, selectedIds, onSelect, onAdd, onToggleVis
           <button type="button" className="danger" onClick={() => onDelete(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Delete selected layers" : "Delete layer"} aria-label="Delete layer"><Trash2 size={13} /></button>
         </div>
       )}
-      <div className="cover-layer-hint"><Move size={11} /> {selectedIds.length > 1 ? `${selectedIds.length} layers selected` : "Drag to reorder · Shift-click to multi-select"}</div>
+      <div className="cover-layer-hint"><Move size={11} /> {activeGroupId ? "New layers join the selected group" : selectedIds.length > 1 ? `${selectedIds.length} layers selected` : "Drag to reorder · Shift-click to multi-select"}</div>
     </aside>
   );
 }
 
 /* ========================================================================== */
 
-function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
+function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [interaction, setInteraction] = useState<{
@@ -1684,7 +1910,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
             targetsX.push(metrics.bleed, metrics.bleed + metrics.trimWidth, metrics.bleed + metrics.trimWidth + metrics.spineWidth, metrics.fullWidth - metrics.bleed);
             targetsY.push(metrics.bleed, metrics.fullHeight - metrics.bleed);
           }
-          const otherLayers = cover.doc.layers.filter((item) => item.id !== layer.id && item.visible && item.panel === layer.panel && !selectedIds.includes(item.id));
+          const otherLayers = cover.doc.layers.filter((item) => item.id !== layer.id && coverLayerVisible(cover.doc, item) && item.panel === layer.panel && !selectedIds.includes(item.id));
           for (const other of otherLayers) {
             targetsX.push(other.x, other.x + other.width / 2, other.x + other.width);
             targetsY.push(other.y, other.y + other.height / 2, other.y + other.height);
@@ -1761,7 +1987,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   }, [interaction, cover.doc.guides, metrics, onLayersChange, onInteractionEnd, onInteractionStart, selectedIds]);
 
   const beginMove = (event: ReactPointerEvent<HTMLDivElement>, layer: CoverLayer) => {
-    if (previewing || layer.locked) return;
+    if (previewing || coverLayerLocked(cover.doc, layer)) return;
     if ((event.target as HTMLElement).closest(".cover-selection-handle, .cover-rotate-handle")) return;
     event.stopPropagation();
     if (event.shiftKey || event.metaKey || event.ctrlKey) {
@@ -1789,7 +2015,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   };
 
   const beginResize = (event: ReactPointerEvent<HTMLButtonElement>, layer: CoverLayer, handle: string) => {
-    if (previewing || layer.locked) return;
+    if (previewing || coverLayerLocked(cover.doc, layer)) return;
     event.stopPropagation();
     event.preventDefault();
     const sheet = event.currentTarget.closest("[data-cover-sheet]") as HTMLElement | null;
@@ -1810,7 +2036,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   };
 
   const beginRotate = (event: ReactPointerEvent<HTMLButtonElement>, layer: CoverLayer) => {
-    if (previewing || layer.locked) return;
+    if (previewing || coverLayerLocked(cover.doc, layer)) return;
     event.stopPropagation();
     event.preventDefault();
     const sheet = event.currentTarget.closest("[data-cover-sheet]") as HTMLElement | null;
@@ -1899,6 +2125,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           <button type="button" title="Distribute horizontally" aria-label="Distribute horizontally" disabled={selectedIds.length < 3} onClick={() => onDistributeSelection("horizontal")}><AlignHorizontalDistributeCenter size={14} /></button>
           <button type="button" title="Distribute vertically" aria-label="Distribute vertically" disabled={selectedIds.length < 3} onClick={() => onDistributeSelection("vertical")}><AlignVerticalDistributeCenter size={14} /></button>
           <span className="cover-selection-sep" />
+          <button type="button" title="Group selected layers" aria-label="Group selected layers" onClick={onGroupSelection}><FolderPlus size={14} /></button>
           <button type="button" title="Duplicate selected layers" aria-label="Duplicate selected layers" onClick={onDuplicateSelection}><Copy size={14} /></button>
           <button type="button" className="danger" title="Delete selected layers" aria-label="Delete selected layers" onClick={onDeleteSelection}><Trash2 size={14} /></button>
           <button type="button" title="Deselect all" aria-label="Deselect all" onClick={() => onSelect(null)}><X size={14} /></button>
@@ -1923,14 +2150,15 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
             }}
           >
             {cover.doc.layers.map((layer) => {
-              if (!layer.visible) return null;
+              if (!coverLayerVisible(cover.doc, layer)) return null;
               const rect = spreadRectFor(layer);
               const isSelected = selectedIds.includes(layer.id) && !previewing;
               const isPrimary = selectedId === layer.id && !previewing;
+              const locked = coverLayerLocked(cover.doc, layer);
               return (
                 <div
                   key={layer.id}
-                  className={`cover-canvas-layer ${isSelected ? "selected" : ""} ${layer.locked ? "locked" : ""} ${layer.panel !== panel && panel !== "wrap" && layer.panel !== "wrap" ? "out-of-panel" : ""}`}
+                  className={`cover-canvas-layer ${isSelected ? "selected" : ""} ${locked ? "locked" : ""} ${layer.panel !== panel && panel !== "wrap" && layer.panel !== "wrap" ? "out-of-panel" : ""}`}
                   style={{
                     left: `${rect.x}in`,
                     top: `${rect.y}in`,
@@ -1943,13 +2171,13 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
                   }}
                   onPointerDown={(event) => beginMove(event, layer)}
                   onDoubleClick={() => { if (layer.type === "text") onEditText(layer.id); }}
-                  title={layer.locked ? `${layer.name} (locked)` : layer.name}
+                  title={locked ? `${layer.name} (locked)` : layer.name}
                 >
                   <div className="cover-canvas-layer-content" style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: coverLayerInnerHtml(book, cover, layer, "editor") }} />
                   {isSelected && (
                     <>
                       <span className="cover-selection-outline" />
-                      {isPrimary && !layer.locked && (
+                      {isPrimary && !locked && (
                         <>
                           {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const).map((handle) => (
                             <button key={handle} type="button" className={`cover-selection-handle handle-${handle}`} onPointerDown={(event) => beginResize(event, layer, handle)} aria-label={`Resize ${handle}`} />

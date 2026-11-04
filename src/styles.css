@@ -5974,6 +5974,18 @@ kbd {
 .cover-layer-row:hover { background: var(--surface-hover); }
 .cover-layer-row.active { border-color: color-mix(in srgb, var(--book-accent) 30%, var(--border)); background: var(--book-accent-soft); color: var(--text); }
 .cover-layer-row.primary { box-shadow: inset 2px 0 0 var(--book-accent); }
+.cover-layer-row.in-group { margin-left: 9px; border-left: 2px solid color-mix(in srgb, var(--book-accent) 24%, var(--border)); border-top-left-radius: 3px; border-bottom-left-radius: 3px; }
+.cover-group-row { display: grid; min-height: 35px; grid-template-columns: 15px 18px minmax(0, 1fr) 20px 20px 18px; align-items: center; gap: 2px; padding: 3px 4px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-2); color: var(--text-2); cursor: pointer; }
+.cover-group-row:hover { background: var(--surface-hover); }
+.cover-group-row.active { border-color: color-mix(in srgb, var(--book-accent) 34%, var(--border)); background: var(--book-accent-soft); color: var(--text); }
+.cover-group-row.drop-target { box-shadow: inset 0 0 0 1.5px var(--book-accent); }
+.cover-group-row.is-hidden { opacity: 0.54; }
+.cover-group-chevron, .cover-group-ungroup { display: flex; width: 15px; height: 22px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-4); cursor: pointer; }
+.cover-group-chevron:hover, .cover-group-ungroup:hover { background: var(--surface-active); color: var(--text); }
+.cover-group-icon { display: flex; align-items: center; justify-content: center; color: var(--book-accent); }
+.cover-group-name { display: flex; min-width: 0; flex-direction: column; gap: 1px; overflow: hidden; font-size: 9px; font-weight: 650; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.cover-group-name small { color: var(--text-4); font-size: 7.3px; font-weight: 400; }
+.cover-group-name input { width: 100%; height: 20px; padding: 0 4px; border: 1px solid var(--book-accent); border-radius: 3px; background: var(--surface); color: var(--text); font: inherit; font-size: 9px; }
 .cover-layer-row.drop-target { box-shadow: inset 0 2px 0 var(--book-accent); }
 .cover-layer-row.is-hidden { opacity: 0.52; }
 .cover-layer-eye,
