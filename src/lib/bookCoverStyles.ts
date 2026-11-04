@@ -11,6 +11,7 @@ import {
   type CoverLayerType,
   type CoverTextAlign,
   type CoverTextEffect,
+  type CoverTextHighlight,
   type CoverTextLayer,
   type CoverVerticalAlign,
 } from "./bookCoverDoc";
@@ -38,6 +39,7 @@ export interface CoverLayerStyleValues {
   effect?: CoverTextEffect;
   effectColor?: string;
   curve?: number;
+  highlight?: CoverTextHighlight;
   fill?: CoverFill;
   radius?: number;
   strokeColor?: string;
@@ -71,7 +73,7 @@ export interface CoverLayerStylePreset {
 const SHARED_KEYS: (keyof CoverLayerStyleValues)[] = ["opacity", "blendMode", "shadow", "glow", "fade"];
 
 const TYPE_KEYS: Record<CoverLayerType, (keyof CoverLayerStyleValues)[]> = {
-  text: ["fontFamily", "fontSize", "fontWeight", "italic", "align", "verticalAlign", "lineHeight", "letterSpacing", "color", "uppercase", "effect", "effectColor", "curve"],
+  text: ["fontFamily", "fontSize", "fontWeight", "italic", "align", "verticalAlign", "lineHeight", "letterSpacing", "color", "uppercase", "effect", "effectColor", "curve", "highlight"],
   shape: ["fill", "radius", "strokeColor", "strokeWidth", "dash"],
   image: ["fit", "radius", "grayscale", "sepia", "brightness", "contrast", "saturation", "hue", "blur", "tint", "tintStrength", "mask"],
   line: ["color"],

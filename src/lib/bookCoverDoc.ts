@@ -93,6 +93,14 @@ export interface CoverLayerGroup {
   collapsed: boolean;
 }
 
+export interface CoverTextHighlight {
+  enabled: boolean;
+  color: string;
+  opacity: number;
+  padding: number;
+  radius: number;
+}
+
 export interface CoverTextLayer extends CoverLayerBase {
   type: "text";
   text: string;
@@ -109,6 +117,7 @@ export interface CoverTextLayer extends CoverLayerBase {
   effect: CoverTextEffect;
   effectColor: string;
   curve: number;
+  highlight: CoverTextHighlight;
 }
 
 export interface CoverImageLayer extends CoverLayerBase {
@@ -670,6 +679,7 @@ export function textLayer(input: Partial<CoverTextLayer> & Pick<CoverTextLayer, 
     effect: input.effect ?? "none",
     effectColor: input.effectColor ?? "#000000",
     curve: input.curve ?? 0,
+    highlight: input.highlight ?? { enabled: false, color: "#f2c6a0", opacity: 0.65, padding: 0.04, radius: 0.02 },
   };
 }
 
@@ -808,6 +818,17 @@ function normalizeGlow(value: unknown): CoverLayerGlow {
   };
 }
 
+function normalizeTextHighlight(value: unknown): CoverTextHighlight {
+  const source = isRecord(value) ? value : {};
+  return {
+    enabled: boolean(source.enabled, false),
+    color: color(source.color, "#f2c6a0"),
+    opacity: decimal(source.opacity, 0.65, 0, 1),
+    padding: decimal(source.padding, 0.04, 0, 0.3),
+    radius: decimal(source.radius, 0.02, 0, 0.2),
+  };
+}
+
 function normalizeLayer(value: unknown, index: number): CoverLayer | null {
   if (!isRecord(value)) return null;
   const type = oneOf(value.type, LAYER_TYPES, "text");
@@ -830,6 +851,7 @@ function normalizeLayer(value: unknown, index: number): CoverLayer | null {
       effect: oneOf(value.effect, ["none", "soft", "hard", "glow", "outline"] as const, "none"),
       effectColor: color(value.effectColor, "#000000"),
       curve: decimal(value.curve, 0, -100, 100),
+      highlight: normalizeTextHighlight(value.highlight),
     };
   }
   if (type === "image") {
@@ -2272,6 +2294,7 @@ export function coverTextStyle(layer: CoverTextLayer): Record<string, string | u
     height: "100%",
     flexDirection: "column",
     justifyContent: justify,
+    alignItems: layer.align === "center" ? "center" : layer.align === "right" ? "flex-end" : "flex-start",
     textAlign: layer.align,
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
@@ -2310,8 +2333,13 @@ function curvedTextSvg(layer: CoverTextLayer, content: string, idPrefix: string)
     ? `stroke="${escapeHtml(layer.effectColor)}" stroke-width="${Math.max(0.004, fontSize * 0.035)}" paint-order="stroke"`
     : "";
   const value = (layer.uppercase ? content.toLocaleUpperCase() : content).replace(/\s*\n+\s*/g, " ");
+  const highlightColor = rgbaColor(layer.highlight.color, layer.highlight.opacity);
+  const highlight = layer.highlight.enabled
+    ? `<text font-family="${escapeHtml(coverFontCss(layer.fontFamily))}" font-size="${roundInches(fontSize)}" font-weight="${layer.fontWeight}" font-style="${layer.italic ? "italic" : "normal"}" fill="${highlightColor}" stroke="${highlightColor}" stroke-width="${Math.max(0.004, layer.highlight.padding * 2)}" stroke-linejoin="round" letter-spacing="${layer.letterSpacing}em" text-anchor="${anchor}" dominant-baseline="middle" aria-hidden="true"><textPath href="#${safeId}" startOffset="${offset}">${escapeHtml(value)}</textPath></text>`
+    : "";
   return `<svg class="cover-doc-curved-text" viewBox="0 0 ${roundInches(width)} ${roundInches(height)}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block;width:100%;height:100%;overflow:visible">
     <path id="${safeId}" d="${path}" fill="none"/>
+    ${highlight}
     <text font-family="${escapeHtml(coverFontCss(layer.fontFamily))}" font-size="${roundInches(fontSize)}" font-weight="${layer.fontWeight}" font-style="${layer.italic ? "italic" : "normal"}" fill="${escapeHtml(layer.color)}" letter-spacing="${layer.letterSpacing}em" text-anchor="${anchor}" dominant-baseline="middle" style="${effectStyle}${layer.uppercase ? "text-transform:uppercase;" : ""}" ${outline}>
       <textPath href="#${safeId}" startOffset="${offset}">${escapeHtml(value)}</textPath>
     </text>
@@ -2398,7 +2426,11 @@ export function coverLayerInnerHtml(book: Book, cover: BookCoverDesign, layer: C
     if (layer.curve !== 0) return curvedTextSvg(layer, content, idPrefix);
     const style = coverTextStyle(layer);
     const styleString = Object.entries(style).filter(([, value]) => value !== undefined).map(([key, value]) => `${key.replace(/[A-Z]/g, (letter) => `-${letter.toLocaleLowerCase()}`)}:${value}`).join(";");
-    return `<div class="cover-doc-text" style="${styleString}">${escapeHtml(content) || "&#8203;"}</div>`;
+    const value = escapeHtml(content) || "&#8203;";
+    const highlighted = layer.highlight.enabled
+      ? `<span class="cover-doc-text-highlight" style="display:block;width:fit-content;max-width:100%;box-sizing:border-box;background:${rgbaColor(layer.highlight.color, layer.highlight.opacity)};padding:${layer.highlight.padding}in ${layer.highlight.padding * 1.6}in;border-radius:${layer.highlight.radius}in;box-decoration-break:clone;-webkit-box-decoration-break:clone">${value}</span>`
+      : value;
+    return `<div class="cover-doc-text" style="${styleString}">${highlighted}</div>`;
   }
   if (layer.type === "image") {
     if (!layer.src) {
@@ -2774,6 +2806,23 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: CoverTextLayer, con
   const totalHeight = Math.max(lineHeight, lines.length * lineHeight);
   const startY = layer.verticalAlign === "middle" ? (height - totalHeight) / 2 + (lineHeight - fontSize) / 2 : layer.verticalAlign === "bottom" ? height - totalHeight + (lineHeight - fontSize) / 2 : 0;
   const x = layer.align === "center" ? width / 2 : layer.align === "right" ? width : 0;
+  if (layer.highlight.enabled) {
+    const pad = Math.max(0, layer.highlight.padding);
+    ctx.save();
+    ctx.fillStyle = rgbaColor(layer.highlight.color, layer.highlight.opacity);
+    lines.forEach((line, index) => {
+      const textWidth = ctx.measureText(line).width;
+      const left = layer.align === "center" ? width / 2 - textWidth / 2 : layer.align === "right" ? width - textWidth : 0;
+      const y = startY + index * lineHeight;
+      const boxX = left - pad * 1.6;
+      const boxW = textWidth + pad * 3.2;
+      const boxY = y - pad + (lineHeight - fontSize) / 2;
+      const boxH = fontSize + pad * 2;
+      roundRectPath(ctx, boxX, boxY, Math.max(0.01, boxW), Math.max(0.01, boxH), Math.min(layer.highlight.radius, boxH / 2));
+      ctx.fill();
+    });
+    ctx.restore();
+  }
   if (layer.effect === "soft" || layer.effect === "hard" || layer.effect === "glow") {
     ctx.shadowColor = layer.effectColor;
     ctx.shadowBlur = layer.effect === "soft" ? 0.08 : layer.effect === "glow" ? 0.18 : 0;
@@ -2834,6 +2883,30 @@ function drawCurvedTextLayer(ctx: CanvasRenderingContext2D, layer: CoverTextLaye
     const span = cumulative[index + 1] - cumulative[index] || 1;
     return Math.min(1, Math.max(0, (index + (distance - cumulative[index]) / span) / samples));
   };
+  if (layer.highlight.enabled) {
+    const highlightColor = rgbaColor(layer.highlight.color, layer.highlight.opacity);
+    let markerCursor = cursor;
+    ctx.save();
+    ctx.fillStyle = highlightColor;
+    ctx.strokeStyle = highlightColor;
+    ctx.lineWidth = Math.max(0.004, layer.highlight.padding * 2);
+    ctx.lineJoin = "round";
+    chars.forEach((char, index) => {
+      const distance = markerCursor + widths[index] / 2;
+      const t = tForDistance(distance);
+      const point = points[Math.round(t * samples)];
+      if (point) {
+        ctx.save();
+        ctx.translate(point.x, point.y);
+        ctx.rotate(point.angle);
+        ctx.fillText(char, 0, 0);
+        if (layer.highlight.padding > 0) ctx.strokeText(char, 0, 0);
+        ctx.restore();
+      }
+      markerCursor += widths[index] + tracking;
+    });
+    ctx.restore();
+  }
   if (layer.effect === "soft" || layer.effect === "hard" || layer.effect === "glow") {
     ctx.shadowColor = layer.effectColor;
     ctx.shadowBlur = layer.effect === "soft" ? 0.08 : layer.effect === "glow" ? 0.18 : 0;

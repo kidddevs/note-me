@@ -41,6 +41,7 @@ function richTextLayer() {
     effect: "outline",
     effectColor: "#1f3a2d",
     curve: 18,
+    highlight: { enabled: true, color: "#f2c6a0", opacity: 0.5, padding: 0.04, radius: 0.02 },
     opacity: 0.92,
     blendMode: "screen",
   });
@@ -55,6 +56,7 @@ test("layer styles capture appearance but never content or geometry", () => {
   assert.equal(values.fontFamily, "display");
   assert.equal(values.color, "#f5efe4");
   assert.equal(values.curve, 18);
+  assert.equal(values.highlight.enabled, true);
   assert.equal(values.opacity, 0.92);
   assert.equal(values.shadow.enabled, true);
   assert.equal("text" in values, false);
@@ -74,6 +76,7 @@ test("styles apply shared appearance everywhere and type settings only where the
   assert.equal(textPatch.fontSize, 42);
   assert.equal(textPatch.fontFamily, "display");
   assert.equal(textPatch.color, "#f5efe4");
+  assert.equal(textPatch.highlight.opacity, 0.5);
 
   const shape = shapeLayer({ id: "shape", name: "Shape", panel: "front", x: 0, y: 0, width: 2, height: 2, shape: "star" });
   const shapePatch = applyLayerStyle(shape, values);

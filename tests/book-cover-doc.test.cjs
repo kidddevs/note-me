@@ -523,3 +523,38 @@ test("expanded shape library builds real paths for markup and canvas", () => {
   const legacy = parseCoverDocument({ layers: [{ id: "unknown", type: "shape", name: "Unknown", panel: "front", x: 0, y: 0, width: 1, height: 1, shape: "not-a-shape" }] });
   assert.equal(legacy.layers[0].shape, "rectangle");
 });
+
+
+test("text highlight boxes persist and render in straight and curved text", () => {
+  const doc = parseCoverDocument({
+    layers: [{
+      id: "highlight",
+      type: "text",
+      name: "Highlight",
+      panel: "front",
+      x: 0.5,
+      y: 0.5,
+      width: 3,
+      height: 1,
+      text: "Cover line",
+      highlight: { enabled: true, color: "#f2c6a0", opacity: 0.5, padding: 0.04, radius: 0.02 },
+    }],
+  });
+  assert.equal(doc.layers[0].highlight.enabled, true);
+  assert.equal(doc.layers[0].highlight.opacity, 0.5);
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.match(markup, /cover-doc-text-highlight/);
+  assert.match(markup, /background:rgba\(242, 198, 160, 0\.5\)/);
+  assert.match(markup, /padding:0\.04in 0\.064in/);
+
+  const curved = parseCoverDocument({ layers: [{ ...doc.layers[0], curve: 40 }] });
+  const curvedMarkup = coverDocMarkup(book(), { ...cover(), doc: curved }, "front");
+  assert.equal((curvedMarkup.match(/<text /g) || []).length, 2);
+
+  const legacy = parseCoverDocument({ layers: [{ ...doc.layers[0], highlight: undefined }] });
+  assert.equal(legacy.layers[0].highlight.enabled, false);
+  const clamped = parseCoverDocument({ layers: [{ ...doc.layers[0], highlight: { enabled: true, color: "#ffffff", opacity: 9, padding: 9, radius: 9 } }] });
+  assert.equal(clamped.layers[0].highlight.opacity, 1);
+  assert.equal(clamped.layers[0].highlight.padding, 0.3);
+  assert.equal(clamped.layers[0].highlight.radius, 0.2);
+});

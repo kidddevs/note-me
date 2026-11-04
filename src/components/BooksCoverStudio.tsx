@@ -447,6 +447,7 @@ function historyLabel(key?: string) {
     return "Updated group";
   }
   if (value.startsWith("pan:")) return "Repositioned image";
+  if (value.startsWith("highlight-")) return "Changed text highlight";
   if (value === "style:paste") return "Pasted layer style";
   if (value.startsWith("style:preset:")) return "Applied layer style";
   if (value.startsWith("move:")) return "Moved layer";
@@ -3551,6 +3552,21 @@ function LayerInspector({
           </div>
           <SliderField label="Curve" value={layer.curve} onChange={(curve) => onUpdate({ curve }, { key: `curve:${layer.id}` })} min={-100} max={100} step={1} suffix="%" />
           {layer.curve !== 0 && <p className="cover-inspector-note">Curved text is set on a single line. Line breaks are converted to spaces.</p>}
+          <div className="cover-highlight-editor">
+            <label className="cover-toggle-row">
+              <span><strong>Highlight box</strong><small>A marker block behind the text.</small></span>
+              <input type="checkbox" checked={layer.highlight.enabled} onChange={(event) => onUpdate({ highlight: { ...layer.highlight, enabled: event.target.checked } }, { key: `highlight-toggle:${layer.id}` })} />
+            </label>
+            {layer.highlight.enabled && (
+              <div className="cover-highlight-fields">
+                <ColorField label="Highlight colour" value={layer.highlight.color} onChange={(highlightColor) => onUpdate({ highlight: { ...layer.highlight, color: highlightColor } }, { key: `highlight-color:${layer.id}` })} />
+                <SliderField label="Opacity" value={layer.highlight.opacity} onChange={(opacity) => onUpdate({ highlight: { ...layer.highlight, opacity } }, { key: `highlight-opacity:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
+                <SliderField label="Padding" value={layer.highlight.padding} onChange={(padding) => onUpdate({ highlight: { ...layer.highlight, padding } }, { key: `highlight-padding:${layer.id}` })} min={0} max={0.2} step={0.005} suffix="in" />
+                <SliderField label="Radius" value={layer.highlight.radius} onChange={(radius) => onUpdate({ highlight: { ...layer.highlight, radius } }, { key: `highlight-radius:${layer.id}` })} min={0} max={0.2} step={0.005} suffix="in" />
+                {layer.curve !== 0 && <small className="cover-field-hint">Curved text uses a marker halo; the box padding controls the halo width.</small>}
+              </div>
+            )}
+          </div>
           <div className="cover-select-grid">
             <label className="cover-select-field"><span>Effect</span><select value={layer.effect} onChange={(event) => onUpdate({ effect: event.target.value as CoverTextEffect }, { key: `effect:${layer.id}` })}><option value="none">None</option><option value="soft">Soft shadow</option><option value="hard">Hard shadow</option><option value="glow">Glow</option><option value="outline">Outline</option></select></label>
             {layer.effect !== "none" && <ColorField label="Effect colour" value={layer.effectColor} onChange={(effectColor) => onUpdate({ effectColor }, { key: `effect-color:${layer.id}` })} />}
