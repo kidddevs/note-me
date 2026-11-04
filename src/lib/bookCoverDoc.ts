@@ -557,6 +557,24 @@ export function shadeColor(value: string, amount: number) {
   return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
+export const COVER_GRADIENT_PRESETS: { id: string; label: string; gradient: BookCoverGradient }[] = [
+  { id: "paper", label: "Warm paper", gradient: { type: "linear", angle: 135, stops: [{ color: "#f5efe4", position: 0 }, { color: "#d8c7ae", position: 1 }] } },
+  { id: "ink", label: "Deep ink", gradient: { type: "linear", angle: 155, stops: [{ color: "#14161a", position: 0 }, { color: "#3b3f46", position: 1 }] } },
+  { id: "sunset", label: "Terracotta", gradient: { type: "linear", angle: 135, stops: [{ color: "#e4583a", position: 0 }, { color: "#f2c6a0", position: 1 }] } },
+  { id: "forest", label: "Forest", gradient: { type: "linear", angle: 160, stops: [{ color: "#1f3a2d", position: 0 }, { color: "#6b8f6a", position: 1 }] } },
+  { id: "gold", label: "Antique gold", gradient: { type: "linear", angle: 135, stops: [{ color: "#c9a227", position: 0 }, { color: "#7a5d1e", position: 1 }] } },
+  { id: "halo", label: "Warm halo", gradient: { type: "radial", angle: 90, stops: [{ color: "#f2e6c9", position: 0 }, { color: "#a56b3e", position: 1 }] } },
+];
+
+export function reverseCoverGradient(gradient: BookCoverGradient): BookCoverGradient {
+  return {
+    ...gradient,
+    stops: gradient.stops
+      .map((stop) => ({ ...stop, position: Math.round((1 - stop.position) * 1000) / 1000 }))
+      .sort((a, b) => a.position - b.position),
+  };
+}
+
 export function coverGradientCss(gradient: BookCoverGradient) {
   const stops = gradient.stops
     .slice()

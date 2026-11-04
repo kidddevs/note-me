@@ -97,6 +97,7 @@ import { BOOK_GRAPHIC_CATEGORIES, BOOK_GRAPHICS, graphicDataUri, type BookGraphi
 import { coverCss, coverMarkup } from "../lib/bookCover";
 import {
   COVER_FONTS,
+  COVER_GRADIENT_PRESETS,
   COVER_IMAGE_PRESETS,
   COVER_PAPER_STOCKS,
   COVER_SYMBOLS,
@@ -109,6 +110,7 @@ import {
   coverDocMarkup,
   coverFill,
   coverFillCss,
+  coverGradientCss,
   coverLayerEffectsCss,
   coverLayerFadeCss,
   coverLayerInnerHtml,
@@ -134,6 +136,7 @@ import {
   normalizeIsbn13,
   reflowSpineLayers,
   renderCoverCanvas,
+  reverseCoverGradient,
   resolveCoverTokenText,
   shapeLayer,
   spineWidthMillimetres,
@@ -3461,6 +3464,11 @@ function FillEditor({ label, fill, onChange }: { label: string; fill: CoverFill;
             <label>Style<select value={fill.gradient.type} onChange={(event) => updateGradient({ type: event.target.value === "radial" ? "radial" : "linear" })}><option value="linear">Linear</option><option value="radial">Radial</option></select></label>
             {fill.gradient.type === "linear" && <NumberField label="Angle" value={fill.gradient.angle} onChange={(angle) => updateGradient({ angle })} step={1} min={0} max={360} suffix="°" />}
           </div>
+          <div className="cover-gradient-presets" role="group" aria-label="Gradient presets">
+            {COVER_GRADIENT_PRESETS.map((preset) => (
+              <button key={preset.id} type="button" title={preset.label} aria-label={preset.label} style={{ background: coverGradientCss(preset.gradient) }} onClick={() => update({ gradient: { ...preset.gradient, stops: preset.gradient.stops.map((stop) => ({ ...stop })) } })} />
+            ))}
+          </div>
           <div className="cover-gradient-stops">
             {fill.gradient.stops.map((stop, index) => (
               <div className="cover-gradient-stop" key={index}>
@@ -3471,7 +3479,10 @@ function FillEditor({ label, fill, onChange }: { label: string; fill: CoverFill;
               </div>
             ))}
           </div>
-          {fill.gradient.stops.length < 4 && <button type="button" className="cover-mini-button" onClick={() => updateGradient({ stops: [...fill.gradient.stops, { color: "#ffffff", position: 1 }] })}><Plus size={12} /> Add stop</button>}
+          <div className="cover-gradient-actions">
+            <button type="button" className="cover-mini-button" onClick={() => update({ gradient: reverseCoverGradient(fill.gradient) })}><FlipHorizontal2 size={12} /> Reverse</button>
+            {fill.gradient.stops.length < 4 && <button type="button" className="cover-mini-button" onClick={() => updateGradient({ stops: [...fill.gradient.stops, { color: "#ffffff", position: 1 }] })}><Plus size={12} /> Add stop</button>}
+          </div>
         </div>
       )}
     </div>

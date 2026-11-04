@@ -7,6 +7,7 @@ const {
   coverDocMarkup,
   coverFillCss,
   coverImageFilterCss,
+  COVER_GRADIENT_PRESETS,
   coverLayerFadeCss,
   coverImageMaskCss,
   coverImageOverflow,
@@ -27,6 +28,7 @@ const {
   normalizeIsbn13,
   parseCoverDocument,
   reflowSpineLayers,
+  reverseCoverGradient,
   shapeLayer,
   spineWidthForPages,
   spineWidthMillimetres,
@@ -571,4 +573,19 @@ test("image layers keep source pixel dimensions for resolution checks", () => {
   assert.equal(clamped.layers[0].sourceWidth, 100000);
   assert.equal(clamped.layers[0].sourceHeight, 0);
   assert.equal(imageLayer({ id: "plain", name: "Plain", panel: "front", x: 0, y: 0, width: 1, height: 1, src: "x" }).sourceWidth, 0);
+});
+
+
+test("gradient presets are valid and reverse keeps stop order", () => {
+  assert.ok(COVER_GRADIENT_PRESETS.length >= 5);
+  for (const preset of COVER_GRADIENT_PRESETS) {
+    assert.equal(preset.gradient.stops.length, 2);
+    assert.ok(preset.gradient.stops.every((stop) => /^#[0-9a-f]{6}$/i.test(stop.color)));
+  }
+  const input = { type: "linear", angle: 135, stops: [{ color: "#111111", position: 0.1 }, { color: "#eeeeee", position: 0.9 }, { color: "#ff0000", position: 0.5 }] };
+  const reversed = reverseCoverGradient(input);
+  assert.deepEqual(reversed.stops.map((stop) => stop.color), ["#eeeeee", "#ff0000", "#111111"]);
+  assert.deepEqual(reversed.stops.map((stop) => stop.position), [0.1, 0.5, 0.9]);
+  assert.equal(input.stops[0].position, 0.1);
+  assert.equal(reversed.angle, 135);
 });

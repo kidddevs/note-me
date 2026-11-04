@@ -6373,6 +6373,10 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-fill-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: end; }
 .cover-fill-row > label { display: flex; flex-direction: column; gap: 4px; color: var(--text-3); font-size: 8px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .cover-gradient-editor { display: flex; flex-direction: column; gap: 7px; }
+.cover-gradient-presets { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px; }
+.cover-gradient-presets button { height: 24px; padding: 0; border: 1px solid var(--border-subtle); border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); cursor: pointer; }
+.cover-gradient-presets button:hover { outline: 2px solid var(--book-accent); outline-offset: 1px; }
+.cover-gradient-actions { display: flex; gap: 4px; }
 .cover-pattern-editor { display: flex; flex-direction: column; gap: 7px; }
 .cover-pattern-preview { height: 48px; border: 1px solid var(--border); border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); }
 .cover-gradient-stops { display: flex; flex-direction: column; gap: 4px; }
