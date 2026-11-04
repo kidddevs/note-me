@@ -4,6 +4,7 @@ import type { BookCoverDesign } from "./bookLayout";
 import { COVER_PAPER_STOCKS, coverExportFilename, coverMetrics, renderCoverCanvas, saveCoverBlob, spineWidthMillimetres } from "./bookCoverDoc";
 import { buildCoverPdfFile } from "./bookCoverPdf";
 import { coverMockupFilename, renderCoverMockup } from "./bookCoverMockup";
+import { coverPreflight, coverPreflightSummary } from "./bookCoverPreflight";
 
 export interface CoverPackageOptions {
   dpi?: number;
@@ -19,6 +20,7 @@ export interface CoverPackageFile {
 export function coverSpecsText(book: Book, cover: BookCoverDesign, options: Pick<CoverPackageOptions, "pdfx"> = {}) {
   const metrics = coverMetrics(book.trim_size, cover);
   const stock = COVER_PAPER_STOCKS.find((item) => item.id === cover.paperStock)?.label ?? "Book paper";
+  const preflight = cover.doc ? coverPreflightSummary(coverPreflight(book, cover)) : { errors: 0, warnings: 0, passes: 0, infos: 0, total: 0 };
   return [
     book.title || "Untitled",
     book.author || "Unknown author",
@@ -36,18 +38,42 @@ export function coverSpecsText(book: Book, cover: BookCoverDesign, options: Pick
     "COLOUR & PDF",
     options.pdfx ? "PDF/X-4           sRGB output intent, flattened image, trim/bleed boxes" : "Standard PDF      sRGB JPEG, trim/bleed geometry",
     "",
+    "PREFLIGHT",
+    `  ${preflight.errors} errors · ${preflight.warnings} warnings · ${preflight.passes} passed · ${preflight.infos} notes`,
+    "  Full findings are included in preflight.txt.",
+    "",
     "FILES",
     "  cover/*-full-wrap-print.pdf   Full wrap with crop marks, fold marks, colour bar and slug",
     "  cover/*-front.png            Front cover at trim size",
     "  cover/*-back.png             Back cover at trim size",
     "  cover/*-spine.png            Spine at trim size",
     "  cover/*-mockup-*.png         Presentation mockup",
+    "  cover/*-preflight.txt        Print preflight findings",
     "",
     "NOTES",
     "  Open the PDF in a print-shop preflight tool before production.",
     "  The wrap already includes bleed. Crop marks sit outside the trim box.",
     `  Generated ${new Date().toISOString().slice(0, 10)} by NoteMe Cover Studio.`,
   ].join("\n");
+}
+
+export function coverPreflightText(book: Book, cover: BookCoverDesign) {
+  const checks = cover.doc ? coverPreflight(book, cover) : [];
+  const summary = coverPreflightSummary(checks);
+  const order: Record<string, number> = { error: 0, warning: 1, info: 2, pass: 3 };
+  const lines = [
+    `${book.title || "Untitled"} — print preflight`,
+    ...(book.author ? [`Author: ${book.author}`] : []),
+    `Generated: ${new Date().toISOString()}`,
+    "",
+    `Errors: ${summary.errors}   Warnings: ${summary.warnings}   Passed: ${summary.passes}   Notes: ${summary.infos}`,
+    "",
+  ];
+  for (const check of [...checks].sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9))) {
+    lines.push(`[${check.severity.toUpperCase()}] ${check.label}`);
+    lines.push(`  ${check.detail}`);
+  }
+  return lines.join("\n");
 }
 
 export function buildCoverPackageZip(files: CoverPackageFile[]): Uint8Array {
@@ -79,6 +105,7 @@ export async function createCoverPackage(book: Book, cover: BookCoverDesign, opt
     files.push({ name: coverMockupFilename(book, { width: 1600, height: 1600, background: "studio" }), bytes: await canvasPng(canvas) });
   }
   files.push({ name: coverExportFilename(book, "wrap", "txt").replace(/-full-wrap\.txt$/, "-specs.txt"), bytes: new TextEncoder().encode(coverSpecsText(book, cover, options)) });
+  files.push({ name: coverExportFilename(book, "wrap", "txt").replace(/-full-wrap\.txt$/, "-preflight.txt"), bytes: new TextEncoder().encode(coverPreflightText(book, cover)) });
   const filename = coverExportFilename(book, "wrap", "zip").replace(/-full-wrap\.zip$/, "-production-package.zip");
   return { filename, bytes: buildCoverPackageZip(files), files: files.map((file) => file.name) };
 }

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { unzipSync } = require("fflate");
-const { buildCoverPackageZip, coverSpecsText } = require("./.compiled/src/lib/bookCoverPackage.js");
+const { buildCoverPackageZip, coverPreflightText, coverSpecsText } = require("./.compiled/src/lib/bookCoverPackage.js");
 
 const book = { title: "The Quiet Hour", author: "Amelia Hart", trim_size: "6x9" };
 const cover = {
@@ -22,6 +22,19 @@ test("spec sheet captures print, colour, and handoff details", () => {
   assert.match(text, /PDF\/X-4/);
   assert.match(text, /978-0-306-40615-7/);
   assert.match(text, /Cover Studio/);
+  assert.match(text, /PREFLIGHT/);
+  assert.match(text, /errors · \d+ warnings/);
+  assert.match(text, /preflight\.txt/);
+});
+
+test("preflight report lists findings by severity with counts", () => {
+  const text = coverPreflightText(book, { ...cover, doc: { layers: [], groups: [], guides: [], palette: [], background: { type: "solid", color: "#ffffff", gradient: { type: "linear", angle: 0, stops: [] } } } });
+  assert.match(text, /The Quiet Hour/);
+  assert.match(text, /Amelia Hart/);
+  assert.match(text, /Errors: \d+/);
+  assert.match(text, /\[ERROR\] ISBN barcode/);
+  assert.match(text, /\[WARNING\] Front title/);
+  assert.match(text, /\[WARNING\] Cover inclusion/);
 });
 
 test("production ZIP contains named cover assets", () => {
