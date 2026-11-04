@@ -3603,7 +3603,14 @@ function LayerInspector({
 
       {layer.type === "shape" && (
         <Section title="Shape" hint="Fill, outline & form">
-          <label className="cover-select-field"><span>Shape</span><select value={layer.shape} onChange={(event) => onUpdate({ shape: event.target.value as CoverShapeKind }, { key: `shape:${layer.id}` })}><option value="rectangle">Rectangle</option><option value="ellipse">Ellipse</option><option value="triangle">Triangle</option><option value="diamond">Diamond</option><option value="star">Star</option><option value="burst">Burst</option><option value="heart">Heart</option><option value="arch">Arch</option></select></label>
+          <label className="cover-select-field"><span>Shape</span><select value={layer.shape} onChange={(event) => onUpdate({ shape: event.target.value as CoverShapeKind }, { key: `shape:${layer.id}` })}><option value="rectangle">Rectangle</option><option value="ellipse">Ellipse</option><option value="triangle">Triangle</option><option value="diamond">Diamond</option><option value="star">Star</option><option value="burst">Burst</option><option value="heart">Heart</option><option value="arch">Arch</option><option value="octagon">Octagon</option><option value="shield">Shield</option><option value="ticket">Ticket</option><option value="banner">Banner</option><option value="leaf">Leaf</option><option value="arrow">Arrow</option></select></label>
+          <div className="cover-shape-grid" role="group" aria-label="Shape presets">
+            {(["rectangle", "ellipse", "triangle", "diamond", "star", "burst", "heart", "arch", "octagon", "shield", "ticket", "banner", "leaf", "arrow"] as CoverShapeKind[]).map((shape) => (
+              <button key={shape} type="button" className={layer.shape === shape ? "active" : ""} title={shape} aria-label={shape} onClick={() => onUpdate({ shape }, { key: `shape:${layer.id}:${shape}` })}>
+                <svg viewBox="0 0 100 100" aria-hidden="true">{shape === "rectangle" ? <rect x="10" y="16" width="80" height="68" rx="6" /> : shape === "ellipse" ? <ellipse cx="50" cy="50" rx="42" ry="34" /> : <path d={coverShapePath(shape)} />}</svg>
+              </button>
+            ))}
+          </div>
           <FillEditor label="Fill" fill={layer.fill} onChange={(fill) => onUpdate({ fill }, { key: `fill:${layer.id}` })} />
           <div className="cover-transform-grid">
             {layer.shape === "rectangle" && <NumberField label="Corner" value={layer.radius} onChange={(radius) => onUpdate({ radius: Math.max(0, radius) }, { key: `radius:${layer.id}` })} step={0.01} min={0} suffix="in" />}

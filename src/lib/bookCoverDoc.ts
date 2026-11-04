@@ -14,7 +14,7 @@ export type CoverLayerType = "text" | "image" | "shape" | "line" | "symbol" | "a
 export type CoverTextAlign = "left" | "center" | "right" | "justify";
 export type CoverVerticalAlign = "top" | "middle" | "bottom";
 export type CoverTextEffect = "none" | "soft" | "hard" | "glow" | "outline";
-export type CoverShapeKind = "rectangle" | "ellipse" | "triangle" | "diamond" | "star" | "burst" | "heart" | "arch";
+export type CoverShapeKind = "rectangle" | "ellipse" | "triangle" | "diamond" | "star" | "burst" | "heart" | "arch" | "octagon" | "shield" | "ticket" | "banner" | "leaf" | "arrow";
 export type CoverDashStyle = "solid" | "dashed" | "dotted";
 export type CoverBlendMode = "normal" | "multiply" | "screen" | "overlay" | "soft-light" | "hard-light" | "color-dodge" | "color-burn" | "darken" | "lighten" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
 export type CoverFontId = "serif" | "display" | "sans" | "condensed" | "mono" | "humanist" | "script" | "slab" | "baskerville" | "garamond" | "avenir" | "futura" | "optima" | "copperplate" | "typewriter";
@@ -352,7 +352,7 @@ const LAYER_TYPES: CoverLayerType[] = ["text", "image", "shape", "line", "symbol
 const PANELS: CoverPanel[] = ["front", "back", "spine", "wrap"];
 const FONT_IDS = COVER_FONTS.map((font) => font.id);
 const BLEND_MODES: CoverBlendMode[] = ["normal", "multiply", "screen", "overlay", "soft-light", "hard-light", "color-dodge", "color-burn", "darken", "lighten", "difference", "exclusion", "hue", "saturation", "color", "luminosity"];
-const SHAPES: CoverShapeKind[] = ["rectangle", "ellipse", "triangle", "diamond", "star", "burst", "heart", "arch"];
+const SHAPES: CoverShapeKind[] = ["rectangle", "ellipse", "triangle", "diamond", "star", "burst", "heart", "arch", "octagon", "shield", "ticket", "banner", "leaf", "arrow"];
 const DASH_STYLES: CoverDashStyle[] = ["solid", "dashed", "dotted"];
 const IMAGE_MASKS: CoverImageMask[] = ["none", "circle", "arch", "diamond", "hexagon"];
 
@@ -1148,6 +1148,12 @@ export function coverShapePath(shape: CoverShapeKind) {
   }
   if (shape === "heart") return "M50 92 C22 72 5 55 5 34 C5 16 18 6 33 6 C42 6 48 11 50 17 C52 11 58 6 67 6 C82 6 95 16 95 34 C95 55 78 72 50 92 Z";
   if (shape === "arch") return "M6 98 L6 46 C6 20 26 4 50 4 C74 4 94 20 94 46 L94 98 Z";
+  if (shape === "octagon") return "M30 4 L70 4 L96 30 L96 70 L70 96 L30 96 L4 70 L4 30 Z";
+  if (shape === "shield") return "M50 3 L92 15 L88 55 C86 74 70 89 50 96 C30 89 14 74 12 55 L8 15 Z";
+  if (shape === "ticket") return "M6 24 L94 24 L94 42 A8 8 0 0 0 94 58 L94 76 L6 76 L6 58 A8 8 0 0 1 6 42 Z";
+  if (shape === "banner") return "M6 18 L94 18 L94 68 L74 80 L50 68 L26 80 L6 68 Z";
+  if (shape === "leaf") return "M50 4 C82 14 96 42 87 68 C78 92 50 98 22 86 C8 60 18 28 50 4 Z";
+  if (shape === "arrow") return "M4 34 L60 34 L60 14 L96 50 L60 86 L60 66 L4 66 Z";
   return "";
 }
 

@@ -15,6 +15,7 @@ const {
   cloneCoverLayers,
   coverLayerLocked,
   coverLayerVisible,
+  coverShapePath,
   coverFill,
   imageLayer,
   coverMetrics,
@@ -505,4 +506,20 @@ test("layer fade masks persist, clamp, and render into markup", () => {
   assert.equal(clamped.layers[0].fade.size, 1);
   assert.equal(coverLayerFadeCss(clamped.layers[0]).maskImage, "radial-gradient(ellipse at center, #000000 0%, transparent 100%)");
   assert.deepEqual(coverLayerFadeCss({ ...doc.layers[0], fade: { mode: "none", size: 0.4 } }), {});
+});
+
+
+test("expanded shape library builds real paths for markup and canvas", () => {
+  const shapes = ["octagon", "shield", "ticket", "banner", "leaf", "arrow"];
+  const layers = shapes.map((shape, index) => shapeLayer({ id: shape, name: shape, panel: "front", x: 0.5 + index * 0.1, y: 1, width: 1.5, height: 1.5, shape }));
+  const doc = parseCoverDocument({ layers });
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  for (const shape of shapes) {
+    const path = coverShapePath(shape);
+    assert.match(path, /^M/);
+    assert.ok(markup.includes(path));
+    assert.equal(doc.layers.find((layer) => layer.id === shape).shape, shape);
+  }
+  const legacy = parseCoverDocument({ layers: [{ id: "unknown", type: "shape", name: "Unknown", panel: "front", x: 0, y: 0, width: 1, height: 1, shape: "not-a-shape" }] });
+  assert.equal(legacy.layers[0].shape, "rectangle");
 });

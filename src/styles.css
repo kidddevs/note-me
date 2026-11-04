@@ -6323,6 +6323,11 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-focus-block { display: flex; flex-direction: column; gap: 5px; padding-top: 3px; }
 .cover-field-hint { color: var(--text-4); font-size: 7.8px; line-height: 1.45; }
 .cover-mask-preview { height: 26px; border: 1px solid var(--border); border-radius: 5px; opacity: 0.9; }
+.cover-shape-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.cover-shape-grid button { display: flex; height: 30px; align-items: center; justify-content: center; padding: 5px; border: 1px solid var(--border-subtle); border-radius: 5px; background: var(--surface-2); color: var(--text-3); cursor: pointer; }
+.cover-shape-grid button:hover { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-shape-grid button.active { border-color: var(--book-accent); background: var(--book-accent-soft); color: var(--book-accent); }
+.cover-shape-grid svg { width: 100%; height: 100%; fill: currentColor; }
 .cover-style-actions { display: flex; gap: 4px; }
 .cover-style-actions .cover-mini-button { flex: 1; justify-content: center; }
 .cover-style-presets { display: flex; flex-direction: column; gap: 5px; }
