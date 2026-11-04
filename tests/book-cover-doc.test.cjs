@@ -6,6 +6,7 @@ const {
   COVER_IMAGE_PRESETS,
   coverDocMarkup,
   coverFillCss,
+  coverFontCss,
   coverImageFilterCss,
   COVER_GRADIENT_PRESETS,
   coverLayerFadeCss,
@@ -588,4 +589,17 @@ test("gradient presets are valid and reverse keeps stop order", () => {
   assert.deepEqual(reversed.stops.map((stop) => stop.position), [0.1, 0.5, 0.9]);
   assert.equal(input.stops[0].position, 0.1);
   assert.equal(reversed.angle, 135);
+});
+
+
+test("installed font overrides persist, sanitize, and render consistently", () => {
+  const doc = parseCoverDocument({ layers: [{ id: "custom", type: "text", name: "Custom", panel: "front", x: 0, y: 0, width: 3, height: 1, text: "Custom", customFont: '  "Bodoni 72"; <Bad>  ' }] });
+  assert.equal(doc.layers[0].customFont, "Bodoni 72 Bad");
+  assert.equal(coverFontCss("serif", doc.layers[0].customFont), "'Bodoni 72 Bad', Georgia, serif");
+  assert.equal(coverFontCss("serif", "'Unsafe';{}"), "'Unsafe', Georgia, serif");
+  assert.equal(coverFontCss("serif", ""), "Georgia, 'Times New Roman', serif");
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.match(markup, /font-family:'Bodoni 72 Bad', Georgia, serif/);
+  const legacy = parseCoverDocument({ layers: [{ ...doc.layers[0], customFont: undefined }] });
+  assert.equal(legacy.layers[0].customFont, "");
 });

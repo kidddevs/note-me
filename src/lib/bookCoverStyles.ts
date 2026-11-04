@@ -39,6 +39,7 @@ export interface CoverLayerStyleValues {
   effect?: CoverTextEffect;
   effectColor?: string;
   curve?: number;
+  customFont?: string;
   highlight?: CoverTextHighlight;
   fill?: CoverFill;
   radius?: number;
@@ -73,7 +74,7 @@ export interface CoverLayerStylePreset {
 const SHARED_KEYS: (keyof CoverLayerStyleValues)[] = ["opacity", "blendMode", "shadow", "glow", "fade"];
 
 const TYPE_KEYS: Record<CoverLayerType, (keyof CoverLayerStyleValues)[]> = {
-  text: ["fontFamily", "fontSize", "fontWeight", "italic", "align", "verticalAlign", "lineHeight", "letterSpacing", "color", "uppercase", "effect", "effectColor", "curve", "highlight"],
+  text: ["fontFamily", "fontSize", "fontWeight", "italic", "align", "verticalAlign", "lineHeight", "letterSpacing", "color", "uppercase", "effect", "effectColor", "curve", "customFont", "highlight"],
   shape: ["fill", "radius", "strokeColor", "strokeWidth", "dash"],
   image: ["fit", "radius", "grayscale", "sepia", "brightness", "contrast", "saturation", "hue", "blur", "tint", "tintStrength", "mask"],
   line: ["color"],

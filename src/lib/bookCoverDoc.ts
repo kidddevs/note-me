@@ -117,6 +117,7 @@ export interface CoverTextLayer extends CoverLayerBase {
   effect: CoverTextEffect;
   effectColor: string;
   curve: number;
+  customFont: string;
   highlight: CoverTextHighlight;
 }
 
@@ -411,7 +412,9 @@ export function roundInches(value: number) {
   return Math.round(value * 1000) / 1000;
 }
 
-export function coverFontCss(id: CoverFontId) {
+export function coverFontCss(id: CoverFontId, customFont = "") {
+  const custom = customFont.replace(/[<>{};\\"'`]/g, "").trim();
+  if (custom) return `'${custom}', Georgia, serif`;
   return COVER_FONTS.find((font) => font.id === id)?.css ?? COVER_FONTS[0].css;
 }
 
@@ -707,6 +710,7 @@ export function textLayer(input: Partial<CoverTextLayer> & Pick<CoverTextLayer, 
     effect: input.effect ?? "none",
     effectColor: input.effectColor ?? "#000000",
     curve: input.curve ?? 0,
+    customFont: input.customFont ?? "",
     highlight: input.highlight ?? { enabled: false, color: "#f2c6a0", opacity: 0.65, padding: 0.04, radius: 0.02 },
   };
 }
@@ -881,6 +885,7 @@ function normalizeLayer(value: unknown, index: number): CoverLayer | null {
       effect: oneOf(value.effect, ["none", "soft", "hard", "glow", "outline"] as const, "none"),
       effectColor: color(value.effectColor, "#000000"),
       curve: decimal(value.curve, 0, -100, 100),
+      customFont: text(value.customFont, "", 80).replace(/[<>{};\\"'`]/g, "").trim(),
       highlight: normalizeTextHighlight(value.highlight),
     };
   }
@@ -2330,7 +2335,7 @@ export function coverTextStyle(layer: CoverTextLayer): Record<string, string | u
     textAlign: layer.align,
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
-    fontFamily: coverFontCss(layer.fontFamily),
+    fontFamily: coverFontCss(layer.fontFamily, layer.customFont),
     fontSize: `${layer.fontSize}pt`,
     fontWeight: String(layer.fontWeight),
     fontStyle: layer.italic ? "italic" : "normal",
@@ -2367,12 +2372,12 @@ function curvedTextSvg(layer: CoverTextLayer, content: string, idPrefix: string)
   const value = (layer.uppercase ? content.toLocaleUpperCase() : content).replace(/\s*\n+\s*/g, " ");
   const highlightColor = rgbaColor(layer.highlight.color, layer.highlight.opacity);
   const highlight = layer.highlight.enabled
-    ? `<text font-family="${escapeHtml(coverFontCss(layer.fontFamily))}" font-size="${roundInches(fontSize)}" font-weight="${layer.fontWeight}" font-style="${layer.italic ? "italic" : "normal"}" fill="${highlightColor}" stroke="${highlightColor}" stroke-width="${Math.max(0.004, layer.highlight.padding * 2)}" stroke-linejoin="round" letter-spacing="${layer.letterSpacing}em" text-anchor="${anchor}" dominant-baseline="middle" aria-hidden="true"><textPath href="#${safeId}" startOffset="${offset}">${escapeHtml(value)}</textPath></text>`
+    ? `<text font-family="${escapeHtml(coverFontCss(layer.fontFamily, layer.customFont))}" font-size="${roundInches(fontSize)}" font-weight="${layer.fontWeight}" font-style="${layer.italic ? "italic" : "normal"}" fill="${highlightColor}" stroke="${highlightColor}" stroke-width="${Math.max(0.004, layer.highlight.padding * 2)}" stroke-linejoin="round" letter-spacing="${layer.letterSpacing}em" text-anchor="${anchor}" dominant-baseline="middle" aria-hidden="true"><textPath href="#${safeId}" startOffset="${offset}">${escapeHtml(value)}</textPath></text>`
     : "";
   return `<svg class="cover-doc-curved-text" viewBox="0 0 ${roundInches(width)} ${roundInches(height)}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block;width:100%;height:100%;overflow:visible">
     <path id="${safeId}" d="${path}" fill="none"/>
     ${highlight}
-    <text font-family="${escapeHtml(coverFontCss(layer.fontFamily))}" font-size="${roundInches(fontSize)}" font-weight="${layer.fontWeight}" font-style="${layer.italic ? "italic" : "normal"}" fill="${escapeHtml(layer.color)}" letter-spacing="${layer.letterSpacing}em" text-anchor="${anchor}" dominant-baseline="middle" style="${effectStyle}${layer.uppercase ? "text-transform:uppercase;" : ""}" ${outline}>
+    <text font-family="${escapeHtml(coverFontCss(layer.fontFamily, layer.customFont))}" font-size="${roundInches(fontSize)}" font-weight="${layer.fontWeight}" font-style="${layer.italic ? "italic" : "normal"}" fill="${escapeHtml(layer.color)}" letter-spacing="${layer.letterSpacing}em" text-anchor="${anchor}" dominant-baseline="middle" style="${effectStyle}${layer.uppercase ? "text-transform:uppercase;" : ""}" ${outline}>
       <textPath href="#${safeId}" startOffset="${offset}">${escapeHtml(value)}</textPath>
     </text>
   </svg>`;
@@ -2827,7 +2832,7 @@ function wrapCanvasText(ctx: CanvasRenderingContext2D, value: string, maxWidth: 
 function drawTextLayer(ctx: CanvasRenderingContext2D, layer: CoverTextLayer, content: string, width: number, height: number) {
   const fontSize = layer.fontSize / 72;
   const lineHeight = fontSize * layer.lineHeight;
-  ctx.font = `${layer.italic ? "italic " : ""}${layer.fontWeight} ${fontSize}px ${coverFontCss(layer.fontFamily)}`;
+  ctx.font = `${layer.italic ? "italic " : ""}${layer.fontWeight} ${fontSize}px ${coverFontCss(layer.fontFamily, layer.customFont)}`;
   ctx.textBaseline = "top";
   ctx.textAlign = layer.align === "center" ? "center" : layer.align === "right" ? "right" : "left";
   if ("letterSpacing" in ctx) {
@@ -2881,7 +2886,7 @@ function drawCurvedTextLayer(ctx: CanvasRenderingContext2D, layer: CoverTextLaye
   const fontSize = layer.fontSize / 72;
   const value = (layer.uppercase ? content.toLocaleUpperCase() : content).replace(/\s*\n+\s*/g, " ").trim();
   if (!value) return;
-  ctx.font = `${layer.italic ? "italic " : ""}${layer.fontWeight} ${fontSize}px ${coverFontCss(layer.fontFamily)}`;
+  ctx.font = `${layer.italic ? "italic " : ""}${layer.fontWeight} ${fontSize}px ${coverFontCss(layer.fontFamily, layer.customFont)}`;
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
   if ("letterSpacing" in ctx) (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = "0px";

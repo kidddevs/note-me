@@ -110,6 +110,7 @@ import {
   coverDocMarkup,
   coverFill,
   coverFillCss,
+  coverFontCss,
   coverGradientCss,
   coverLayerEffectsCss,
   coverLayerFadeCss,
@@ -3561,7 +3562,7 @@ function LayerInspector({
     const value = resolveCoverTokenText(layer.text, book, cover) || "Text";
     const maxWidth = Math.max(0.2, layer.width) * 96;
     const maxHeight = Math.max(0.2, layer.height) * 96;
-    const fontCss = COVER_FONTS.find((font) => font.id === layer.fontFamily)?.css ?? "Georgia, serif";
+    const fontCss = coverFontCss(layer.fontFamily, layer.customFont);
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -3682,6 +3683,8 @@ function LayerInspector({
             <NumberField label="Size" value={layer.fontSize} onChange={(fontSize) => onUpdate({ fontSize: Math.max(4, fontSize) }, { key: `size:${layer.id}` })} step={1} min={4} max={240} suffix="pt" />
             <label className="cover-select-field"><span>Weight</span><select value={layer.fontWeight} onChange={(event) => onUpdate({ fontWeight: Number(event.target.value) }, { key: `weight:${layer.id}` })}>{[300, 400, 500, 600, 700, 800, 900].map((weight) => <option key={weight} value={weight}>{weight}</option>)}</select></label>
           </div>
+          <label className="cover-text-input"><span>Installed font override</span><input value={layer.customFont} maxLength={80} placeholder="e.g. Bodoni 72 Smallcaps" onChange={(event) => onUpdate({ customFont: event.target.value.slice(0, 80) }, { key: `custom-font:${layer.id}` })} /></label>
+          <small className="cover-field-hint">Any typeface installed on this computer. Leave blank to use the family above.</small>
           <button type="button" className="cover-wide-button subtle" onClick={fitTextToFrame}><Maximize2 size={13} /> Fit text to frame</button>
           <div className="cover-text-format-row">
             <button type="button" className={layer.italic ? "active" : ""} onClick={() => onUpdate({ italic: !layer.italic }, { key: `italic:${layer.id}` })} title="Italic"><Italic size={13} /></button>
