@@ -150,6 +150,7 @@ import {
   type BookLayout,
 } from "../lib/bookLayout";
 import { bookInputFromBook, TRIM_SIZES } from "../lib/bookPublishing";
+import { downloadCoverMockup } from "../lib/bookCoverMockup";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import { useBooks } from "../store/books";
 import { notify } from "../store/toast";
@@ -1537,6 +1538,8 @@ function BookMockup({ book, cover, onClose }: { book: Book; cover: BookCoverDesi
   const scale = Math.min(86, 600 / metrics.trimHeight);
   const [rotation, setRotation] = useState({ x: -7, y: -30 });
   const [dragging, setDragging] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [busyMockup, setBusyMockup] = useState<string | null>(null);
   const dragRef = useRef<{ x: number; y: number; rotationX: number; rotationY: number } | null>(null);
   const frontMarkup = useMemo(() => coverDocMarkup(book, cover, "front", { instanceId: "mockup-front" }), [book, cover]);
   const backMarkup = useMemo(() => coverDocMarkup(book, cover, "back", { instanceId: "mockup-back" }), [book, cover]);
@@ -1565,6 +1568,30 @@ function BookMockup({ book, cover, onClose }: { book: Book; cover: BookCoverDesi
     setDragging(false);
   };
   const setView = (x: number, y: number) => setRotation({ x, y });
+
+  useEffect(() => {
+    if (!exportOpen) return;
+    const close = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".cover-mockup-export")) return;
+      setExportOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [exportOpen]);
+
+  const exportMockup = async (width: number, height: number, background: "studio" | "transparent") => {
+    setBusyMockup(`${width}x${height}-${background}`);
+    try {
+      const filename = await downloadCoverMockup(book, cover, { width, height, background });
+      if (filename) notify("success", "Mockup downloaded", filename);
+      setExportOpen(false);
+    } catch (error) {
+      notify("error", "Mockup could not be generated", String(error));
+    } finally {
+      setBusyMockup(null);
+    }
+  };
 
   return (
     <div className="cover-mockup-overlay" role="dialog" aria-modal="true" aria-label="3D book mockup">
@@ -1640,6 +1667,22 @@ function BookMockup({ book, cover, onClose }: { book: Book; cover: BookCoverDesi
           <button type="button" onClick={() => setView(-4, 180)}>Back</button>
         </div>
         <span className="cover-mockup-foot-note">Full wrap preview · spine calculated from {cover.pageCount.toLocaleString()} pages</span>
+        <div className="cover-mockup-export">
+          <button type="button" className="cover-mockup-export-button" onClick={() => setExportOpen((value) => !value)} disabled={Boolean(busyMockup)}>
+            {busyMockup ? <span className="cover-spinner" /> : <Download size={13} />}
+            <span>{busyMockup ? "Rendering…" : "Download mockup"}</span>
+            <ChevronDown size={12} />
+          </button>
+          {exportOpen && (
+            <div className="cover-mockup-export-menu" role="menu">
+              <div className="cover-mockup-export-head">Marketing image <small>PNG · 2× retina</small></div>
+              <button type="button" role="menuitem" onClick={() => void exportMockup(1600, 1600, "studio")}><strong>Square</strong><small>1600 × 1600 · studio backdrop</small></button>
+              <button type="button" role="menuitem" onClick={() => void exportMockup(1920, 1080, "studio")}><strong>Wide</strong><small>1920 × 1080 · slides &amp; web</small></button>
+              <button type="button" role="menuitem" onClick={() => void exportMockup(1080, 1920, "studio")}><strong>Story</strong><small>1080 × 1920 · vertical social</small></button>
+              <button type="button" role="menuitem" onClick={() => void exportMockup(1600, 1600, "transparent")}><strong>Transparent</strong><small>1600 × 1600 · compositing PNG</small></button>
+            </div>
+          )}
+        </div>
       </footer>
     </div>
   );
