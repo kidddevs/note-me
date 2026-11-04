@@ -165,6 +165,12 @@ interface CommitOptions {
   key?: string;
 }
 
+interface CoverHistoryEntry {
+  cover: BookCoverDesign;
+  label: string;
+  at: number;
+}
+
 interface CoverStageProps {
   book: Book;
   cover: BookCoverDesign;
@@ -225,6 +231,13 @@ interface LayerPanelProps {
   selectedId: string | null;
   selectedIds: string[];
   activeGroupId: string | null;
+  tab: "layers" | "history";
+  history: CoverHistoryEntry[];
+  future: CoverHistoryEntry[];
+  onTab: (tab: "layers" | "history") => void;
+  onJumpHistory: (index: number) => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onSelect: (id: string | null, additive?: boolean) => void;
   onAdd: () => void;
   onAddGroup: () => void;
@@ -307,6 +320,65 @@ function formatDimension(value: number) {
 
 function pageCountFor(book: Book, chapters: Chapter[]) {
   return estimateManuscriptPages(book, chapters);
+}
+
+function historyLabel(key?: string) {
+  if (!key) return "Edited cover";
+  const value = key.toLocaleLowerCase();
+  const template = COVER_TEMPLATE_PRESETS.find((preset) => value === `template:${preset.id}`);
+  if (template) return `Applied ${template.label}`;
+  if (value.startsWith("group:create")) return "Grouped layers";
+  if (value.startsWith("group:add")) return "Created group";
+  if (value.startsWith("group:ungroup")) return "Ungrouped layers";
+  if (value.startsWith("group:assign")) return "Moved layer into group";
+  if (value.startsWith("group:update")) {
+    if (value.endsWith(":collapsed")) return "Collapsed group";
+    if (value.endsWith(":visible")) return "Changed group visibility";
+    if (value.endsWith(":locked")) return "Changed group lock";
+    if (value.endsWith(":name")) return "Renamed group";
+    return "Updated group";
+  }
+  if (value.startsWith("move:")) return "Moved layer";
+  if (value.startsWith("resize:")) return "Resized layer";
+  if (value.startsWith("rotate:")) return "Rotated layer";
+  if (value.startsWith("add:")) return `Added ${value.slice(4)} layer`;
+  if (value.startsWith("duplicate:")) return "Duplicated layers";
+  if (value.startsWith("delete:")) return "Deleted layers";
+  if (value.startsWith("reorder")) return "Reordered layers";
+  if (value.startsWith("nudge")) return "Nudged layers";
+  if (value.startsWith("align")) return "Aligned layers";
+  if (value.startsWith("distribute")) return "Distributed layers";
+  if (value.startsWith("guide:add")) return "Added guide";
+  if (value.startsWith("guide-delete")) return "Removed guide";
+  if (value.startsWith("guide:")) return "Moved guide";
+  if (value === "isbn") return "Updated ISBN";
+  if (value.startsWith("barcode")) return "Updated barcode";
+  if (value.startsWith("background")) return "Changed background";
+  if (value.startsWith("setup:")) return "Updated print setup";
+  if (value.startsWith("image-preset")) return "Applied image look";
+  if (value.startsWith("image-reset")) return "Reset image grading";
+  if (value.startsWith("mask")) return "Changed image mask";
+  if (value.startsWith("tint")) return "Changed duotone tint";
+  if (value.startsWith("focus")) return "Adjusted crop focus";
+  if (value.startsWith("flip")) return "Flipped image";
+  if (value.startsWith("gray") || value.startsWith("sepia")) return "Changed image tone";
+  if (/^(brightness|contrast|saturation|hue|blur)/.test(value)) return "Adjusted image tone";
+  if (value.startsWith("visible:")) return "Toggled layer visibility";
+  if (value.startsWith("lock:")) return "Toggled layer lock";
+  if (value.startsWith("name:")) return "Renamed layer";
+  if (value.startsWith("opacity") || value.startsWith("blend")) return "Changed layer blending";
+  if (value.startsWith("text:")) return "Edited text";
+  if (value.startsWith("font:") || value.startsWith("size:") || value.startsWith("weight:") || value.startsWith("italic:") || value.startsWith("case:") || value.startsWith("leading:") || value.startsWith("tracking:")) return "Changed typography";
+  if (value.startsWith("effect")) return "Changed text effect";
+  if (value.startsWith("color")) return "Changed colour";
+  if (value.startsWith("fill")) return "Changed fill";
+  if (value.startsWith("shape") || value.startsWith("stroke") || value.startsWith("dash")) return "Changed shape";
+  if (value.startsWith("line-color")) return "Changed rule colour";
+  if (value.startsWith("symbol-color") || value.startsWith("glyph")) return "Changed ornament";
+  if (value.startsWith("graphic")) return "Changed artwork";
+  if (/^(x|y|w|h|rot|panel):/.test(value) || value.startsWith("fill-panel")) return "Transformed layer";
+  if (value === "guides" || value === "grid" || value === "rulers" || value === "bleed-overlay") return "Changed canvas view";
+  return "Edited cover";
 }
 
 function graphicAspect(graphic: BookGraphic) {
@@ -396,8 +468,9 @@ export function CoverScreen({
   const [autoFit, setAutoFit] = useState(true);
   const [dpi, setDpi] = useState(300);
   const [busyDownload, setBusyDownload] = useState<string | null>(null);
-  const [history, setHistory] = useState<BookCoverDesign[]>([]);
-  const [future, setFuture] = useState<BookCoverDesign[]>([]);
+  const [history, setHistory] = useState<CoverHistoryEntry[]>([]);
+  const [future, setFuture] = useState<CoverHistoryEntry[]>([]);
+  const [sideTab, setSideTab] = useState<"layers" | "history">("layers");
   const [focusContent, setFocusContent] = useState(0);
   const layoutRef = useRef(layout);
   const bookRef = useRef(book);
@@ -464,7 +537,7 @@ export function CoverScreen({
     }
     lastHistoryKeyRef.current = key ?? "";
     lastHistoryTimeRef.current = now;
-    setHistory((items) => [...items.slice(-49), snapshot]);
+    setHistory((items) => [...items.slice(-49), { cover: snapshot, label: historyLabel(key), at: now }]);
     setFuture([]);
   }, []);
 
@@ -514,8 +587,8 @@ export function CoverScreen({
     if (items.length === 0) return;
     const previous = items[items.length - 1];
     setHistory(items.slice(0, -1));
-    setFuture((next) => [layoutRef.current.cover, ...next].slice(0, 50));
-    restoreCover(previous);
+    setFuture((next) => [{ cover: layoutRef.current.cover, label: previous.label, at: Date.now() }, ...next].slice(0, 50));
+    restoreCover(previous.cover);
   }, []);
 
   const redo = useCallback(() => {
@@ -523,8 +596,27 @@ export function CoverScreen({
     if (items.length === 0) return;
     const next = items[0];
     setFuture(items.slice(1));
-    setHistory((previous) => [...previous.slice(-49), layoutRef.current.cover]);
-    restoreCover(next);
+    setHistory((previous) => [...previous.slice(-49), { cover: layoutRef.current.cover, label: next.label, at: Date.now() }]);
+    restoreCover(next.cover);
+  }, []);
+
+  const jumpToHistory = useCallback((index: number) => {
+    const items = historyRef.current;
+    if (index < 0 || index >= items.length) return;
+    const target = items[index];
+    const currentCover = layoutRef.current.cover;
+    const futureEntries: CoverHistoryEntry[] = [
+      ...items.slice(index, items.length - 1).map((entry, offset) => ({
+        cover: items[index + offset + 1].cover,
+        label: entry.label,
+        at: entry.at,
+      })),
+      { cover: currentCover, label: items[items.length - 1].label, at: Date.now() },
+      ...futureRef.current,
+    ];
+    setHistory(items.slice(0, index));
+    setFuture(futureEntries.slice(0, 50));
+    restoreCover(target.cover);
   }, []);
 
   useEffect(() => {
@@ -1282,6 +1374,13 @@ export function CoverScreen({
               selectedId={selectedLayerId}
               selectedIds={selectedIds}
               activeGroupId={activeGroupId}
+              tab={sideTab}
+              history={history}
+              future={future}
+              onTab={setSideTab}
+              onJumpHistory={jumpToHistory}
+              onUndo={undo}
+              onRedo={redo}
               onSelect={selectLayer}
               onAdd={() => fileInputRef.current?.click()}
               onAddGroup={addGroup}
@@ -1634,6 +1733,13 @@ function LayerPanel({
   selectedId,
   selectedIds,
   activeGroupId,
+  tab,
+  history,
+  future,
+  onTab,
+  onJumpHistory,
+  onUndo,
+  onRedo,
   onSelect,
   onAdd,
   onAddGroup,
@@ -1757,34 +1863,83 @@ function LayerPanel({
   }
 
   return (
-    <aside className="cover-layer-panel" aria-label="Layers">
+    <aside className="cover-layer-panel" aria-label={tab === "layers" ? "Layers" : "History"}>
       <div className="cover-panel-heading">
-        <div><span className="cover-panel-eyebrow">Layers</span><strong>{doc.layers.length + doc.groups.length + 1}</strong></div>
+        <div className="cover-panel-tabs" role="tablist" aria-label="Design panel">
+          <button type="button" role="tab" aria-selected={tab === "layers"} className={tab === "layers" ? "active" : ""} onClick={() => onTab("layers")}>Layers <small>{doc.layers.length}</small></button>
+          <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "active" : ""} onClick={() => onTab("history")}>History <small>{history.length}</small></button>
+        </div>
         <div className="cover-panel-heading-actions">
-          <button type="button" onClick={onAddGroup} title="New group" aria-label="New group"><FolderPlus size={15} /></button>
-          <button type="button" onClick={onAdd} title="Add image layer" aria-label="Add image layer"><Plus size={15} /></button>
-          <button type="button" onClick={onCollapse} title="Hide layers" aria-label="Hide layers"><ChevronLeft size={15} /></button>
+          {tab === "layers" ? (
+            <>
+              <button type="button" onClick={onAddGroup} title="New group" aria-label="New group"><FolderPlus size={15} /></button>
+              <button type="button" onClick={onAdd} title="Add image layer" aria-label="Add image layer"><Plus size={15} /></button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={onUndo} disabled={history.length === 0} title="Undo" aria-label="Undo"><Undo2 size={14} /></button>
+              <button type="button" onClick={onRedo} disabled={future.length === 0} title="Redo" aria-label="Redo"><Redo2 size={14} /></button>
+            </>
+          )}
+          <button type="button" onClick={onCollapse} title="Hide panel" aria-label="Hide panel"><ChevronLeft size={15} /></button>
         </div>
       </div>
-      <div className="cover-layer-list">
-        {rows}
-        <button type="button" className="cover-background-row" onClick={() => onSelect(null)}>
-          <span className="cover-layer-type-icon"><Palette size={13} /></span>
-          <span className="cover-layer-name">Background<small>paper &amp; gradient</small></span>
-          <span className="cover-background-swatch" style={{ background: coverFillCss(doc.background) }} />
-        </button>
-      </div>
-      {selectedIds.length > 0 && (
-        <div className="cover-layer-actions">
-          <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "up")} title="Move layer up" aria-label="Move layer up"><ArrowUp size={13} /></button>
-          <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "down")} title="Move layer down" aria-label="Move layer down"><ArrowDown size={13} /></button>
-          <button type="button" onClick={() => onDuplicate(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Duplicate selected layers" : "Duplicate layer"} aria-label="Duplicate layer"><Copy size={13} /></button>
-          <button type="button" className="danger" onClick={() => onDelete(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Delete selected layers" : "Delete layer"} aria-label="Delete layer"><Trash2 size={13} /></button>
-        </div>
+      {tab === "layers" ? (
+        <>
+          <div className="cover-layer-list">
+            {rows}
+            <button type="button" className="cover-background-row" onClick={() => onSelect(null)}>
+              <span className="cover-layer-type-icon"><Palette size={13} /></span>
+              <span className="cover-layer-name">Background<small>paper &amp; gradient</small></span>
+              <span className="cover-background-swatch" style={{ background: coverFillCss(doc.background) }} />
+            </button>
+          </div>
+          {selectedIds.length > 0 && (
+            <div className="cover-layer-actions">
+              <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "up")} title="Move layer up" aria-label="Move layer up"><ArrowUp size={13} /></button>
+              <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "down")} title="Move layer down" aria-label="Move layer down"><ArrowDown size={13} /></button>
+              <button type="button" onClick={() => onDuplicate(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Duplicate selected layers" : "Duplicate layer"} aria-label="Duplicate layer"><Copy size={13} /></button>
+              <button type="button" className="danger" onClick={() => onDelete(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Delete selected layers" : "Delete layer"} aria-label="Delete layer"><Trash2 size={13} /></button>
+            </div>
+          )}
+          <div className="cover-layer-hint"><Move size={11} /> {activeGroupId ? "New layers join the selected group" : selectedIds.length > 1 ? `${selectedIds.length} layers selected` : "Drag to reorder · Shift-click to multi-select"}</div>
+        </>
+      ) : (
+        <HistoryPanel history={history} future={future} onJump={onJumpHistory} />
       )}
-      <div className="cover-layer-hint"><Move size={11} /> {activeGroupId ? "New layers join the selected group" : selectedIds.length > 1 ? `${selectedIds.length} layers selected` : "Drag to reorder · Shift-click to multi-select"}</div>
     </aside>
   );
+}
+
+function HistoryPanel({ history, future, onJump }: { history: CoverHistoryEntry[]; future: CoverHistoryEntry[]; onJump: (index: number) => void }) {
+  return (
+    <div className="cover-history-panel">
+      <div className="cover-history-list">
+        <div className="cover-history-row current">
+          <span className="cover-history-dot" />
+          <span className="cover-history-copy"><strong>Current state</strong><small>Latest edit</small></span>
+        </div>
+        {history.length === 0 && (
+          <div className="cover-history-empty"><Sparkles size={16} /><strong>No history yet</strong><small>Design changes will appear here as a clickable timeline.</small></div>
+        )}
+        {[...history].reverse().map((entry, offset) => {
+          const index = history.length - 1 - offset;
+          return (
+            <button key={`${entry.at}-${index}`} type="button" className="cover-history-row" onClick={() => onJump(index)} title="Restore this state">
+              <span className="cover-history-dot" />
+              <span className="cover-history-copy"><strong>{entry.label}</strong><small>{historyTime(entry.at)} · Click to restore</small></span>
+            </button>
+          );
+        })}
+      </div>
+      {future.length > 0 && <div className="cover-history-redo"><Redo2 size={12} /> {future.length} redo {future.length === 1 ? "step" : "steps"} available</div>}
+      <div className="cover-layer-hint"><Move size={11} /> Click any state to travel back in time</div>
+    </div>
+  );
+}
+
+function historyTime(value: number) {
+  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 /* ========================================================================== */

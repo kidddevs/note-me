@@ -5958,6 +5958,26 @@ kbd {
 .cover-panel-heading-actions { display: flex; align-items: center; gap: 1px; }
 .cover-panel-heading-actions button { display: flex; width: 25px; height: 25px; align-items: center; justify-content: center; border: 0; border-radius: 5px; background: transparent; color: var(--text-3); cursor: pointer; }
 .cover-panel-heading-actions button:hover { background: var(--surface-hover); color: var(--book-accent); }
+.cover-panel-heading-actions button:disabled { opacity: 0.35; cursor: default; }
+.cover-panel-tabs { display: flex; gap: 1px; padding: 2px; border-radius: 6px; background: var(--surface-2); }
+.cover-panel-tabs button { display: flex; height: 24px; align-items: center; gap: 4px; padding: 0 7px; border: 0; border-radius: 4px; background: transparent; color: var(--text-3); font: inherit; font-size: 8.5px; font-weight: 650; cursor: pointer; }
+.cover-panel-tabs button:hover { color: var(--text); }
+.cover-panel-tabs button.active { background: var(--surface); color: var(--book-accent); box-shadow: var(--shadow-xs); }
+.cover-panel-tabs button small { display: inline-flex; min-width: 14px; height: 14px; align-items: center; justify-content: center; padding: 0 3px; border-radius: 999px; background: color-mix(in srgb, currentColor 10%, transparent); font-size: 7px; font-weight: 700; }
+.cover-history-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.cover-history-list { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; padding: 8px; overflow-y: auto; }
+.cover-history-row { display: flex; align-items: flex-start; gap: 8px; padding: 7px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-2); text-align: left; font: inherit; cursor: pointer; }
+.cover-history-row:hover { background: var(--surface-hover); }
+.cover-history-row.current { border-color: var(--border-subtle); background: var(--surface-2); cursor: default; }
+.cover-history-dot { width: 7px; height: 7px; flex-shrink: 0; margin-top: 3px; border-radius: 50%; background: var(--text-4); }
+.cover-history-row.current .cover-history-dot { background: var(--book-accent); box-shadow: 0 0 0 3px var(--book-accent-soft); }
+.cover-history-copy { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+.cover-history-copy strong { overflow: hidden; color: var(--text); font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.cover-history-copy small { color: var(--text-4); font-size: 7.3px; line-height: 1.3; }
+.cover-history-empty { display: flex; align-items: center; flex-direction: column; gap: 5px; padding: 30px 16px; color: var(--text-4); text-align: center; }
+.cover-history-empty strong { margin-top: 2px; color: var(--text-3); font-size: 9.5px; }
+.cover-history-empty small { max-width: 150px; font-size: 8px; line-height: 1.45; }
+.cover-history-redo { display: flex; align-items: center; gap: 5px; margin: 0 8px; padding: 6px 8px; border: 1px dashed var(--border); border-radius: 5px; color: var(--text-4); font-size: 8px; }
 .cover-layer-list { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; padding: 6px; overflow-y: auto; }
 .cover-layer-row {
   display: grid;
