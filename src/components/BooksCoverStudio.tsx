@@ -57,6 +57,7 @@ import {
   Info,
   Italic,
   LayoutTemplate,
+  Link2,
   Lock,
   Maximize2,
   Minus,
@@ -85,6 +86,7 @@ import {
   Trash2,
   Type,
   Undo2,
+  Unlink2,
   Unlock,
   Upload,
   Wand2,
@@ -112,6 +114,7 @@ import {
   coverFillCss,
   coverFontCss,
   coverGradientCss,
+  coverLayerClipCss,
   coverLayerEffectsCss,
   coverLayerFadeCss,
   coverLayerInnerHtml,
@@ -479,6 +482,7 @@ function historyLabel(key?: string) {
     return "Updated group";
   }
   if (value.startsWith("pan:")) return "Repositioned image";
+  if (value.startsWith("clip:")) return "Changed clipping mask";
   if (value.startsWith("highlight-")) return "Changed text highlight";
   if (value.startsWith("palette:image:")) return "Extracted image palette";
   if (value.startsWith("palette:brand:")) return "Applied brand palette";
@@ -1226,9 +1230,11 @@ export function CoverScreen({
     }
     const current = layoutRef.current.cover;
     const groupIds = new Set(current.doc.groups.map((group) => group.id));
+    const available = new Set([...current.doc.layers.map((layer) => layer.id), ...clipboard.map((layer) => layer.id)]);
     const clones = cloneCoverLayers(clipboard, { offsetX: 0.16, offsetY: 0.16, stagger: 0.03 }).map((layer) => ({
       ...layer,
       groupId: activeGroupId ?? (layer.groupId && groupIds.has(layer.groupId) ? layer.groupId : null),
+      clipTo: layer.clipTo && available.has(layer.clipTo) ? layer.clipTo : null,
     }));
     updateDoc({ ...current.doc, templateId: current.doc.templateId || "custom", layers: [...current.doc.layers, ...clones] }, { key: "paste" });
     setSelectedLayerId(clones[clones.length - 1]?.id ?? null);
@@ -1348,7 +1354,10 @@ export function CoverScreen({
   const deleteLayers = (ids: string[]) => {
     if (ids.length === 0) return;
     const current = layoutRef.current.cover;
-    updateDoc({ ...current.doc, layers: current.doc.layers.filter((layer) => !ids.includes(layer.id)) }, { key: `delete:${ids.join(",")}` });
+    const layers = current.doc.layers
+      .filter((layer) => !ids.includes(layer.id))
+      .map((layer) => layer.clipTo && ids.includes(layer.clipTo) ? { ...layer, clipTo: null } : layer);
+    updateDoc({ ...current.doc, layers }, { key: `delete:${ids.join(",")}` });
     setSelectedLayerId(null);
     setExtraSelectedIds([]);
   };
@@ -1831,6 +1840,7 @@ export function CoverScreen({
   const menuLayers = layerMenu ? doc.layers.filter((layer) => selectedIds.includes(layer.id)) : [];
   const menuLayer = layerMenu ? doc.layers.find((layer) => layer.id === layerMenu.layerId) ?? null : null;
   const menuGroup = menuLayer?.groupId ? doc.groups.find((group) => group.id === menuLayer.groupId) ?? null : null;
+  const menuClipShape = menuLayer ? doc.layers.slice(0, doc.layers.findIndex((layer) => layer.id === menuLayer.id)).reverse().find((layer): layer is CoverShapeLayer => layer.type === "shape") ?? null : null;
   const menuAllVisible = menuLayers.length > 0 && menuLayers.every((layer) => coverLayerVisible(doc, layer));
   const menuAllLocked = menuLayers.length > 0 && menuLayers.every((layer) => coverLayerLocked(doc, layer));
 
@@ -2173,6 +2183,9 @@ export function CoverScreen({
           onCopyStyle={copySelectedStyle}
           onPasteStyle={pasteSelectedStyle}
           canPasteStyle={Boolean(styleClipboard)}
+          clipShape={menuClipShape}
+          onClipToShape={() => { if (menuLayer && menuClipShape) updateLayer(menuLayer.id, { clipTo: menuClipShape.id }, { key: `clip:${menuLayer.id}` }); }}
+          onReleaseClip={() => { if (menuLayer) updateLayer(menuLayer.id, { clipTo: null }, { key: `clip:${menuLayer.id}` }); }}
           onDuplicate={duplicateSelection}
           onBringFront={bringSelectionToFront}
           onSendBack={sendSelectionToBack}
@@ -2512,7 +2525,7 @@ function LayerPanel({
       >
         <button type="button" className={`cover-layer-eye ${visible ? "" : "off"}`} onClick={(event) => { event.stopPropagation(); onToggleVisible(layer.id); }} title={layer.visible ? (visible ? "Hide layer" : "Hidden by group") : "Show layer"} aria-label={layer.visible ? "Hide layer" : "Show layer"}>{visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
         <LayerThumb layer={layer} cover={cover} />
-        <span className="cover-layer-name" title={layer.name}>{layer.name || layerLabel(layer.type)}<small>{layer.panel === "wrap" ? "whole wrap" : layer.panel}</small></span>
+        <span className="cover-layer-name" title={layer.name}>{layer.name || layerLabel(layer.type)}<small>{layer.panel === "wrap" ? "whole wrap" : layer.panel}{layer.clipTo ? " · clipped" : ""}</small></span>
         <button type="button" className={`cover-layer-lock ${locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); onToggleLocked(layer.id); }} title={layer.locked ? "Unlock layer" : locked ? "Locked by group" : "Lock layer"} aria-label={layer.locked ? "Unlock layer" : "Lock layer"}>{locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
       </div>
     );
@@ -2746,6 +2759,9 @@ function LayerContextMenu({
   onCopyStyle,
   onPasteStyle,
   canPasteStyle,
+  clipShape,
+  onClipToShape,
+  onReleaseClip,
   onDuplicate,
   onBringFront,
   onSendBack,
@@ -2768,6 +2784,9 @@ function LayerContextMenu({
   onCopyStyle: () => void;
   onPasteStyle: () => void;
   canPasteStyle: boolean;
+  clipShape: CoverShapeLayer | null;
+  onClipToShape: () => void;
+  onReleaseClip: () => void;
   onDuplicate: () => void;
   onBringFront: () => void;
   onSendBack: () => void;
@@ -2779,7 +2798,7 @@ function LayerContextMenu({
   onClose: () => void;
 }) {
   const width = 232;
-  const height = 488;
+  const height = 520;
   const left = Math.max(8, Math.min(x, (typeof window === "undefined" ? 1280 : window.innerWidth) - width - 8));
   const top = Math.max(8, Math.min(y, (typeof window === "undefined" ? 800 : window.innerHeight) - height - 8));
   const count = layers.length;
@@ -2793,6 +2812,10 @@ function LayerContextMenu({
       <button type="button" role="menuitem" onClick={run(onCopyStyle)}><Paintbrush size={14} /><span>Copy style</span><kbd>⌥⌘C</kbd></button>
       <button type="button" role="menuitem" disabled={!canPasteStyle} onClick={run(onPasteStyle)}><ClipboardPaste size={14} /><span>Paste style</span><kbd>⌥⌘V</kbd></button>
       <span className="cover-context-sep" />
+      {layer.clipTo
+        ? <button type="button" role="menuitem" onClick={run(onReleaseClip)}><Unlink2 size={14} /><span>Release clipping mask</span></button>
+        : clipShape && <button type="button" role="menuitem" onClick={run(onClipToShape)}><Link2 size={14} /><span>Clip to {clipShape.name}</span></button>}
+      {(layer.clipTo || clipShape) && <span className="cover-context-sep" />}
       <button type="button" role="menuitem" onClick={run(onBringFront)}><BringToFront size={14} /><span>Bring to front</span></button>
       <button type="button" role="menuitem" onClick={run(onSendBack)}><SendToBack size={14} /><span>Send to back</span></button>
       <span className="cover-context-sep" />
@@ -3239,6 +3262,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
                     opacity: layer.opacity,
                     mixBlendMode: layer.blendMode as CSSProperties["mixBlendMode"],
                     filter: coverLayerEffectsCss(layer) || undefined,
+                    ...coverLayerClipCss(book, cover, layer),
                     zIndex: undefined,
                   }}
                   onPointerDown={(event) => beginMove(event, layer)}
@@ -3603,6 +3627,7 @@ function LayerInspector({
   const imageDpi = layer.type === "image" && layer.sourceWidth > 0 && layer.sourceHeight > 0 && layer.width > 0 && layer.height > 0
     ? Math.floor(Math.min(layer.sourceWidth / layer.width, layer.sourceHeight / layer.height))
     : 0;
+  const clipShapes = cover.doc.layers.filter((item): item is CoverShapeLayer => item.type === "shape" && item.id !== layer.id);
 
   const fitTextToFrame = () => {
     if (layer.type !== "text") return;
@@ -3684,6 +3709,17 @@ function LayerInspector({
           <SliderField label="Opacity" value={layer.opacity} onChange={(opacity) => onUpdate({ opacity }, { key: `opacity:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
           <label className="cover-select-field"><span>Blend</span><select value={layer.blendMode} onChange={(event) => onUpdate({ blendMode: event.target.value as CoverBlendMode }, { key: `blend:${layer.id}` })}><option value="normal">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="overlay">Overlay</option><option value="soft-light">Soft light</option><option value="hard-light">Hard light</option><option value="color-dodge">Color dodge</option><option value="color-burn">Color burn</option><option value="darken">Darken</option><option value="lighten">Lighten</option><option value="difference">Difference</option><option value="exclusion">Exclusion</option><option value="hue">Hue</option><option value="saturation">Saturation</option><option value="color">Color</option><option value="luminosity">Luminosity</option></select></label>
         </div>
+      </Section>
+
+      <Section title="Clipping mask" hint="Shape silhouette" defaultOpen={Boolean(layer.clipTo)}>
+        {clipShapes.length === 0 ? (
+          <p className="cover-inspector-note">Add a shape layer first, then paint this layer inside its silhouette.</p>
+        ) : (
+          <>
+            <label className="cover-select-field full"><span>Clip to shape</span><select value={layer.clipTo ?? ""} onChange={(event) => onUpdate({ clipTo: event.target.value || null }, { key: `clip:${layer.id}` })}><option value="">No clipping mask</option>{clipShapes.map((shape) => <option key={shape.id} value={shape.id}>{shape.name} · {shape.panel}</option>)}</select></label>
+            <small className="cover-field-hint">The shape stays visible; this layer is painted only inside it. Move, rotate, or resize the shape to reposition the mask.</small>
+          </>
+        )}
       </Section>
 
       <Section title="Style" hint="Copy & presets" defaultOpen={false}>

@@ -9,6 +9,8 @@ const {
   coverFontCss,
   coverImageFilterCss,
   COVER_GRADIENT_PRESETS,
+  coverLayerClipCss,
+  coverLayerClipMatrix,
   coverLayerFadeCss,
   coverImageMaskCss,
   coverImageOverflow,
@@ -602,4 +604,38 @@ test("installed font overrides persist, sanitize, and render consistently", () =
   assert.match(markup, /font-family:'Bodoni 72 Bad', Georgia, serif/);
   const legacy = parseCoverDocument({ layers: [{ ...doc.layers[0], customFont: undefined }] });
   assert.equal(legacy.layers[0].customFont, "");
+});
+
+
+test("shape clipping masks persist, validate targets, and hide with the base", () => {
+  const base = shapeLayer({ id: "mask", name: "Mask", panel: "front", x: 1, y: 1, width: 2, height: 2, shape: "ellipse" });
+  const clipped = textLayer({ id: "clipped", name: "Clipped", panel: "front", x: 0.5, y: 0.5, width: 4, height: 4, text: "Inside", clipTo: "mask" });
+  const doc = parseCoverDocument({ layers: [base, clipped] });
+  assert.equal(doc.layers.find((layer) => layer.id === "clipped").clipTo, "mask");
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.match(markup, /clip-path:path\('/);
+  assert.match(markup, /Inside/);
+
+  const hidden = parseCoverDocument({ layers: [{ ...base, visible: false }, clipped] });
+  const hiddenMarkup = coverDocMarkup(book(), { ...cover(), doc: hidden }, "front");
+  assert.doesNotMatch(hiddenMarkup, /Inside/);
+
+  const invalid = parseCoverDocument({ layers: [clipToText(), { ...clipped, clipTo: "text-base" }] });
+  assert.equal(invalid.layers.find((layer) => layer.id === "clipped").clipTo, null);
+  const missing = parseCoverDocument({ layers: [{ ...clipped, clipTo: "missing" }] });
+  assert.equal(missing.layers[0].clipTo, null);
+});
+
+function clipToText() {
+  return textLayer({ id: "text-base", name: "Text base", panel: "front", x: 0, y: 0, width: 2, height: 1, text: "Base" });
+}
+
+test("clipping matrix maps shape coordinates into the clipped layer local space", () => {
+  const base = { x: 1, y: 1, width: 2, height: 2 };
+  const layer = { x: 1, y: 1, width: 4, height: 4 };
+  assert.deepEqual(coverLayerClipMatrix(base, 0, layer, 0, 96), [1.92, 0, 0, 1.92, 0, 0]);
+  const rotated = coverLayerClipMatrix(base, 0, layer, 90, 96);
+  assert.notDeepEqual(rotated, [1.92, 0, 0, 1.92, 0, 0]);
+  const doc = parseCoverDocument({ layers: [shapeLayer({ id: "mask", name: "Mask", panel: "front", x: 1, y: 1, width: 2, height: 2, shape: "star" }), textLayer({ id: "clipped", name: "Clipped", panel: "front", x: 1, y: 1, width: 4, height: 4, text: "Inside", clipTo: "mask" })] });
+  assert.match(coverLayerClipCss(book(), { ...cover(), doc }, doc.layers[1]).clipPath, /^path\('M/);
 });

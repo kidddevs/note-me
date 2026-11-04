@@ -83,6 +83,7 @@ export interface CoverLayerBase {
   shadow: CoverLayerShadow;
   glow: CoverLayerGlow;
   fade: CoverLayerFade;
+  clipTo: string | null;
 }
 
 export interface CoverLayerGroup {
@@ -671,7 +672,7 @@ function gradientMeta(gradient: BookCoverGradient) {
 
 /* ---------------------------------------------------------------- layers */
 
-function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow" | "fade"> & Partial<Pick<CoverLayerBase, "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow" | "fade">>): Omit<CoverLayerBase, "type"> {
+function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow" | "fade" | "clipTo"> & Partial<Pick<CoverLayerBase, "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow" | "fade" | "clipTo">>): Omit<CoverLayerBase, "type"> {
   return {
     id: input.id,
     name: input.name,
@@ -689,6 +690,7 @@ function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" |
     shadow: input.shadow ?? { enabled: false, color: "#000000", blur: 0.16, offsetX: 0.04, offsetY: 0.06, opacity: 0.35 },
     glow: input.glow ?? { enabled: false, color: "#c9a227", blur: 0.22, opacity: 0.4 },
     fade: input.fade ?? { mode: "none", size: 0.35 },
+    clipTo: input.clipTo ?? null,
   };
 }
 
@@ -819,6 +821,7 @@ function normalizeLayerBase(source: Record<string, unknown>, type: CoverLayerTyp
     shadow: normalizeShadow(source.shadow),
     glow: normalizeGlow(source.glow),
     fade: normalizeFade(source.fade),
+    clipTo: text(source.clipTo, "", 80) || null,
   };
 }
 
@@ -977,6 +980,12 @@ export function parseCoverDocument(value: unknown, fallback: BookCoverDocument =
     ? source.layers.slice(0, 120).map((layer, index) => normalizeLayer(layer, index)).filter((layer): layer is CoverLayer => Boolean(layer))
     : fallback.layers.map((layer) => ({ ...layer })))
     .map((layer) => layer.groupId && !groupIds.has(layer.groupId) ? { ...layer, groupId: null } : layer);
+  const layerById = new Map(layers.map((layer) => [layer.id, layer]));
+  const clippedLayers = layers.map((layer) => {
+    if (!layer.clipTo) return layer;
+    const base = layerById.get(layer.clipTo);
+    return base && base.type === "shape" && base.id !== layer.id ? layer : { ...layer, clipTo: null };
+  });
   const guides = Array.isArray(source.guides)
     ? source.guides.slice(0, 80).map((guide, index) => normalizeGuide(guide, index)).filter((guide): guide is CoverGuideline => Boolean(guide))
     : fallback.guides.map((guide) => ({ ...guide }));
@@ -987,7 +996,7 @@ export function parseCoverDocument(value: unknown, fallback: BookCoverDocument =
     version: 1,
     templateId: text(source.templateId, fallback.templateId, 80),
     background: normalizeFill(source.background, fallback.background),
-    layers,
+    layers: clippedLayers,
     groups,
     palette,
     guides,
@@ -1090,11 +1099,109 @@ export function coverLayerGroup(doc: BookCoverDocument, layer: CoverLayer) {
 }
 
 export function coverLayerVisible(doc: BookCoverDocument, layer: CoverLayer) {
-  return layer.visible && (coverLayerGroup(doc, layer)?.visible ?? true);
+  if (!layer.visible || !(coverLayerGroup(doc, layer)?.visible ?? true)) return false;
+  if (!layer.clipTo) return true;
+  const base = doc.layers.find((item) => item.id === layer.clipTo);
+  if (!base || base.type !== "shape") return false;
+  return base.visible && (coverLayerGroup(doc, base)?.visible ?? true);
 }
 
 export function coverLayerLocked(doc: BookCoverDocument, layer: CoverLayer) {
   return layer.locked || (coverLayerGroup(doc, layer)?.locked ?? false);
+}
+
+type CoverAffine = [number, number, number, number, number, number];
+
+function affineMultiply(first: CoverAffine, second: CoverAffine): CoverAffine {
+  return [
+    first[0] * second[0] + first[2] * second[1],
+    first[1] * second[0] + first[3] * second[1],
+    first[0] * second[2] + first[2] * second[3],
+    first[1] * second[2] + first[3] * second[3],
+    first[0] * second[4] + first[2] * second[5] + first[4],
+    first[1] * second[4] + first[3] * second[5] + first[5],
+  ];
+}
+
+function affineTranslate(x: number, y: number): CoverAffine {
+  return [1, 0, 0, 1, x, y];
+}
+
+function affineScale(x: number, y: number): CoverAffine {
+  return [x, 0, 0, y, 0, 0];
+}
+
+function affineRotate(degrees: number): CoverAffine {
+  const radians = (degrees * Math.PI) / 180;
+  return [Math.cos(radians), Math.sin(radians), -Math.sin(radians), Math.cos(radians), 0, 0];
+}
+
+/** Maps shape-space coordinates (0–100) into the clipped layer's local space. */
+export function coverLayerClipMatrix(base: CoverPanelRect, baseRotation: number, layer: CoverPanelRect, layerRotation: number, unit = 96): CoverAffine {
+  const baseCenterX = base.x + base.width / 2;
+  const baseCenterY = base.y + base.height / 2;
+  const layerCenterX = layer.x + layer.width / 2;
+  const layerCenterY = layer.y + layer.height / 2;
+  let matrix: CoverAffine = affineScale(base.width / 100, base.height / 100);
+  matrix = affineMultiply(affineTranslate(-base.width / 2, -base.height / 2), matrix);
+  matrix = affineMultiply(affineRotate(baseRotation), matrix);
+  matrix = affineMultiply(affineTranslate(baseCenterX - layerCenterX, baseCenterY - layerCenterY), matrix);
+  matrix = affineMultiply(affineRotate(-layerRotation), matrix);
+  matrix = affineMultiply(affineScale(unit, unit), matrix);
+  matrix = affineMultiply(affineTranslate((layer.width / 2) * unit, (layer.height / 2) * unit), matrix);
+  return matrix.map((value) => Math.round(value * 10000) / 10000) as CoverAffine;
+}
+
+function transformClipPath(path: string, matrix: CoverAffine) {
+  const point = (x: number, y: number) => {
+    const nextX = matrix[0] * x + matrix[2] * y + matrix[4];
+    const nextY = matrix[1] * x + matrix[3] * y + matrix[5];
+    return `${Math.round(nextX * 100) / 100} ${Math.round(nextY * 100) / 100}`;
+  };
+  return path.replace(/([MLCZ])([^MLCZ]*)/gi, (_command, rawCommand: string, rawArgs: string) => {
+    const command = rawCommand.toUpperCase();
+    if (command === "Z") return "Z";
+    const numbers = rawArgs.trim().split(/[\s,]+/).filter(Boolean).map(Number);
+    const points: string[] = [];
+    for (let index = 0; index + 1 < numbers.length; index += 2) points.push(point(numbers[index], numbers[index + 1]));
+    return `${command}${points.join(" ")}`;
+  });
+}
+
+function clipShapePath(shape: CoverShapeKind) {
+  if (shape === "rectangle") return "M0 0 H100 V100 H0 Z";
+  if (shape === "ellipse") return "M50 0 C77.61 0 100 22.39 100 50 C100 77.61 77.61 100 50 100 C22.39 100 0 77.61 0 50 C0 22.39 22.39 0 50 0 Z";
+  return coverShapePath(shape);
+}
+
+export function coverLayerClipInfo(book: Book, cover: BookCoverDesign, layer: CoverLayer, unit = 96) {
+  if (!layer.clipTo) return null;
+  const target = cover.doc.layers.find((item) => item.id === layer.clipTo);
+  if (!target || target.type !== "shape" || target.id === layer.id) return null;
+  const metrics = coverMetrics(book.trim_size, cover);
+  const base = layerSpreadRect(metrics, target);
+  const rect = layerSpreadRect(metrics, layer);
+  return {
+    target,
+    matrix: coverLayerClipMatrix(base, target.rotation, rect, layer.rotation, unit),
+  };
+}
+
+export function coverLayerClipCss(book: Book, cover: BookCoverDesign, layer: CoverLayer) {
+  const clip = coverLayerClipInfo(book, cover, layer, 96);
+  if (!clip) return {};
+  const path = transformClipPath(clipShapePath(clip.target.shape), clip.matrix);
+  return { clipPath: `path('${path}')` };
+}
+
+export function coverLayerClipPath2D(book: Book, cover: BookCoverDesign, layer: CoverLayer) {
+  if (typeof Path2D === "undefined" || typeof DOMMatrix === "undefined") return null;
+  const clip = coverLayerClipInfo(book, cover, layer, 1);
+  if (!clip) return null;
+  const path = new Path2D(clipShapePath(clip.target.shape));
+  const transformed = new Path2D();
+  transformed.addPath(path, new DOMMatrix(clip.matrix));
+  return transformed;
 }
 
 export function reflowSpineLayers(doc: BookCoverDocument, previousSpineWidth: number, nextSpineWidth: number): BookCoverDocument {
@@ -1209,7 +1316,7 @@ export function coverShapePath(shape: CoverShapeKind) {
   if (shape === "arch") return "M6 98 L6 46 C6 20 26 4 50 4 C74 4 94 20 94 46 L94 98 Z";
   if (shape === "octagon") return "M30 4 L70 4 L96 30 L96 70 L70 96 L30 96 L4 70 L4 30 Z";
   if (shape === "shield") return "M50 3 L92 15 L88 55 C86 74 70 89 50 96 C30 89 14 74 12 55 L8 15 Z";
-  if (shape === "ticket") return "M6 24 L94 24 L94 42 A8 8 0 0 0 94 58 L94 76 L6 76 L6 58 A8 8 0 0 1 6 42 Z";
+  if (shape === "ticket") return "M6 24 L94 24 L94 42 C86 42 86 58 94 58 L94 76 L6 76 L6 58 C14 58 14 42 6 42 Z";
   if (shape === "banner") return "M6 18 L94 18 L94 68 L74 80 L50 68 L26 80 L6 68 Z";
   if (shape === "leaf") return "M50 4 C82 14 96 42 87 68 C78 92 50 98 22 86 C8 60 18 28 50 4 Z";
   if (shape === "arrow") return "M4 34 L60 34 L60 14 L96 50 L60 86 L60 66 L4 66 Z";
@@ -2457,7 +2564,7 @@ function clipImageMask(ctx: CanvasRenderingContext2D, mask: CoverImageMask, x: n
   ctx.clip();
 }
 
-export function coverLayerInnerHtml(book: Book, cover: BookCoverDesign, layer: CoverLayer, idPrefix = "cover") {
+function coverLayerContentHtml(book: Book, cover: BookCoverDesign, layer: CoverLayer, idPrefix = "cover") {
   if (layer.type === "text") {
     const content = resolveCoverTokenText(layer.text, book, cover);
     if (layer.curve !== 0) return curvedTextSvg(layer, content, idPrefix);
@@ -2506,6 +2613,10 @@ export function coverLayerInnerHtml(book: Book, cover: BookCoverDesign, layer: C
     ${layer.showText ? `<span class="cover-doc-barcode-label" style="font-size:${labelSize}pt;color:${layer.barColor}">${escapeHtml(isbn || "ISBN")}</span>` : ""}
     <span class="cover-doc-barcode-bars" style="flex:1;min-height:0;width:100%">${barcodeSvgMarkup(isbn, layer.barColor)}</span>
   </div>`;
+}
+
+export function coverLayerInnerHtml(book: Book, cover: BookCoverDesign, layer: CoverLayer, idPrefix = "cover") {
+  return coverLayerContentHtml(book, cover, layer, idPrefix);
 }
 
 function rgbaColor(value: string, opacity: number) {
@@ -2600,6 +2711,7 @@ let coverMarkupInstance = 0;
 
 function layerMarkup(book: Book, cover: BookCoverDesign, layer: CoverLayer, offsetX: number, offsetY: number, clipped: boolean, instanceId: string) {
   const style = coverLayerStyle(layer);
+  Object.assign(style, coverLayerClipCss(book, cover, layer));
   style.left = `${roundInches(layer.x - offsetX)}in`;
   style.top = `${roundInches(layer.y - offsetY)}in`;
   return `<div class="cover-doc-layer cover-doc-layer-${layer.type}${clipped ? " is-clipped" : ""}" data-layer-id="${escapeHtml(layer.id)}" style="${Object.entries(style).map(([key, value]) => `${key.replace(/[A-Z]/g, (letter) => `-${letter.toLocaleLowerCase()}`)}:${value}`).join(";")};transform-origin:50% 50%;position:absolute;${layer.locked ? "pointer-events:none;" : ""}">${coverLayerInnerHtml(book, cover, layer, instanceId)}</div>`;
@@ -3147,6 +3259,11 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   applyFill(ctx, cover.doc.background, 0, 0, metrics.fullWidth, metrics.fullHeight, patternBySource);
   const layers = cover.doc.layers.filter((layer) => coverLayerVisible(cover.doc, layer) && layerForPanel(layer, target));
   const drawLayerContent = (target: CanvasRenderingContext2D, layer: CoverLayer, spread: CoverPanelRect, imageFilter: string) => {
+    const clipPath = layer.clipTo ? coverLayerClipPath2D(book, cover, layer) : null;
+    if (clipPath) {
+      target.save();
+      target.clip(clipPath);
+    }
     if (layer.type === "text") {
       const content = resolveCoverTokenText(layer.text, book, cover);
       if (layer.curve !== 0) drawCurvedTextLayer(target, layer, content, spread.width, spread.height);
@@ -3199,6 +3316,7 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
     } else {
       drawBarcodeLayer(target, layer, cover, spread.width, spread.height, barcodeImage);
     }
+    if (clipPath) target.restore();
   };
 
   for (const layer of layers) {
