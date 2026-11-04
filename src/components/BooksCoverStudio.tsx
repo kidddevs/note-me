@@ -50,6 +50,7 @@ import {
   FolderPlus,
   Frame,
   Grid3X3,
+  Hand,
   ImagePlus,
   Info,
   Italic,
@@ -108,9 +109,11 @@ import {
   coverLayerInnerHtml,
   coverLayerLocked,
   coverShapePath,
+  coverImageOverflow,
   coverLayerVisible,
   coverMetrics,
   coverPattern,
+  panCoverImageFocus,
   coverPanelRect,
   createCoverDocument,
   createInitialCoverDocument,
@@ -221,6 +224,7 @@ interface CoverStageProps {
   showBleed: boolean;
   previewing: boolean;
   eyedropper: boolean;
+  imagePanMode: boolean;
   zoom: number;
   autoFit: boolean;
   onSelect: (id: string | null, additive?: boolean) => void;
@@ -265,6 +269,8 @@ interface InspectorProps {
   onReplaceImage: () => void;
   onUploadBarcode: () => void;
   onClearBarcode: () => void;
+  imagePanMode: boolean;
+  onImagePanMode: (value: boolean) => void;
   focusContent: number;
 }
 
@@ -410,6 +416,7 @@ function historyLabel(key?: string) {
     if (value.endsWith(":name")) return "Renamed group";
     return "Updated group";
   }
+  if (value.startsWith("pan:")) return "Repositioned image";
   if (value.startsWith("move:")) return "Moved layer";
   if (value.startsWith("resize:")) return "Resized layer";
   if (value.startsWith("rotate:")) return "Rotated layer";
@@ -535,6 +542,7 @@ export function CoverScreen({
   const [tool, setTool] = useState<string>("select");
   const [showLayers, setShowLayers] = useState(true);
   const [previewing, setPreviewing] = useState(false);
+  const [imagePanMode, setImagePanMode] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState<SavedCoverTemplate[]>(() => readSavedCoverTemplates());
@@ -574,6 +582,9 @@ export function CoverScreen({
   const doc = cover.doc;
   const metrics = useMemo(() => coverMetrics(book.trim_size, cover), [book.trim_size, cover.pageCount, cover.paperStock, cover.spineWidthOverride, cover.bleed]);
   const selected = doc.layers.find((layer) => layer.id === selectedLayerId) ?? null;
+  useEffect(() => {
+    if (imagePanMode && selected?.type !== "image") setImagePanMode(false);
+  }, [imagePanMode, selected?.type]);
   const selectedIds = useMemo(
     () => selectedLayerId ? [selectedLayerId, ...extraSelectedIds.filter((id) => id !== selectedLayerId)] : [],
     [selectedLayerId, extraSelectedIds],
@@ -1401,6 +1412,7 @@ export function CoverScreen({
     const editing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable);
     if (event.key === "Escape") {
       if (previewing) setPreviewing(false);
+      else if (imagePanMode) setImagePanMode(false);
       else if (symbolOpen) setSymbolOpen(false);
       else if (artworkOpen) setArtworkOpen(false);
       else if (downloadOpen) setDownloadOpen(false);
@@ -1475,6 +1487,7 @@ export function CoverScreen({
     if (key === "e") setTool("eyedropper");
     if (key === "t") { setTool("text"); makeTextLayer(); setTool("select"); }
     if (key === "i") { fileInputRef.current?.click(); }
+    if (key === "h" && selected?.type === "image") setImagePanMode((value) => !value);
     if (key === "r") makeShapeLayer("rectangle");
     if (key === "o") makeShapeLayer("ellipse");
     if (key === "l") makeLineLayer();
@@ -1482,7 +1495,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, selectedLayerId, selectedIds, undo, redo]);
+  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, selectedLayerId, selectedIds, selected?.type, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -1681,6 +1694,7 @@ export function CoverScreen({
             showBleed={doc.showBleed}
             previewing={previewing}
             eyedropper={tool === "eyedropper"}
+            imagePanMode={imagePanMode}
             zoom={zoom}
             autoFit={autoFit}
             onSelect={selectLayer}
@@ -1738,6 +1752,8 @@ export function CoverScreen({
               onReplaceImage={() => { if (selected?.type === "image") replaceImageInputRef.current?.click(); }}
               onUploadBarcode={() => barcodeInputRef.current?.click()}
               onClearBarcode={() => updateCover({ barcodeImage: "" }, { key: "barcode-image" })}
+              imagePanMode={imagePanMode}
+              onImagePanMode={setImagePanMode}
               focusContent={focusContent}
             />
           )}
@@ -2454,11 +2470,11 @@ function LayerContextMenu({
 
 /* ========================================================================== */
 
-function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
+function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, imagePanMode, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [interaction, setInteraction] = useState<{
-    mode: "move" | "resize" | "rotate";
+    mode: "move" | "resize" | "rotate" | "pan";
     layerId: string;
     handle?: string;
     startClientX: number;
@@ -2470,6 +2486,10 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
     startRotation?: number;
     centerX?: number;
     centerY?: number;
+    startFocusX?: number;
+    startFocusY?: number;
+    overflowX?: number;
+    overflowY?: number;
   } | null>(null);
   const [guideDraft, setGuideDraft] = useState<{ id: string; axis: "x" | "y"; spread: number } | null>(null);
   const [guideInteraction, setGuideInteraction] = useState<{ mode: "new" | "move"; id: string; axis: "x" | "y"; startClientX: number; startClientY: number } | null>(null);
@@ -2561,6 +2581,14 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
         onInteractionStart(`${interaction.mode}:${interaction.layerId}${interaction.handle ? `:${interaction.handle}` : ""}`);
       }
       if (!movedRef.current) return;
+      if (interaction.mode === "pan") {
+        const rotation = (-layer.rotation * Math.PI) / 180;
+        const localX = dx * Math.cos(rotation) - dy * Math.sin(rotation);
+        const localY = dx * Math.sin(rotation) + dy * Math.cos(rotation);
+        const focus = panCoverImageFocus(interaction.startFocusX ?? 0.5, interaction.startFocusY ?? 0.5, localX, localY, { x: interaction.overflowX ?? 0, y: interaction.overflowY ?? 0 });
+        onLayersChange([{ id: layer.id, patch: focus }], { history: false });
+        return;
+      }
       if (interaction.mode === "move") {
         let x = layer.x + dx;
         let y = layer.y + dy;
@@ -2658,6 +2686,33 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   const beginMove = (event: ReactPointerEvent<HTMLDivElement>, layer: CoverLayer) => {
     if (previewing || coverLayerLocked(cover.doc, layer)) return;
     if ((event.target as HTMLElement).closest(".cover-selection-handle, .cover-rotate-handle")) return;
+    if (layer.type === "image" && (imagePanMode || event.altKey) && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+      const image = event.currentTarget.querySelector("img.cover-doc-image") as HTMLImageElement | null;
+      if (!image || !image.naturalWidth || !image.naturalHeight) return;
+      const overflow = coverImageOverflow(layer, image.naturalWidth, image.naturalHeight);
+      if (overflow.x <= 0 && overflow.y <= 0) return;
+      event.stopPropagation();
+      onSelect(layer.id);
+      const sheet = (event.currentTarget.closest("[data-cover-sheet]") as HTMLElement | null) ?? stageRef.current;
+      if (!sheet) return;
+      const rect = sheet.getBoundingClientRect();
+      const scale = rect.width / metrics.fullWidth;
+      movedRef.current = false;
+      setInteraction({
+        mode: "pan",
+        layerId: layer.id,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startLayer: layer,
+        startLayers: [layer],
+        startScale: scale,
+        startFocusX: layer.focusX,
+        startFocusY: layer.focusY,
+        overflowX: overflow.x,
+        overflowY: overflow.y,
+      });
+      return;
+    }
     event.stopPropagation();
     if (event.shiftKey || event.metaKey || event.ctrlKey) {
       onSelect(layer.id, true);
@@ -2835,7 +2890,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
               return (
                 <div
                   key={layer.id}
-                  className={`cover-canvas-layer ${isSelected ? "selected" : ""} ${locked ? "locked" : ""} ${layer.panel !== panel && panel !== "wrap" && layer.panel !== "wrap" ? "out-of-panel" : ""}`}
+                  className={`cover-canvas-layer ${isSelected ? "selected" : ""} ${locked ? "locked" : ""} ${isSelected && layer.type === "image" && (imagePanMode || interaction?.mode === "pan") ? "pan-target" : ""} ${interaction?.mode === "pan" && interaction.layerId === layer.id ? "panning" : ""} ${layer.panel !== panel && panel !== "wrap" && layer.panel !== "wrap" ? "out-of-panel" : ""}`}
                   style={{
                     left: `${rect.x}in`,
                     top: `${rect.y}in`,
@@ -2949,7 +3004,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           <button type="button" onClick={() => onZoom(Math.min(3, effectiveZoom + 0.1))} aria-label="Zoom in"><ZoomIn size={14} /></button>
           <button type="button" className={autoFit ? "active" : ""} onClick={onFit}><Maximize2 size={13} /> Fit</button>
         </div>
-        <span className="cover-stage-hint">{eyedropper ? <><Pipette size={12} /> Click the cover to sample a colour · press Esc or V to exit</> : <><Move size={12} /> Drag to move · Shift-click multi-select · Drag from rulers for guides · Alt disables snapping</>}</span>
+        <span className="cover-stage-hint">{eyedropper ? <><Pipette size={12} /> Click the cover to sample a colour · press Esc or V to exit</> : imagePanMode ? <><Hand size={12} /> Drag the photo to reposition it inside its frame · Esc to finish</> : <><Move size={12} /> Drag to move · Shift-click multi-select · Alt-drag a photo to reposition it · Drag from rulers for guides</>}</span>
       </div>
     </main>
   );
@@ -2957,7 +3012,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, imagePanMode, onImagePanMode, focusContent }: InspectorProps) {
   return (
     <aside className="cover-inspector" aria-label={selected ? "Layer properties" : "Cover properties"}>
       <div className="cover-inspector-head">
@@ -2976,6 +3031,8 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             onReplaceImage={onReplaceImage}
             onUploadBarcode={onUploadBarcode}
             onClearBarcode={onClearBarcode}
+            imagePanMode={imagePanMode}
+            onImagePanMode={onImagePanMode}
             focusContent={focusContent}
           />
         ) : (
@@ -3129,6 +3186,8 @@ function LayerInspector({
   onReplaceImage,
   onUploadBarcode,
   onClearBarcode,
+  imagePanMode,
+  onImagePanMode,
   focusContent,
 }: {
   book: Book;
@@ -3140,6 +3199,8 @@ function LayerInspector({
   onReplaceImage: () => void;
   onUploadBarcode: () => void;
   onClearBarcode: () => void;
+  imagePanMode: boolean;
+  onImagePanMode: (value: boolean) => void;
   focusContent: number;
 }) {
   const contentRef = useRef<HTMLTextAreaElement>(null);
@@ -3304,6 +3365,8 @@ function LayerInspector({
           </div>
           <div className="cover-focus-block">
             <span className="cover-field-heading">Crop focus</span>
+            <button type="button" className={`cover-wide-button ${imagePanMode ? "active" : ""}`} onClick={() => onImagePanMode(!imagePanMode)}><Hand size={13} /> {imagePanMode ? "Panning — drag the photo" : "Reposition in frame"}</button>
+            <small className="cover-field-hint">Or hold ⌥ and drag the photo on the canvas. The frame, crop mask, and effects stay put.</small>
             <SliderField label="Horizontal" value={layer.focusX} onChange={(focusX) => onUpdate({ focusX }, { key: `focus-x:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
             <SliderField label="Vertical" value={layer.focusY} onChange={(focusY) => onUpdate({ focusY }, { key: `focus-y:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
             <div className="cover-image-flip-row">

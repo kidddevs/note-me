@@ -8,7 +8,9 @@ const {
   coverFillCss,
   coverImageFilterCss,
   coverImageMaskCss,
+  coverImageOverflow,
   coverPatternDataUrl,
+  panCoverImageFocus,
   cloneCoverLayers,
   coverLayerLocked,
   coverLayerVisible,
@@ -450,4 +452,21 @@ test("pattern fills persist through CSS, markup, and SVG shapes", () => {
   assert.match(markup, /<pattern /);
   const clamped = parseCoverDocument({ background: { ...fill, pattern: { ...pattern, scale: 99 } } });
   assert.equal(clamped.background.pattern.scale, 2);
+});
+
+
+test("cover image panning maps drag distance to clamped focus", () => {
+  const tall = imageLayer({ id: "tall", name: "Tall", panel: "front", x: 0, y: 0, width: 4, height: 4, src: "data:image/png;base64,AA==" });
+  const overflow = coverImageOverflow(tall, 1000, 1500);
+  assert.equal(overflow.x, 0);
+  assert.equal(overflow.y, 2);
+  const panned = panCoverImageFocus(0.5, 0.5, 1, 1, overflow);
+  assert.equal(panned.focusX, 0.5);
+  assert.equal(panned.focusY, 0);
+  assert.deepEqual(panCoverImageFocus(0.9, 0.1, -100, 100, { x: 2, y: 4 }), { focusX: 1, focusY: 0 });
+
+  const wide = imageLayer({ id: "wide", name: "Wide", panel: "front", x: 0, y: 0, width: 4, height: 2, src: "data:image/png;base64,AA==" });
+  assert.deepEqual(coverImageOverflow(wide, 2000, 1000), { x: 0, y: 0 });
+  assert.deepEqual(coverImageOverflow({ ...wide, fit: "contain" }, 2000, 1000), { x: 0, y: 0 });
+  assert.deepEqual(coverImageOverflow(wide, 0, 0), { x: 0, y: 0 });
 });

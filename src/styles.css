@@ -6133,6 +6133,8 @@ kbd {
 .cover-zoom-controls > span { min-width: 38px; color: inherit; font-size: 8px; font-weight: 650; text-align: center; }
 .cover-canvas-layer { position: absolute; transform-origin: 50% 50%; cursor: move; }
 .cover-canvas-layer.locked { cursor: default; }
+.cover-canvas-layer.pan-target { cursor: grab; }
+.cover-canvas-layer.panning { cursor: grabbing; }
 .cover-canvas-layer.out-of-panel { opacity: 0.85; }
 .cover-canvas-layer-content { width: 100%; height: 100%; overflow: visible; }
 .cover-canvas-layer-content > .cover-doc-text { width: 100%; height: 100%; }
@@ -6296,6 +6298,7 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-mini-button.danger:hover { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
 .cover-wide-button { display: flex; min-height: 28px; align-items: center; justify-content: center; gap: 4px; padding: 0 8px; border: 1px dashed var(--border-strong); border-radius: 5px; background: var(--surface-2); color: var(--text-2); font: inherit; font-size: 8.5px; font-weight: 600; cursor: pointer; }
 .cover-wide-button:hover { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-wide-button.active { border-style: solid; border-color: var(--book-accent); background: var(--book-accent-soft); color: var(--book-accent); }
 .cover-wide-button.subtle { border-style: solid; }
 .cover-mini-icon { display: flex; width: 25px; height: 25px; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-3); cursor: pointer; }
 .cover-mini-icon:hover { border-color: var(--book-accent); color: var(--book-accent); }
@@ -6317,6 +6320,7 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-image-sliders { display: flex; flex-direction: column; gap: 5px; }
 .cover-tint-editor { display: flex; flex-direction: column; gap: 5px; padding: 7px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-2); }
 .cover-focus-block { display: flex; flex-direction: column; gap: 5px; padding-top: 3px; }
+.cover-field-hint { color: var(--text-4); font-size: 7.8px; line-height: 1.45; }
 .cover-field-heading { color: var(--text-3); font-size: 7.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
 .cover-image-flip-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
 .cover-image-flip-row button { display: flex; height: 25px; align-items: center; justify-content: center; gap: 3px; padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-3); font: inherit; font-size: 7.5px; font-weight: 600; cursor: pointer; }

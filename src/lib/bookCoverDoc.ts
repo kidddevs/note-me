@@ -284,6 +284,29 @@ export function coverImageFilterCanvas(layer: Pick<CoverImageLayer, "grayscale" 
   ].filter(Boolean).join(" ");
 }
 
+export interface CoverImageOverflow {
+  x: number;
+  y: number;
+}
+
+/** Oversized image area in inches that can be panned inside a filled frame. */
+export function coverImageOverflow(layer: Pick<CoverImageLayer, "width" | "height" | "fit">, imageWidth: number, imageHeight: number): CoverImageOverflow {
+  if (layer.fit !== "cover" || !(imageWidth > 0) || !(imageHeight > 0) || layer.width <= 0 || layer.height <= 0) return { x: 0, y: 0 };
+  const scale = Math.max(layer.width / imageWidth, layer.height / imageHeight);
+  return {
+    x: Math.max(0, imageWidth * scale - layer.width),
+    y: Math.max(0, imageHeight * scale - layer.height),
+  };
+}
+
+/** Converts an in-frame drag into object-position focus, clamped to the photo edges. */
+export function panCoverImageFocus(focusX: number, focusY: number, deltaX: number, deltaY: number, overflow: CoverImageOverflow) {
+  return {
+    focusX: overflow.x > 0.0001 ? Math.round(clamp(focusX - deltaX / overflow.x, 0, 1) * 1000) / 1000 : Math.round(clamp(focusX, 0, 1) * 1000) / 1000,
+    focusY: overflow.y > 0.0001 ? Math.round(clamp(focusY - deltaY / overflow.y, 0, 1) * 1000) / 1000 : Math.round(clamp(focusY, 0, 1) * 1000) / 1000,
+  };
+}
+
 export function coverImageMaskCss(mask: CoverImageMask) {
   if (mask === "circle") return "border-radius:50%;";
   if (mask === "arch") return "border-radius:50% 50% 0 0 / 34% 34% 0 0;";
