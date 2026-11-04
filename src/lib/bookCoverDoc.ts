@@ -18,7 +18,8 @@ export type CoverShapeKind = "rectangle" | "ellipse" | "triangle" | "diamond" | 
 export type CoverDashStyle = "solid" | "dashed" | "dotted";
 export type CoverBlendMode = "normal" | "multiply" | "screen" | "overlay" | "soft-light" | "hard-light" | "color-dodge" | "color-burn" | "darken" | "lighten" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
 export type CoverFontId = "serif" | "display" | "sans" | "condensed" | "mono" | "humanist" | "script" | "slab" | "baskerville" | "garamond" | "avenir" | "futura" | "optima" | "copperplate" | "typewriter";
-export type CoverFillType = "solid" | "gradient" | "none";
+export type CoverFillType = "solid" | "gradient" | "pattern" | "none";
+export type CoverPatternId = "dots" | "stripes" | "grid" | "checks" | "waves" | "crosshatch" | "diagonal" | "confetti";
 export type CoverImageMask = "none" | "circle" | "arch" | "diamond" | "hexagon";
 
 export interface CoverFillStop {
@@ -26,10 +27,19 @@ export interface CoverFillStop {
   position: number;
 }
 
+export interface CoverPattern {
+  type: CoverPatternId;
+  color: string;
+  background: string;
+  scale: number;
+  angle: number;
+}
+
 export interface CoverFill {
   type: CoverFillType;
   color: string;
   gradient: BookCoverGradient;
+  pattern?: CoverPattern;
 }
 
 export interface CoverLayerShadow {
@@ -415,16 +425,21 @@ export function coverPanels(): { id: Exclude<CoverPanel, "wrap">; label: string;
   ];
 }
 
+export function coverPattern(colorValue = DEFAULT_ACCENT, background = "#f5efe4"): CoverPattern {
+  return { type: "dots", color: shadeColor(colorValue, -0.18), background, scale: 0.5, angle: 0 };
+}
+
 export function coverFill(colorValue = DEFAULT_ACCENT): CoverFill {
   return {
     type: "solid",
     color: colorValue,
     gradient: { type: "linear", angle: 135, stops: [{ color: colorValue, position: 0 }, { color: shadeColor(colorValue, -0.28), position: 1 }] },
+    pattern: coverPattern(colorValue, colorValue),
   };
 }
 
 export function noCoverFill(): CoverFill {
-  return { type: "none", color: "transparent", gradient: { type: "linear", angle: 90, stops: [{ color: "#000000", position: 0 }, { color: "#ffffff", position: 1 }] } };
+  return { type: "none", color: "transparent", gradient: { type: "linear", angle: 90, stops: [{ color: "#000000", position: 0 }, { color: "#ffffff", position: 1 }] }, pattern: coverPattern(DEFAULT_ACCENT, "#ffffff") };
 }
 
 export function emptyCoverDocument(): BookCoverDocument {
@@ -502,9 +517,31 @@ export function coverGradientCss(gradient: BookCoverGradient) {
   return `linear-gradient(${Math.round(gradient.angle)}deg, ${stops})`;
 }
 
+function patternTileContent(pattern: CoverPattern) {
+  const ink = pattern.color;
+  if (pattern.type === "stripes") return `<rect width="18" height="100" fill="${ink}"/><rect x="50" width="18" height="100" fill="${ink}"/>`;
+  if (pattern.type === "grid") return `<path d="M25 0V100M75 0V100M0 25H100M0 75H100" stroke="${ink}" stroke-width="2.5" fill="none"/>`;
+  if (pattern.type === "checks") return `<rect width="50" height="50" fill="${ink}"/><rect x="50" y="50" width="50" height="50" fill="${ink}"/>`;
+  if (pattern.type === "waves") return `<path d="M0 35 Q25 10 50 35 T100 35" fill="none" stroke="${ink}" stroke-width="7"/><path d="M0 75 Q25 50 50 75 T100 75" fill="none" stroke="${ink}" stroke-width="7" opacity=".55"/>`;
+  if (pattern.type === "crosshatch") return `<path d="M0 100 L100 0 M-50 50 L50 -50 M50 150 L150 50" stroke="${ink}" stroke-width="3"/><path d="M0 0 L100 100 M-50 50 L50 150 M50 -50 L150 50" stroke="${ink}" stroke-width="3" opacity=".7"/>`;
+  if (pattern.type === "diagonal") return `<path d="M0 100 L100 0 M-50 50 L50 -50 M50 150 L150 50" stroke="${ink}" stroke-width="7"/>`;
+  if (pattern.type === "confetti") return `<circle cx="18" cy="22" r="5" fill="${ink}"/><circle cx="72" cy="16" r="3" fill="${ink}" opacity=".65"/><rect x="62" y="62" width="9" height="9" fill="${ink}" transform="rotate(18 66 66)"/><circle cx="28" cy="76" r="4" fill="${ink}" opacity=".8"/><path d="M84 42 l7 4 -6 5z" fill="${ink}" opacity=".55"/>`;
+  return `<circle cx="25" cy="25" r="7" fill="${ink}"/><circle cx="75" cy="75" r="7" fill="${ink}"/>`;
+}
+
+export function coverPatternDataUrl(pattern: CoverPattern) {
+  const tile = Math.max(8, Math.round(pattern.scale * 96));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tile}" height="${tile}" viewBox="0 0 100 100"><rect width="100" height="100" fill="${pattern.background}"/><g transform="rotate(${pattern.angle} 50 50)">${patternTileContent(pattern)}</g></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 export function coverFillCss(fill: CoverFill) {
   if (fill.type === "none") return "transparent";
   if (fill.type === "solid") return fill.color;
+  if (fill.type === "pattern") {
+    const pattern = fill.pattern ?? coverPattern(fill.color);
+    return `${pattern.background} url("${coverPatternDataUrl(pattern)}") repeat`;
+  }
   return coverGradientCss(fill.gradient);
 }
 
@@ -530,12 +567,24 @@ function normalizeGradient(value: unknown, fallback: BookCoverGradient): BookCov
   };
 }
 
+function normalizePattern(value: unknown, fallback: CoverPattern): CoverPattern {
+  const source = isRecord(value) ? value : {};
+  return {
+    type: oneOf(source.type, ["dots", "stripes", "grid", "checks", "waves", "crosshatch", "diagonal", "confetti"] as const, fallback.type),
+    color: color(source.color, fallback.color),
+    background: color(source.background, fallback.background),
+    scale: decimal(source.scale, fallback.scale, 0.08, 2),
+    angle: decimal(source.angle, fallback.angle, 0, 360),
+  };
+}
+
 function normalizeFill(value: unknown, fallback: CoverFill): CoverFill {
   const source = isRecord(value) ? value : {};
   return {
-    type: oneOf(source.type, ["solid", "gradient", "none"] as const, fallback.type),
+    type: oneOf(source.type, ["solid", "gradient", "pattern", "none"] as const, fallback.type),
     color: color(source.color, fallback.color),
     gradient: normalizeGradient(source.gradient, fallback.gradient),
+    pattern: normalizePattern(source.pattern, fallback.pattern ?? coverPattern()),
   };
 }
 
@@ -2223,17 +2272,29 @@ function curvedTextSvg(layer: CoverTextLayer, content: string, idPrefix: string)
 }
 
 function shapeSvgMarkup(layer: CoverShapeLayer, layerId: string) {
-  const fill = layer.fill.type === "none" ? "none" : layer.fill.type === "solid" ? layer.fill.color : `url(#${layerId}-gradient)`;
   const gradientId = `${layerId}-gradient`;
+  const patternId = `${layerId}-pattern`;
+  const pattern = layer.fill.pattern ?? coverPattern(layer.fill.color);
+  const fill = layer.fill.type === "none"
+    ? "none"
+    : layer.fill.type === "solid"
+      ? layer.fill.color
+      : layer.fill.type === "pattern"
+        ? `url(#${patternId})`
+        : `url(#${gradientId})`;
   const meta = gradientMeta(layer.fill.gradient);
   const stops = layer.fill.gradient.stops
     .slice()
     .sort((a, b) => a.position - b.position)
     .map((stop) => `<stop offset="${Math.round(stop.position * 1000) / 10}%" stop-color="${stop.color}"/>`)
     .join("");
+  const tileWidth = layer.width > 0 ? (pattern.scale / layer.width) * 100 : 10;
+  const tileHeight = layer.height > 0 ? (pattern.scale / layer.height) * 100 : 10;
   const defs = layer.fill.type === "gradient"
     ? `<defs>${layer.fill.gradient.type === "radial" ? `<radialGradient id="${gradientId}" cx="50%" cy="50%" r="50%">${stops}</radialGradient>` : `<linearGradient id="${gradientId}" x1="${meta.x1 * 100}%" y1="${meta.y1 * 100}%" x2="${meta.x2 * 100}%" y2="${meta.y2 * 100}%">${stops}</linearGradient>`}</defs>`
-    : "";
+    : layer.fill.type === "pattern"
+      ? `<defs><pattern id="${patternId}" patternUnits="userSpaceOnUse" width="${tileWidth}" height="${tileHeight}" patternTransform="rotate(${pattern.angle} ${tileWidth / 2} ${tileHeight / 2})"><image href="${escapeHtml(coverPatternDataUrl(pattern))}" width="${tileWidth}" height="${tileHeight}" preserveAspectRatio="none"/></pattern></defs>`
+      : "";
   const shapeUnit = Math.max(0.08, (layer.width + layer.height) / 2);
   const stroke = layer.strokeWidth > 0 ? `stroke="${layer.strokeColor}" stroke-width="${Math.max(0.2, layer.strokeWidth * 100 / shapeUnit)}"` : "";
   const dash = layer.dash === "dashed" ? `stroke-dasharray="4 3"` : layer.dash === "dotted" ? `stroke-dasharray="1 3"` : "";
@@ -2455,10 +2516,23 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
   });
 }
 
-function applyFill(ctx: CanvasRenderingContext2D, fill: CoverFill, x: number, y: number, width: number, height: number) {
+function patternForFill(ctx: CanvasRenderingContext2D, fill: CoverFill, images?: Map<string, HTMLImageElement | null>) {
+  if (fill.type !== "pattern") return null;
+  const pattern = fill.pattern ?? coverPattern(fill.color);
+  const image = images?.get(coverPatternDataUrl(pattern));
+  if (!image) return null;
+  const canvasPattern = ctx.createPattern(image, "repeat");
+  if (canvasPattern && typeof DOMMatrix !== "undefined") canvasPattern.setTransform(new DOMMatrix().scale(1 / 96));
+  return canvasPattern;
+}
+
+function applyFill(ctx: CanvasRenderingContext2D, fill: CoverFill, x: number, y: number, width: number, height: number, images?: Map<string, HTMLImageElement | null>) {
   if (fill.type === "none") return;
   if (fill.type === "solid") {
     ctx.fillStyle = fill.color;
+  } else if (fill.type === "pattern") {
+    const pattern = patternForFill(ctx, fill, images);
+    ctx.fillStyle = pattern ?? (fill.pattern ?? coverPattern(fill.color)).background;
   } else {
     const meta = gradientMeta(fill.gradient);
     const gradient = fill.gradient.type === "radial"
@@ -2517,8 +2591,9 @@ function drawImageFit(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x:
   ctx.restore();
 }
 
-function fillStyleFor(ctx: CanvasRenderingContext2D, fill: CoverFill, x: number, y: number, width: number, height: number): string | CanvasGradient {
+function fillStyleFor(ctx: CanvasRenderingContext2D, fill: CoverFill, x: number, y: number, width: number, height: number, images?: Map<string, HTMLImageElement | null>): string | CanvasGradient | CanvasPattern {
   if (fill.type === "solid") return fill.color;
+  if (fill.type === "pattern") return patternForFill(ctx, fill, images) ?? (fill.pattern ?? coverPattern(fill.color)).background;
   const meta = gradientMeta(fill.gradient);
   const gradient = fill.gradient.type === "radial"
     ? ctx.createRadialGradient(x + width / 2, y + height / 2, 0, x + width / 2, y + height / 2, Math.max(width, height) / 2)
@@ -2527,9 +2602,9 @@ function fillStyleFor(ctx: CanvasRenderingContext2D, fill: CoverFill, x: number,
   return gradient;
 }
 
-function drawShape(ctx: CanvasRenderingContext2D, layer: CoverShapeLayer, x: number, y: number, width: number, height: number) {
+function drawShape(ctx: CanvasRenderingContext2D, layer: CoverShapeLayer, x: number, y: number, width: number, height: number, patternImages?: Map<string, HTMLImageElement | null>) {
   const fill = layer.fill;
-  if (fill.type !== "none") ctx.fillStyle = fillStyleFor(ctx, fill, x, y, width, height);
+  if (fill.type !== "none") ctx.fillStyle = fillStyleFor(ctx, fill, x, y, width, height, patternImages);
   if (layer.shape === "rectangle" || layer.shape === "ellipse") {
     if (layer.shape === "rectangle") {
       roundRectPath(ctx, x, y, width, height, layer.radius);
@@ -2552,7 +2627,7 @@ function drawShape(ctx: CanvasRenderingContext2D, layer: CoverShapeLayer, x: num
   ctx.translate(x, y);
   ctx.scale(width / 100, height / 100);
   if (fill.type !== "none") {
-    ctx.fillStyle = fillStyleFor(ctx, fill, 0, 0, 100, 100);
+    ctx.fillStyle = fillStyleFor(ctx, fill, 0, 0, 100, 100, patternImages);
     ctx.fill(path);
   }
   if (layer.strokeWidth > 0) {
@@ -2823,12 +2898,23 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   ctx.translate(-rect.x, -rect.y);
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-  applyFill(ctx, cover.doc.background, 0, 0, metrics.fullWidth, metrics.fullHeight);
+  const patternSources = new Set<string>();
+  const addPatternSource = (fill: CoverFill) => {
+    if (fill.type === "pattern") patternSources.add(coverPatternDataUrl(fill.pattern ?? coverPattern(fill.color)));
+  };
+  addPatternSource(cover.doc.background);
+  for (const layer of cover.doc.layers) if (layer.type === "shape") addPatternSource(layer.fill);
   const imageSources = cover.doc.layers
     .flatMap((layer) => layer.type === "image" && layer.src ? [layer.src] : layer.type === "artwork" ? [coverArtworkDataUrl(layer)] : []);
-  const images = await Promise.all(imageSources.map(loadImage));
+  const patternList = [...patternSources];
+  const [images, patternImages] = await Promise.all([
+    Promise.all(imageSources.map(loadImage)),
+    Promise.all(patternList.map(loadImage)),
+  ]);
   const imageBySource = new Map(imageSources.map((source, index) => [source, images[index]]));
+  const patternBySource = new Map(patternList.map((source, index) => [source, patternImages[index]]));
   const barcodeImage = cover.barcodeImage ? await loadImage(cover.barcodeImage) : null;
+  applyFill(ctx, cover.doc.background, 0, 0, metrics.fullWidth, metrics.fullHeight, patternBySource);
   const layers = cover.doc.layers.filter((layer) => coverLayerVisible(cover.doc, layer) && layerForPanel(layer, target));
   for (const layer of layers) {
     const spread = layerSpreadRect(metrics, layer);
@@ -2868,7 +2954,7 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
         ctx.fill();
       }
     } else if (layer.type === "shape") {
-      drawShape(ctx, layer, 0, 0, spread.width, spread.height);
+      drawShape(ctx, layer, 0, 0, spread.width, spread.height, patternBySource);
     } else if (layer.type === "line") {
       ctx.fillStyle = layer.color;
       if (layer.dash === "solid") {

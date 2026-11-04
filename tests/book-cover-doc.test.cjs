@@ -5,8 +5,10 @@ const {
   COVER_FONTS,
   COVER_IMAGE_PRESETS,
   coverDocMarkup,
+  coverFillCss,
   coverImageFilterCss,
   coverImageMaskCss,
+  coverPatternDataUrl,
   cloneCoverLayers,
   coverLayerLocked,
   coverLayerVisible,
@@ -428,4 +430,24 @@ test("layer shadow and glow survive parsing and render into markup", () => {
   assert.equal(legacy.layers[0].shadow.enabled, false);
   assert.equal(legacy.layers[0].glow.enabled, false);
   assert.equal(legacy.layers[0].shadow.blur, 0.16);
+});
+
+
+test("pattern fills persist through CSS, markup, and SVG shapes", () => {
+  const pattern = { type: "stripes", color: "#a56b3e", background: "#f5efe4", scale: 0.4, angle: 30 };
+  const fill = { ...coverFill("#112233"), type: "pattern", pattern };
+  const doc = parseCoverDocument({
+    background: fill,
+    layers: [shapeLayer({ id: "shape", name: "Pattern star", panel: "front", x: 1, y: 1, width: 2, height: 2, shape: "star", fill })],
+  });
+  assert.equal(doc.background.type, "pattern");
+  assert.equal(doc.background.pattern.type, "stripes");
+  assert.equal(doc.background.pattern.scale, 0.4);
+  assert.match(coverFillCss(doc.background), /^#f5efe4 url\("data:image\/svg\+xml,/);
+  assert.match(coverPatternDataUrl(doc.background.pattern), /^data:image\/svg\+xml,/);
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.match(markup, /data:image\/svg\+xml/);
+  assert.match(markup, /<pattern /);
+  const clamped = parseCoverDocument({ background: { ...fill, pattern: { ...pattern, scale: 99 } } });
+  assert.equal(clamped.background.pattern.scale, 2);
 });

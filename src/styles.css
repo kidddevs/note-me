@@ -6333,10 +6333,12 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-fill-editor { display: flex; flex-direction: column; gap: 7px; }
 .cover-fill-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cover-fill-head > span { color: var(--text-3); font-size: 8px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
-.cover-fill-head .cover-segmented { width: 158px; }
+.cover-fill-head .cover-segmented { width: 202px; }
 .cover-fill-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: end; }
 .cover-fill-row > label { display: flex; flex-direction: column; gap: 4px; color: var(--text-3); font-size: 8px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .cover-gradient-editor { display: flex; flex-direction: column; gap: 7px; }
+.cover-pattern-editor { display: flex; flex-direction: column; gap: 7px; }
+.cover-pattern-preview { height: 48px; border: 1px solid var(--border); border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); }
 .cover-gradient-stops { display: flex; flex-direction: column; gap: 4px; }
 .cover-gradient-stop { display: grid; grid-template-columns: 28px minmax(0, 1fr) 27px 18px; align-items: center; gap: 4px; }
 .cover-gradient-stop input[type="color"] { width: 26px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: transparent; cursor: pointer; }

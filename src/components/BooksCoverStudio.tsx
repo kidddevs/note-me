@@ -108,6 +108,7 @@ import {
   coverShapePath,
   coverLayerVisible,
   coverMetrics,
+  coverPattern,
   coverPanelRect,
   createCoverDocument,
   createInitialCoverDocument,
@@ -140,6 +141,7 @@ import {
   type CoverLayerType,
   type CoverLineLayer,
   type CoverPanel,
+  type CoverPatternId,
   type CoverShapeKind,
   type CoverShapeLayer,
   type CoverTextAlign,
@@ -2992,11 +2994,25 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
 function FillEditor({ label, fill, onChange }: { label: string; fill: CoverFill; onChange: (fill: CoverFill) => void }) {
   const update = (patch: Partial<CoverFill>) => onChange({ ...fill, ...patch });
   const updateGradient = (patch: Partial<CoverFill["gradient"]>) => update({ gradient: { ...fill.gradient, ...patch } });
+  const pattern = fill.pattern ?? coverPattern(fill.color);
+  const updatePattern = (patch: Partial<typeof pattern>) => update({ pattern: { ...pattern, ...patch } });
   const setStop = (index: number, patch: Partial<{ color: string; position: number }>) => updateGradient({ stops: fill.gradient.stops.map((stop, stopIndex) => stopIndex === index ? { ...stop, ...patch } : stop) });
   return (
     <div className="cover-fill-editor">
-      <div className="cover-fill-head"><span>{label}</span><Segmented value={fill.type} options={[{ value: "solid", label: "Solid" }, { value: "gradient", label: "Gradient" }, { value: "none", label: "None" }]} onChange={(type) => update({ type })} /></div>
+      <div className="cover-fill-head"><span>{label}</span><Segmented value={fill.type} options={[{ value: "solid", label: "Solid" }, { value: "gradient", label: "Gradient" }, { value: "pattern", label: "Pattern" }, { value: "none", label: "None" }]} onChange={(type) => update({ type })} /></div>
       {fill.type === "solid" && <ColorField label="Colour" value={fill.color} onChange={(color) => update({ color })} />}
+      {fill.type === "pattern" && (
+        <div className="cover-pattern-editor">
+          <div className="cover-fill-row">
+            <label>Pattern<select value={pattern.type} onChange={(event) => updatePattern({ type: event.target.value as CoverPatternId })}><option value="dots">Dots</option><option value="stripes">Stripes</option><option value="grid">Grid</option><option value="checks">Checks</option><option value="waves">Waves</option><option value="crosshatch">Crosshatch</option><option value="diagonal">Diagonal</option><option value="confetti">Confetti</option></select></label>
+            <NumberField label="Scale" value={pattern.scale} onChange={(scale) => updatePattern({ scale: Math.max(0.08, scale) })} step={0.05} min={0.08} max={2} suffix="in" />
+          </div>
+          <ColorField label="Pattern ink" value={pattern.color} onChange={(color) => updatePattern({ color })} />
+          <ColorField label="Paper colour" value={pattern.background} onChange={(background) => updatePattern({ background })} />
+          <SliderField label="Angle" value={pattern.angle} onChange={(angle) => updatePattern({ angle })} min={0} max={360} step={1} suffix="°" />
+          <div className="cover-pattern-preview" style={{ background: coverFillCss({ ...fill, type: "pattern", pattern }) }} />
+        </div>
+      )}
       {fill.type === "gradient" && (
         <div className="cover-gradient-editor">
           <div className="cover-fill-row">
