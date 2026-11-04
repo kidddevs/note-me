@@ -16,13 +16,17 @@ import {
   AlignRight,
   AlignStartVertical,
   AlignVerticalDistributeCenter,
+  AlertCircle,
+  AlertTriangle,
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Barcode,
   BookOpen,
   BringToFront,
   CaseUpper,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -46,6 +50,7 @@ import {
   Frame,
   Grid3X3,
   ImagePlus,
+  Info,
   Italic,
   LayoutTemplate,
   Lock,
@@ -65,6 +70,7 @@ import {
   ScanLine,
   Search,
   SendToBack,
+  ShieldCheck,
   Settings2,
   SlidersHorizontal,
   Sparkles,
@@ -163,6 +169,7 @@ import {
 import { bookInputFromBook, TRIM_SIZES } from "../lib/bookPublishing";
 import { downloadCoverMockup } from "../lib/bookCoverMockup";
 import { downloadCoverPackage } from "../lib/bookCoverPackage";
+import { coverPreflight, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import { useBooks } from "../store/books";
 import { notify } from "../store/toast";
@@ -513,6 +520,7 @@ export function CoverScreen({
   const [artworkOpen, setArtworkOpen] = useState(false);
   const [mockupOpen, setMockupOpen] = useState(false);
   const [layerMenu, setLayerMenu] = useState<LayerMenuState | null>(null);
+  const [preflightOpen, setPreflightOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [autoFit, setAutoFit] = useState(true);
   const [dpi, setDpi] = useState(300);
@@ -1332,6 +1340,7 @@ export function CoverScreen({
       else if (templateOpen) setTemplateOpen(false);
       else if (mockupOpen) setMockupOpen(false);
       else if (layerMenu) setLayerMenu(null);
+      else if (preflightOpen) setPreflightOpen(false);
       else if (selectedIds.length > 1) { setSelectedLayerId(selectedLayerId); setExtraSelectedIds([]); }
       else selectLayer(null);
       return;
@@ -1406,7 +1415,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, selectedLayerId, selectedIds, undo, redo]);
+  }, [previewing, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, selectedLayerId, selectedIds, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -1473,6 +1482,7 @@ export function CoverScreen({
             <button type="button" className={`cover-icon-button ${doc.showGrid ? "active" : ""}`} title="Toggle grid" aria-label="Toggle grid" onClick={() => updateDoc({ ...doc, showGrid: !doc.showGrid }, { key: "grid" })}><Grid3X3 size={15} /></button>
             <button type="button" className={`cover-icon-button ${previewing ? "active" : ""}`} title={previewing ? "Exit preview" : "Preview cover"} aria-label={previewing ? "Exit preview" : "Preview cover"} onClick={() => { setPreviewing((value) => !value); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><ScanLine size={15} /></button>
             <button type="button" className="cover-icon-button" title="3D book mockup" aria-label="3D book mockup" onClick={() => { setMockupOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><Rotate3D size={16} /></button>
+            <button type="button" className="cover-icon-button" title="Print preflight" aria-label="Print preflight" onClick={() => { setPreflightOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><ShieldCheck size={16} /></button>
           </div>
           <div className="cover-bar-right">
             <span className="cover-dimension-chip">{formatDimension(metrics.fullWidth)} × {formatDimension(metrics.fullHeight)} in</span>
@@ -1711,6 +1721,15 @@ export function CoverScreen({
 
       {templateOpen && <TemplateModal book={book} cover={cover} onApply={applyTemplate} onClose={() => setTemplateOpen(false)} />}
       {mockupOpen && <BookMockup book={book} cover={cover} onClose={() => setMockupOpen(false)} />}
+      {preflightOpen && (
+        <PreflightModal
+          book={book}
+          cover={cover}
+          onSelectLayer={(id) => { selectLayer(id); setPreflightOpen(false); }}
+          onClose={() => setPreflightOpen(false)}
+          onPackage={() => { setPreflightOpen(false); void handleDownloadPackage(); }}
+        />
+      )}
       {layerMenu && menuLayer && (
         <LayerContextMenu
           x={layerMenu.x}
@@ -2218,6 +2237,63 @@ function HistoryPanel({ history, future, onJump }: { history: CoverHistoryEntry[
 
 function historyTime(value: number) {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+/* ========================================================================== */
+
+function preflightIcon(severity: CoverPreflightCheck["severity"]) {
+  if (severity === "error") return <AlertCircle size={15} />;
+  if (severity === "warning") return <AlertTriangle size={15} />;
+  if (severity === "pass") return <CheckCircle2 size={15} />;
+  return <Info size={15} />;
+}
+
+function PreflightModal({ book, cover, onSelectLayer, onClose, onPackage }: { book: Book; cover: BookCoverDesign; onSelectLayer: (id: string) => void; onClose: () => void; onPackage: () => void }) {
+  const checks = useMemo(() => coverPreflight(book, cover), [book, cover]);
+  const summary = useMemo(() => coverPreflightSummary(checks), [checks]);
+  const order: Record<CoverPreflightCheck["severity"], number> = { error: 0, warning: 1, info: 2, pass: 3 };
+  const sorted = [...checks].sort((a, b) => order[a.severity] - order[b.severity]);
+  const headline = summary.errors > 0
+    ? `${summary.errors} blocking issue${summary.errors === 1 ? "" : "s"}`
+    : summary.warnings > 0
+      ? `${summary.warnings} thing${summary.warnings === 1 ? "" : "s"} to review`
+      : "Ready for print.";
+  return (
+    <div className="cover-modal-overlay" role="dialog" aria-modal="true" aria-label="Print preflight" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="cover-preflight-modal">
+        <div className="cover-preflight-head">
+          <div>
+            <span className="books-eyebrow"><ShieldCheck size={13} /> Preflight</span>
+            <h2>{headline}</h2>
+            <p>{summary.errors > 0 ? "Fix the blocking issues before sending this wrap to a printer." : summary.warnings > 0 ? "These are not blockers, but they are worth checking before handoff." : "Live checks passed for the current wrap. You can download the production package with confidence."}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close preflight"><X size={18} /></button>
+        </div>
+        <div className="cover-preflight-summary">
+          <span className="cover-preflight-pill error"><strong>{summary.errors}</strong> errors</span>
+          <span className="cover-preflight-pill warning"><strong>{summary.warnings}</strong> warnings</span>
+          <span className="cover-preflight-pill pass"><strong>{summary.passes}</strong> passed</span>
+          <span className="cover-preflight-pill info"><strong>{summary.infos}</strong> notes</span>
+        </div>
+        <div className="cover-preflight-list">
+          {sorted.map((check) => (
+            <button key={check.id} type="button" className={`cover-preflight-row severity-${check.severity} ${check.layerId ? "has-target" : ""}`} onClick={() => check.layerId && onSelectLayer(check.layerId)} disabled={!check.layerId}>
+              <span className="cover-preflight-icon">{preflightIcon(check.severity)}</span>
+              <span className="cover-preflight-copy"><strong>{check.label}</strong><small>{check.detail}</small></span>
+              {check.layerId && <span className="cover-preflight-jump">Select layer <ArrowRight size={12} /></span>}
+            </button>
+          ))}
+        </div>
+        <div className="cover-preflight-foot">
+          <span><ShieldCheck size={12} /> Checks run against the live cover and print setup.</span>
+          <div>
+            <button type="button" className="cover-outline-button" onClick={onClose}>Close</button>
+            <button type="button" className="cover-primary-button" onClick={onPackage}><Package size={13} /> Download package</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ========================================================================== */
