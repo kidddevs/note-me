@@ -255,7 +255,7 @@ interface CoverStageProps {
   onInteractionStart: (key: string) => void;
   onInteractionEnd: () => void;
   onEditText: (id: string) => void;
-  onDropImage: (dataUrl: string, x: number, y: number) => void;
+  onDropImage: (dataUrl: string, x: number, y: number, sourceWidth: number, sourceHeight: number) => void;
   onSample: (x: number, y: number) => void;
   onContextMenu: (event: React.MouseEvent<HTMLElement>, layerId: string) => void;
   onGuideAdd: (axis: "x" | "y", spreadPosition: number) => void;
@@ -356,13 +356,29 @@ function pickerColor(value: string) {
   return /^#[0-9a-f]{6}$/i.test(value) ? value : /^#[0-9a-f]{6}/i.test(value) ? value.slice(0, 7) : "#000000";
 }
 
-function readImageFile(file: File | null, maxMb = 16): Promise<string> {
+interface ReadCoverImage {
+  src: string;
+  width: number;
+  height: number;
+}
+
+function readImageFile(file: File | null, maxMb = 16): Promise<ReadCoverImage> {
   return new Promise((resolve, reject) => {
     if (!file) return reject(new Error("No file selected."));
     if (!file.type.startsWith("image/")) return reject(new Error("Choose a PNG, JPEG, WebP, GIF, or SVG image."));
     if (file.size > maxMb * 1024 * 1024) return reject(new Error(`Choose an image smaller than ${maxMb} MB.`));
     const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onload = () => {
+      const src = typeof reader.result === "string" ? reader.result : "";
+      if (!src) {
+        reject(new Error("The image could not be read."));
+        return;
+      }
+      const image = new Image();
+      image.onload = () => resolve({ src, width: image.naturalWidth || 0, height: image.naturalHeight || 0 });
+      image.onerror = () => resolve({ src, width: 0, height: 0 });
+      image.src = src;
+    };
     reader.onerror = () => reject(new Error(String(reader.error ?? "The image could not be read.")));
     reader.readAsDataURL(file);
   });
@@ -943,7 +959,7 @@ export function CoverScreen({
 
   const addImage = async (file: File | null) => {
     try {
-      const dataUrl = await readImageFile(file);
+      const image = await readImageFile(file);
       const target = designPanel;
       const width = target === "spine" ? Math.max(0.3, metrics.spineWidth) : panelWidth * 0.7;
       const height = target === "spine" ? metrics.trimHeight * 0.5 : metrics.trimHeight * 0.55;
@@ -955,7 +971,9 @@ export function CoverScreen({
         y: Math.max(0.2, metrics.trimHeight * 0.2),
         width,
         height,
-        src: dataUrl,
+        src: image.src,
+        sourceWidth: image.width,
+        sourceHeight: image.height,
         fit: "cover",
       });
       addLayer(layer, target);
@@ -967,8 +985,8 @@ export function CoverScreen({
   const replaceImage = async (file: File | null) => {
     if (!selected || selected.type !== "image") return;
     try {
-      const dataUrl = await readImageFile(file);
-      updateLayer(selected.id, { src: dataUrl, name: file?.name.replace(/\.[^.]+$/, "").slice(0, 50) || selected.name }, { key: `replace-image:${selected.id}` });
+      const image = await readImageFile(file);
+      updateLayer(selected.id, { src: image.src, sourceWidth: image.width, sourceHeight: image.height, name: file?.name.replace(/\.[^.]+$/, "").slice(0, 50) || selected.name }, { key: `replace-image:${selected.id}` });
     } catch (error) {
       notify("error", "Image could not be replaced", String(error));
     }
@@ -976,8 +994,8 @@ export function CoverScreen({
 
   const uploadBarcode = async (file: File | null) => {
     try {
-      const dataUrl = await readImageFile(file, 8);
-      updateCover({ barcodeImage: dataUrl }, { key: "barcode-image" });
+      const image = await readImageFile(file, 8);
+      updateCover({ barcodeImage: image.src }, { key: "barcode-image" });
       notify("success", "Barcode image added");
     } catch (error) {
       notify("error", "Barcode image could not be added", String(error));
@@ -1896,7 +1914,7 @@ export function CoverScreen({
             onGroupSelection={groupSelection}
             onDuplicateSelection={duplicateSelection}
             onDeleteSelection={deleteSelection}
-            onDropImage={(dataUrl, x, y) => {
+            onDropImage={(dataUrl, x, y, sourceWidth, sourceHeight) => {
               const target = designPanel;
               addLayer(imageLayer({
                 id: newCoverLayerId("image"),
@@ -1907,6 +1925,8 @@ export function CoverScreen({
                 width: Math.min(panelWidth * 0.6, 3.4),
                 height: Math.min(metrics.trimHeight * 0.5, 4.5),
                 src: dataUrl,
+                sourceWidth,
+                sourceHeight,
                 fit: "cover",
               }), target);
             }}
@@ -3003,7 +3023,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
     const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/"));
     if (!file) return;
     try {
-      const dataUrl = await readImageFile(file);
+      const image = await readImageFile(file);
       const sheet = event.currentTarget;
       const rect = sheet.getBoundingClientRect();
       const scale = rect.width / metrics.fullWidth;
@@ -3012,7 +3032,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
       const origin = metrics.panelOrigins[currentDesignPanel];
       const width = Math.min(currentDesignPanel === "spine" ? metrics.spineWidth : metrics.panelWidths[currentDesignPanel] * 0.6, 3.4);
       const height = Math.min(metrics.trimHeight * 0.5, width * 0.75);
-      onDropImage(dataUrl, spreadX - origin.x - width / 2, spreadY - origin.y - height / 2);
+      onDropImage(image.src, spreadX - origin.x - width / 2, spreadY - origin.y - height / 2, image.width, image.height);
     } catch (error) {
       notify("error", "Image could not be dropped", String(error));
     }
@@ -3448,6 +3468,9 @@ function LayerInspector({
 
   const contentTokens = ["{{title}}", "{{subtitle}}", "{{tagline}}", "{{author}}", "{{authorBio}}", "{{description}}", "{{backCopy}}", "{{genre}}", "{{publisher}}", "{{isbn}}", "{{year}}"];
   const panelBounds = layer.panel === "wrap" ? { width: metrics.fullWidth, height: metrics.fullHeight } : layer.panel === "back" ? { width: metrics.panelWidths.back, height: metrics.trimHeight } : layer.panel === "spine" ? { width: metrics.panelWidths.spine, height: metrics.trimHeight } : { width: metrics.panelWidths.front, height: metrics.trimHeight };
+  const imageDpi = layer.type === "image" && layer.sourceWidth > 0 && layer.sourceHeight > 0 && layer.width > 0 && layer.height > 0
+    ? Math.floor(Math.min(layer.sourceWidth / layer.width, layer.sourceHeight / layer.height))
+    : 0;
 
   const fitTextToFrame = () => {
     if (layer.type !== "text") return;
@@ -3631,6 +3654,7 @@ function LayerInspector({
             <label className="cover-select-field"><span>Mask</span><select value={layer.mask} onChange={(event) => onUpdate({ mask: event.target.value as CoverImageMask }, { key: `mask:${layer.id}` })}><option value="none">Rectangle</option><option value="circle">Circle</option><option value="arch">Arch</option><option value="diamond">Diamond</option><option value="hexagon">Hexagon</option></select></label>
             <NumberField label="Radius" value={layer.radius} onChange={(radius) => onUpdate({ radius: Math.max(0, radius) }, { key: `radius:${layer.id}` })} step={0.01} min={0} suffix="in" />
           </div>
+          {imageDpi > 0 && <p className={`cover-image-resolution ${imageDpi < 150 ? "low" : imageDpi < 220 ? "review" : "good"}`}>Source {layer.sourceWidth.toLocaleString()} × {layer.sourceHeight.toLocaleString()} px · <strong>~{imageDpi.toLocaleString()} DPI</strong> at this size</p>}
           <div className="cover-image-sliders">
             <SliderField label="Brightness" value={layer.brightness} onChange={(brightness) => onUpdate({ brightness }, { key: `brightness:${layer.id}` })} min={20} max={180} step={1} suffix="%" />
             <SliderField label="Contrast" value={layer.contrast} onChange={(contrast) => onUpdate({ contrast }, { key: `contrast:${layer.id}` })} min={20} max={220} step={1} suffix="%" />

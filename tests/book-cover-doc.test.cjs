@@ -558,3 +558,17 @@ test("text highlight boxes persist and render in straight and curved text", () =
   assert.equal(clamped.layers[0].highlight.padding, 0.3);
   assert.equal(clamped.layers[0].highlight.radius, 0.2);
 });
+
+
+test("image layers keep source pixel dimensions for resolution checks", () => {
+  const doc = parseCoverDocument({ layers: [{ id: "img", type: "image", name: "Image", panel: "front", x: 0, y: 0, width: 2, height: 3, src: "data:image/png;base64,AA==", sourceWidth: 600, sourceHeight: 900 }] });
+  assert.equal(doc.layers[0].sourceWidth, 600);
+  assert.equal(doc.layers[0].sourceHeight, 900);
+  const legacy = parseCoverDocument({ layers: [{ id: "old", type: "image", name: "Old", panel: "front", x: 0, y: 0, width: 2, height: 3, src: "x" }] });
+  assert.equal(legacy.layers[0].sourceWidth, 0);
+  assert.equal(legacy.layers[0].sourceHeight, 0);
+  const clamped = parseCoverDocument({ layers: [{ ...doc.layers[0], sourceWidth: 999999, sourceHeight: -2 }] });
+  assert.equal(clamped.layers[0].sourceWidth, 100000);
+  assert.equal(clamped.layers[0].sourceHeight, 0);
+  assert.equal(imageLayer({ id: "plain", name: "Plain", panel: "front", x: 0, y: 0, width: 1, height: 1, src: "x" }).sourceWidth, 0);
+});

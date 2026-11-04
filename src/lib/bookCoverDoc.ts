@@ -123,6 +123,8 @@ export interface CoverTextLayer extends CoverLayerBase {
 export interface CoverImageLayer extends CoverLayerBase {
   type: "image";
   src: string;
+  sourceWidth: number;
+  sourceHeight: number;
   fit: "cover" | "contain";
   radius: number;
   grayscale: boolean;
@@ -688,6 +690,8 @@ export function imageLayer(input: Partial<CoverImageLayer> & Pick<CoverImageLaye
     type: "image",
     ...baseLayer(input),
     src: input.src,
+    sourceWidth: input.sourceWidth ?? 0,
+    sourceHeight: input.sourceHeight ?? 0,
     fit: input.fit ?? "cover",
     radius: input.radius ?? 0,
     grayscale: input.grayscale ?? false,
@@ -859,6 +863,8 @@ function normalizeLayer(value: unknown, index: number): CoverLayer | null {
       ...base,
       type,
       src: text(value.src, "", 24_000_000),
+      sourceWidth: integer(value.sourceWidth, 0, 0, 100_000),
+      sourceHeight: integer(value.sourceHeight, 0, 0, 100_000),
       fit: value.fit === "contain" ? "contain" : "cover",
       radius: decimal(value.radius, 0, 0, 12),
       grayscale: boolean(value.grayscale, false),

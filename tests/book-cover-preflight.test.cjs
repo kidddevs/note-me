@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { coverPreflight, coverPreflightFix, coverPreflightSummary } = require("./.compiled/src/lib/bookCoverPreflight.js");
-const { barcodeLayer, parseCoverDocument, textLayer } = require("./.compiled/src/lib/bookCoverDoc.js");
+const { barcodeLayer, imageLayer, parseCoverDocument, textLayer } = require("./.compiled/src/lib/bookCoverDoc.js");
 
 const book = { title: "The Quiet Hour", author: "Amelia Hart", trim_size: "6x9" };
 const baseCover = {
@@ -138,4 +138,33 @@ test("preflight fixes enable the cover and correct the ISBN check digit", () => 
   const next = { ...cover, ...isbn.patch };
   assert.ok(next.isbn.endsWith("7"));
   assert.equal(coverPreflight(book, next).find((item) => item.id === "isbn").severity, "pass");
+});
+
+
+test("preflight reports image resolution and can fit low-resolution layers to 300 DPI", () => {
+  const lowRes = imageLayer({ id: "low-res", name: "Low res", panel: "front", x: 1, y: 1, width: 4, height: 6, src: "data:image/jpeg;base64,AA==", sourceWidth: 500, sourceHeight: 750 });
+  const cover = coverWith([...completeLayers, lowRes]);
+  const check = coverPreflight(book, cover).find((item) => item.id === "image-resolution");
+  assert.equal(check.severity, "warning");
+  assert.match(check.detail, /below 150 DPI/);
+  assert.match(check.detail, /125 DPI/);
+  assert.ok(check.fix);
+
+  const result = coverPreflightFix(book, cover, check);
+  assert.ok(result);
+  const next = { ...cover, ...result.patch };
+  const fixed = next.doc.layers.find((layer) => layer.id === "low-res");
+  assert.equal(fixed.width, 1.667);
+  assert.equal(fixed.height, 2.5);
+  assert.equal(fixed.x, 2.167);
+  assert.equal(fixed.y, 2.75);
+  assert.equal(coverPreflight(book, next).find((item) => item.id === "image-resolution").severity, "pass");
+
+  const highRes = imageLayer({ id: "high-res", name: "High res", panel: "front", x: 1, y: 1, width: 4, height: 6, src: "data:image/jpeg;base64,AA==", sourceWidth: 3000, sourceHeight: 4500 });
+  assert.equal(coverPreflight(book, coverWith([...completeLayers, highRes])).find((item) => item.id === "image-resolution").severity, "pass");
+
+  const legacy = imageLayer({ id: "legacy", name: "Legacy", panel: "front", x: 1, y: 1, width: 4, height: 6, src: "data:image/jpeg;base64,AA==" });
+  const legacyCheck = coverPreflight(book, coverWith([...completeLayers, legacy])).find((item) => item.id === "image-resolution");
+  assert.equal(legacyCheck.severity, "info");
+  assert.equal(legacyCheck.fix, undefined);
 });

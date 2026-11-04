@@ -23,7 +23,8 @@ export type CoverPreflightFixKind =
   | "size-barcode"
   | "dedupe-barcodes"
   | "spine-type"
-  | "safe-zone";
+  | "safe-zone"
+  | "image-resolution";
 
 export interface CoverPreflightFix {
   kind: CoverPreflightFixKind;
@@ -217,6 +218,29 @@ export function coverPreflight(book: Book, cover: BookCoverDesign): CoverPreflig
     layerId: missingImages[0]?.id,
   });
 
+  const measuredImages = images
+    .filter((layer) => layer.sourceWidth > 0 && layer.sourceHeight > 0 && layer.width > 0 && layer.height > 0)
+    .map((layer) => ({ layer, dpi: Math.floor(Math.min(layer.sourceWidth / layer.width, layer.sourceHeight / layer.height)) }))
+    .sort((a, b) => a.dpi - b.dpi);
+  const lowResolution = measuredImages.filter((entry) => entry.dpi < 150);
+  const reviewResolution = measuredImages.filter((entry) => entry.dpi >= 150 && entry.dpi < 220);
+  add({
+    id: "image-resolution",
+    label: "Image resolution",
+    detail: lowResolution.length
+      ? `${lowResolution.length} image layer${lowResolution.length === 1 ? " is" : "s are"} below 150 DPI (lowest ${lowResolution[0].dpi} DPI).`
+      : reviewResolution.length
+        ? `${reviewResolution.length} image layer${reviewResolution.length === 1 ? " is" : "s are"} between 150 and 219 DPI (lowest ${reviewResolution[0].dpi} DPI).`
+        : measuredImages.length
+          ? `Measured images are at least ${measuredImages[0].dpi} DPI at their placed size.`
+          : images.length
+            ? "Image resolution couldn't be measured for legacy image layers. Replace the image to record its pixel size."
+            : "No photographic images to check.",
+    severity: lowResolution.length ? "warning" : measuredImages.length && !reviewResolution.length ? "pass" : "info",
+    layerId: lowResolution[0]?.layer.id ?? reviewResolution[0]?.layer.id,
+    fix: lowResolution.length ? { kind: "image-resolution", label: "Fit to 300 DPI" } : undefined,
+  });
+
   return checks;
 }
 
@@ -325,6 +349,19 @@ export function coverPreflightFix(book: Book, cover: BookCoverDesign, check: Cov
     if (!layer || layer.type !== "text") return null;
     const next = withLayerPatch(cover, layer.id, { fontSize: Math.max(6.5, layer.fontSize) });
     return next ? { patch: next, message: "Spine type raised to a printable size." } : null;
+  }
+  if (kind === "image-resolution") {
+    const layer = layers.find((item) => item.id === check.layerId);
+    if (!layer || layer.type !== "image" || layer.sourceWidth <= 0 || layer.sourceHeight <= 0) return null;
+    const scale = Math.min(1, (layer.sourceWidth / 300) / layer.width, (layer.sourceHeight / 300) / layer.height);
+    if (scale >= 0.999) return null;
+    const width = Math.round(layer.width * scale * 1000) / 1000;
+    const height = Math.round(layer.height * scale * 1000) / 1000;
+    if (width < 0.1 || height < 0.1) return null;
+    const x = Math.round((layer.x + (layer.width - width) / 2) * 1000) / 1000;
+    const y = Math.round((layer.y + (layer.height - height) / 2) * 1000) / 1000;
+    const next = withLayerPatch(cover, layer.id, { x, y, width, height });
+    return next ? { patch: next, message: `“${layer.name}” resized to roughly 300 DPI.` } : null;
   }
   if (kind === "safe-zone") {
     const layer = layers.find((item) => item.id === check.layerId);
