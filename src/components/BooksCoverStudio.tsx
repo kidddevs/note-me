@@ -52,6 +52,7 @@ import {
   Maximize2,
   Minus,
   Move,
+  Package,
   Palette,
   Plus,
   Printer,
@@ -159,6 +160,7 @@ import {
 } from "../lib/bookLayout";
 import { bookInputFromBook, TRIM_SIZES } from "../lib/bookPublishing";
 import { downloadCoverMockup } from "../lib/bookCoverMockup";
+import { downloadCoverPackage } from "../lib/bookCoverPackage";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import { useBooks } from "../store/books";
 import { notify } from "../store/toast";
@@ -1255,6 +1257,19 @@ export function CoverScreen({
     }
   };
 
+  const handleDownloadPackage = async () => {
+    setBusyDownload("package");
+    try {
+      const filename = await downloadCoverPackage(book, layoutRef.current.cover, { dpi, pdfx });
+      if (filename) notify("success", "Production package ready", filename);
+      setDownloadOpen(false);
+    } catch (error) {
+      notify("error", "Production package could not be generated", String(error));
+    } finally {
+      setBusyDownload(null);
+    }
+  };
+
   const addTextTool = () => {
     makeTextLayer();
     setTool("select");
@@ -1446,6 +1461,9 @@ export function CoverScreen({
                   </label>
                   <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPdf(true)}><FileText size={14} /><span><strong>{pdfx ? "Full wrap PDF/X-4 with marks" : "Full wrap PDF with marks"}</strong><small>Crop marks, fold marks, colour bar & slug</small></span></button>
                   <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPdf(false)}><FileText size={14} /><span><strong>{pdfx ? "Full wrap PDF/X-4" : "Full wrap PDF"}</strong><small>Trim + bleed without printer marks</small></span></button>
+                  <div className="cover-download-sep" />
+                  <div className="cover-download-subhead">Studio handoff <small>Everything in one ZIP</small></div>
+                  <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPackage()}><Package size={14} /><span><strong>Production package (.zip)</strong><small>PDF{ pdfx ? "/X-4" : "" } + front/back/spine PNG + mockup + spec sheet</small></span></button>
                   <div className="cover-download-sep" />
                   <button type="button" role="menuitem" onClick={() => { setDownloadOpen(false); printCover(); }}><Printer size={14} /><span><strong>Print / Save via browser</strong><small>Uses the full print wrap</small></span></button>
                 </div>

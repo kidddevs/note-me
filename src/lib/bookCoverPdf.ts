@@ -163,7 +163,7 @@ export function buildCoverPdf(jpeg: Uint8Array, options: CoverPdfOptions): Uint8
   return concat(chunks);
 }
 
-export async function downloadCoverPdf(book: Book, cover: BookCoverDesign, options: { dpi?: number; marks?: boolean; pdfx?: boolean } = {}) {
+export async function buildCoverPdfFile(book: Book, cover: BookCoverDesign, options: { dpi?: number; marks?: boolean; pdfx?: boolean } = {}) {
   const marks = options.marks ?? true;
   const pdfx = options.pdfx ?? false;
   const slug = marks ? COVER_PDF_SLUG : 0;
@@ -172,7 +172,7 @@ export async function downloadCoverPdf(book: Book, cover: BookCoverDesign, optio
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.96));
   if (!blob) throw new Error("The print cover could not be generated.");
   const metrics = coverMetrics(book.trim_size, cover);
-  const pdf = buildCoverPdf(new Uint8Array(await blob.arrayBuffer()), {
+  const bytes = buildCoverPdf(new Uint8Array(await blob.arrayBuffer()), {
     pageWidth: metrics.fullWidth + slug * 2,
     pageHeight: metrics.fullHeight + slug * 2,
     imageWidth: canvas.width,
@@ -194,6 +194,10 @@ export async function downloadCoverPdf(book: Book, cover: BookCoverDesign, optio
     },
   });
   const suffix = marks ? (pdfx ? "-print-x4.pdf" : "-print.pdf") : (pdfx ? "-x4.pdf" : ".pdf");
-  const filename = coverExportFilename(book, "wrap", "pdf").replace(/\.pdf$/, suffix);
-  return saveCoverBlob(new Blob([pdf], { type: "application/pdf" }), filename);
+  return { bytes, filename: coverExportFilename(book, "wrap", "pdf").replace(/\.pdf$/, suffix) };
+}
+
+export async function downloadCoverPdf(book: Book, cover: BookCoverDesign, options: { dpi?: number; marks?: boolean; pdfx?: boolean } = {}) {
+  const file = await buildCoverPdfFile(book, cover, options);
+  return saveCoverBlob(new Blob([file.bytes], { type: "application/pdf" }), file.filename);
 }
