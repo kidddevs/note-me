@@ -191,6 +191,7 @@ import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import { extractPaletteFromPixels } from "../lib/bookCoverPalette";
 import { deleteCoverImageAsset, listCoverImageAssets, saveCoverImageAsset, type CoverImageAsset } from "../lib/bookImageLibrary";
 import { getCoverLayerClipboard, setCoverLayerClipboard } from "../lib/bookCoverClipboard";
+import { deleteBrandPalette, readBrandPalettes, saveBrandPalette, type CoverBrandPalette } from "../lib/bookCoverBrandPalettes";
 import {
   applyLayerStyle,
   deleteLayerStylePreset,
@@ -309,6 +310,10 @@ interface InspectorProps {
   imageLibrary: CoverImageAsset[];
   onUseLibraryImage: (asset: CoverImageAsset) => void;
   onDeleteLibraryImage: (id: string) => void;
+  brandPalettes: CoverBrandPalette[];
+  onSaveBrandPalette: () => void;
+  onApplyBrandPalette: (palette: CoverBrandPalette) => void;
+  onDeleteBrandPalette: (id: string) => void;
   focusContent: number;
 }
 
@@ -476,6 +481,7 @@ function historyLabel(key?: string) {
   if (value.startsWith("pan:")) return "Repositioned image";
   if (value.startsWith("highlight-")) return "Changed text highlight";
   if (value.startsWith("palette:image:")) return "Extracted image palette";
+  if (value.startsWith("palette:brand:")) return "Applied brand palette";
   if (value === "style:paste") return "Pasted layer style";
   if (value.startsWith("style:preset:")) return "Applied layer style";
   if (value.startsWith("move:")) return "Moved layer";
@@ -610,6 +616,7 @@ export function CoverScreen({
   const [stylePresets, setStylePresets] = useState<CoverLayerStylePreset[]>(() => readLayerStylePresets());
   const [styleClipboard, setStyleClipboard] = useState<CoverLayerStyleValues | null>(null);
   const [imageLibrary, setImageLibrary] = useState<CoverImageAsset[]>([]);
+  const [brandPalettes, setBrandPalettes] = useState<CoverBrandPalette[]>(() => readBrandPalettes());
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [artworkOpen, setArtworkOpen] = useState(false);
@@ -1286,6 +1293,38 @@ export function CoverScreen({
       return;
     }
     setStylePresets(result.presets);
+  };
+
+  const saveCurrentBrandPalette = () => {
+    const current = layoutRef.current.cover;
+    if (current.doc.palette.length === 0) {
+      notify("info", "No colours to save", "Sample or extract colours first, then save the palette.");
+      return;
+    }
+    const name = window.prompt("Name this brand palette", bookRef.current.title ? `${bookRef.current.title} palette` : "Brand palette");
+    if (!name?.trim()) return;
+    const result = saveBrandPalette(name, current.doc.palette, brandPalettes);
+    if (!result.ok) {
+      notify("error", "Palette not saved", result.message);
+      return;
+    }
+    setBrandPalettes(result.palettes);
+    notify("success", "Brand palette saved", `“${name.trim()}” is ready for any cover.`);
+  };
+
+  const applyBrandPalette = (palette: CoverBrandPalette) => {
+    const current = layoutRef.current.cover;
+    updateDoc({ ...current.doc, palette: [...palette.colors] }, { key: `palette:brand:${palette.id}` });
+    notify("success", "Brand palette loaded", `${palette.name} · ${palette.colors.length} colours`);
+  };
+
+  const removeBrandPalette = (id: string) => {
+    const result = deleteBrandPalette(id, brandPalettes);
+    if (!result.ok) {
+      notify("error", "Palette not removed", result.message);
+      return;
+    }
+    setBrandPalettes(result.palettes);
   };
 
   const bringSelectionToFront = () => {
@@ -2032,6 +2071,10 @@ export function CoverScreen({
               imageLibrary={imageLibrary}
               onUseLibraryImage={useLibraryImage}
               onDeleteLibraryImage={(id) => void removeLibraryImage(id)}
+              brandPalettes={brandPalettes}
+              onSaveBrandPalette={saveCurrentBrandPalette}
+              onApplyBrandPalette={applyBrandPalette}
+              onDeleteBrandPalette={removeBrandPalette}
               focusContent={focusContent}
             />
           )}
@@ -3308,7 +3351,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, imageLibrary, onUseLibraryImage, onDeleteLibraryImage, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, imageLibrary, onUseLibraryImage, onDeleteLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
   return (
     <aside className="cover-inspector" aria-label={selected ? "Layer properties" : "Cover properties"}>
       <div className="cover-inspector-head">
@@ -3360,6 +3403,10 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             onOpenSettings={onOpenSettings}
             onUploadBarcode={onUploadBarcode}
             onClearBarcode={onClearBarcode}
+            brandPalettes={brandPalettes}
+            onSaveBrandPalette={onSaveBrandPalette}
+            onApplyBrandPalette={onApplyBrandPalette}
+            onDeleteBrandPalette={onDeleteBrandPalette}
           />
         )}
       </div>
@@ -3927,6 +3974,10 @@ function DocumentInspector({
   onOpenSettings,
   onUploadBarcode,
   onClearBarcode,
+  brandPalettes,
+  onSaveBrandPalette,
+  onApplyBrandPalette,
+  onDeleteBrandPalette,
 }: {
   book: Book;
   cover: BookCoverDesign;
@@ -3944,6 +3995,10 @@ function DocumentInspector({
   onOpenSettings: () => void;
   onUploadBarcode: () => void;
   onClearBarcode: () => void;
+  brandPalettes: CoverBrandPalette[];
+  onSaveBrandPalette: () => void;
+  onApplyBrandPalette: (palette: CoverBrandPalette) => void;
+  onDeleteBrandPalette: (id: string) => void;
 }) {
   const doc = cover.doc;
   const isbn = normalizeIsbn13(cover.isbn);
@@ -3987,6 +4042,24 @@ function DocumentInspector({
           if (!color) return;
           onUpdateDoc({ ...doc, palette: [color, ...doc.palette.filter((entry) => entry !== color)].slice(0, 16) }, { key: "palette-add-background" });
         }}><Palette size={13} /> Save background colour</button>
+        <div className="cover-brand-palettes">
+          <div className="cover-brand-palettes-head"><span className="cover-field-heading">Brand palettes</span><button type="button" className="cover-mini-button" disabled={doc.palette.length === 0} onClick={onSaveBrandPalette}><BookmarkPlus size={11} /> Save current</button></div>
+          {brandPalettes.length === 0 ? (
+            <p className="cover-inspector-note">Save this palette to reuse the same colours across a series.</p>
+          ) : (
+            <div className="cover-brand-palette-list">
+              {brandPalettes.map((palette) => (
+                <div className="cover-brand-palette" key={palette.id}>
+                  <button type="button" className="cover-brand-palette-apply" onClick={() => onApplyBrandPalette(palette)} title={`Apply ${palette.name}`}>
+                    <span className="cover-brand-palette-swatches">{palette.colors.slice(0, 6).map((color) => <i key={color} style={{ background: color }} />)}</span>
+                    <span>{palette.name}</span>
+                  </button>
+                  <button type="button" className="cover-brand-palette-delete" onClick={() => onDeleteBrandPalette(palette.id)} title={`Delete ${palette.name}`} aria-label={`Delete ${palette.name}`}><Trash2 size={10} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Section>
 
       <Section title="Print setup" hint="Trim, spine & bleed">

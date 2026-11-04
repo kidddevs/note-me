@@ -12,6 +12,7 @@
   },
   "include": [
     "src/lib/bookLayout.ts",
+    "src/lib/bookCoverBrandPalettes.ts",
     "src/lib/bookCoverClipboard.ts",
     "src/lib/bookCoverDoc.ts",
     "src/lib/bookCoverGeometry.ts",

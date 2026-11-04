@@ -6396,6 +6396,17 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-effect-fields { display: flex; flex-direction: column; gap: 6px; padding-top: 5px; border-top: 1px solid var(--border-subtle); }
 .cover-palette-swatch { width: 27px; height: 27px; padding: 0; border: 1px solid rgba(0, 0, 0, 0.14); border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22); cursor: pointer; }
 .cover-palette-swatch:hover { outline: 2px solid var(--book-accent); outline-offset: 1px; }
+.cover-brand-palettes { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; padding-top: 6px; border-top: 1px solid var(--border-subtle); }
+.cover-brand-palettes-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.cover-brand-palette-list { display: flex; max-height: 150px; flex-direction: column; gap: 3px; overflow-y: auto; }
+.cover-brand-palette { display: flex; gap: 3px; }
+.cover-brand-palette-apply { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; height: 28px; padding: 0 7px; border: 1px solid var(--border-subtle); border-radius: 5px; background: var(--surface-2); color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
+.cover-brand-palette-apply:hover { border-color: var(--book-accent); }
+.cover-brand-palette-apply > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8.5px; }
+.cover-brand-palette-swatches { display: flex; flex-shrink: 0; overflow: hidden; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12); }
+.cover-brand-palette-swatches i { display: block; width: 7px; height: 16px; }
+.cover-brand-palette-delete { display: flex; width: 25px; flex-shrink: 0; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); border-radius: 5px; background: transparent; color: var(--text-4); cursor: pointer; }
+.cover-brand-palette-delete:hover { background: var(--danger-soft); color: var(--danger); }
 .cover-spine-readout { display: grid; grid-template-columns: 1fr 1.2fr; gap: 6px; }
 .cover-spine-readout > div { display: flex; flex-direction: column; gap: 1px; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-2); }
 .cover-spine-readout span { color: var(--text-4); font-size: 7.5px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; }
