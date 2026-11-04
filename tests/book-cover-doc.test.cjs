@@ -6,8 +6,10 @@ const {
   coverDocMarkup,
   coverImageFilterCss,
   coverImageMaskCss,
+  cloneCoverLayers,
   coverLayerLocked,
   coverLayerVisible,
+  coverFill,
   imageLayer,
   coverMetrics,
   createCoverDocument,
@@ -18,8 +20,10 @@ const {
   normalizeIsbn13,
   parseCoverDocument,
   reflowSpineLayers,
+  shapeLayer,
   spineWidthForPages,
   spineWidthMillimetres,
+  textLayer,
 } = require("./.compiled/src/lib/bookCoverDoc.js");
 const { DEFAULT_BOOK_LAYOUT } = require("./.compiled/src/lib/bookLayout.js");
 
@@ -323,4 +327,26 @@ test("layer groups persist, sanitise broken membership, and hide children", () =
 test("new cover documents start with an empty group list", () => {
   assert.deepEqual(emptyCoverDocument().groups, []);
   assert.deepEqual(createCoverDocument("atelier", book(), cover()).groups, []);
+});
+
+
+test("cloning layers creates fresh ids, offsets, and group remapping", () => {
+  const source = [
+    textLayer({ id: "a", name: "Title", panel: "front", x: 1, y: 2, width: 3, height: 1, text: "Hello" }),
+    shapeLayer({ id: "b", name: "Block", panel: "front", x: 2, y: 3, width: 1, height: 1, shape: "rectangle", fill: coverFill("#123456") }),
+  ];
+  const clones = cloneCoverLayers(source, { offsetX: 0.2, offsetY: 0.3, stagger: 0.05, groupId: "group-1" });
+  assert.equal(clones.length, 2);
+  assert.notEqual(clones[0].id, source[0].id);
+  assert.notEqual(clones[1].id, source[1].id);
+  assert.match(clones[0].name, /copy$/);
+  assert.equal(clones[0].x, 1.2);
+  assert.equal(clones[0].y, 2.3);
+  assert.equal(clones[1].x, 2.25);
+  assert.equal(clones[1].y, 3.35);
+  assert.equal(clones[0].groupId, "group-1");
+  assert.equal(clones[1].groupId, "group-1");
+  assert.notEqual(clones[1].fill, source[1].fill);
+  clones[1].fill.color = "#000000";
+  assert.equal(source[1].fill.color, "#123456");
 });

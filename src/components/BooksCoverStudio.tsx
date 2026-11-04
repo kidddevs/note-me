@@ -20,12 +20,15 @@ import {
   ArrowUp,
   Barcode,
   BookOpen,
+  BringToFront,
   CaseUpper,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Circle,
+  ClipboardCopy,
+  ClipboardPaste,
   Copy,
   Download,
   Eye,
@@ -33,6 +36,7 @@ import {
   Feather,
   FileDown,
   FileImage,
+  Files,
   FileText,
   FlipHorizontal2,
   FlipVertical2,
@@ -57,8 +61,9 @@ import {
   RotateCw,
   Ruler,
   ScanLine,
+  Search,
+  SendToBack,
   Settings2,
-  Shapes,
   SlidersHorizontal,
   Sparkles,
   Square,
@@ -85,11 +90,13 @@ import {
   barcodeLayer,
   barcodeSvgMarkup,
   coverArtworkDataUrl,
+  cloneCoverLayers,
   coverDocMarkup,
   coverFill,
   coverFillCss,
   coverLayerInnerHtml,
   coverLayerLocked,
+  coverShapePath,
   coverLayerVisible,
   coverMetrics,
   coverPanelRect,
@@ -172,6 +179,12 @@ interface CoverHistoryEntry {
   at: number;
 }
 
+interface LayerMenuState {
+  x: number;
+  y: number;
+  layerId: string;
+}
+
 interface CoverStageProps {
   book: Book;
   cover: BookCoverDesign;
@@ -192,6 +205,7 @@ interface CoverStageProps {
   onInteractionEnd: () => void;
   onEditText: (id: string) => void;
   onDropImage: (dataUrl: string, x: number, y: number) => void;
+  onContextMenu: (event: React.MouseEvent<HTMLElement>, layerId: string) => void;
   onGuideAdd: (axis: "x" | "y", spreadPosition: number) => void;
   onGuideChange: (id: string, spreadPosition: number) => void;
   onGuideDelete: (id: string) => void;
@@ -229,6 +243,7 @@ interface InspectorProps {
 
 interface LayerPanelProps {
   doc: BookCoverDocument;
+  cover: BookCoverDesign;
   selectedId: string | null;
   selectedIds: string[];
   activeGroupId: string | null;
@@ -251,6 +266,9 @@ interface LayerPanelProps {
   onRenameGroup: (id: string, name: string) => void;
   onUngroup: (id: string) => void;
   onAssignGroup: (layerId: string, groupId: string | null) => void;
+  onCopySelection: () => void;
+  onPasteSelection: () => void;
+  onContextMenu: (event: React.MouseEvent<HTMLElement>, layerId: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onReorder: (id: string, direction: "up" | "down") => void;
@@ -291,14 +309,34 @@ function layerLabel(type: CoverLayerType) {
   return "Barcode";
 }
 
-function LayerIcon({ type, size = 13 }: { type: CoverLayerType; size?: number }) {
-  if (type === "text") return <Type size={size} />;
-  if (type === "image") return <FileImage size={size} />;
-  if (type === "shape") return <Shapes size={size} />;
-  if (type === "line") return <Minus size={size} />;
-  if (type === "symbol") return <Sparkles size={size} />;
-  if (type === "artwork") return <Feather size={size} />;
-  return <Barcode size={size} />;
+function LayerThumb({ layer, cover }: { layer: CoverLayer; cover: BookCoverDesign }) {
+  if (layer.type === "image" && layer.src) {
+    return <span className="cover-layer-thumb"><img src={layer.src} alt="" style={{ objectFit: layer.fit === "contain" ? "contain" : "cover" }} /></span>;
+  }
+  if (layer.type === "artwork") {
+    return <span className="cover-layer-thumb"><img src={coverArtworkDataUrl(layer)} alt="" /></span>;
+  }
+  if (layer.type === "barcode") {
+    return <span className="cover-layer-thumb thumb-barcode" dangerouslySetInnerHTML={{ __html: barcodeSvgMarkup(cover.isbn, layer.barColor) }} />;
+  }
+  if (layer.type === "shape") {
+    const shapeColor = layer.fill.type === "solid" ? layer.fill.color : layer.fill.gradient.stops[0]?.color ?? "#a56b3e";
+    if (layer.shape === "rectangle" || layer.shape === "ellipse") {
+      return <span className="cover-layer-thumb"><span className="thumb-fill" style={{ background: shapeColor, borderRadius: layer.shape === "ellipse" ? "50%" : `${Math.min(6, layer.radius * 60)}px` }} /></span>;
+    }
+    return <span className="cover-layer-thumb"><svg viewBox="0 0 100 100"><path d={coverShapePath(layer.shape)} fill={shapeColor} /></svg></span>;
+  }
+  if (layer.type === "line") {
+    return <span className="cover-layer-thumb"><span className="thumb-line" style={{ borderColor: layer.color, borderTopStyle: layer.dash === "dashed" ? "dashed" : layer.dash === "dotted" ? "dotted" : "solid" }} /></span>;
+  }
+  if (layer.type === "symbol") {
+    return <span className="cover-layer-thumb"><span className="thumb-symbol" style={{ color: layer.color }}>{layer.glyph}</span></span>;
+  }
+  if (layer.type === "image") {
+    return <span className="cover-layer-thumb"><FileImage size={13} /></span>;
+  }
+  const font = COVER_FONTS.find((item) => item.id === layer.fontFamily);
+  return <span className="cover-layer-thumb"><span className="thumb-text" style={{ color: layer.color, fontFamily: font?.css, fontWeight: layer.fontWeight, fontStyle: layer.italic ? "italic" : "normal" }}>{layer.uppercase ? "AA" : "Aa"}</span></span>;
 }
 
 function selectedLayerName(layer: CoverLayer | null) {
@@ -465,6 +503,7 @@ export function CoverScreen({
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [artworkOpen, setArtworkOpen] = useState(false);
   const [mockupOpen, setMockupOpen] = useState(false);
+  const [layerMenu, setLayerMenu] = useState<LayerMenuState | null>(null);
   const [zoom, setZoom] = useState(1);
   const [autoFit, setAutoFit] = useState(true);
   const [dpi, setDpi] = useState(300);
@@ -482,6 +521,7 @@ export function CoverScreen({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const replaceImageInputRef = useRef<HTMLInputElement | null>(null);
+  const clipboardRef = useRef<CoverLayer[]>([]);
   const lastHistoryKeyRef = useRef("");
   const lastHistoryTimeRef = useRef(0);
   const historyRef = useRef(history);
@@ -688,6 +728,13 @@ export function CoverScreen({
       setPanel(layer.panel);
       setAutoFit(true);
     }
+  };
+
+  const openLayerMenu = (event: React.MouseEvent<HTMLElement>, layerId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!selectedIds.includes(layerId)) selectLayer(layerId);
+    setLayerMenu({ x: event.clientX, y: event.clientY, layerId });
   };
 
   const addLayer = (layer: CoverLayer, targetPanel: CoverPanel = layer.panel) => {
@@ -938,13 +985,7 @@ export function CoverScreen({
     const current = layoutRef.current.cover;
     const sources = current.doc.layers.filter((layer) => ids.includes(layer.id));
     if (sources.length === 0) return;
-    const clones = sources.map((layer, index) => ({
-      ...layer,
-      id: newCoverLayerId(layer.type),
-      name: `${layer.name} copy`,
-      x: layer.x + 0.12 + index * 0.04,
-      y: layer.y + 0.12 + index * 0.04,
-    } as CoverLayer));
+    const clones = cloneCoverLayers(sources, { offsetX: 0.12, offsetY: 0.12, stagger: 0.04 });
     updateDoc({ ...current.doc, layers: [...current.doc.layers, ...clones] }, { key: `duplicate:${ids.join(",")}` });
     setSelectedLayerId(clones[clones.length - 1]?.id ?? null);
     setExtraSelectedIds(clones.slice(0, -1).map((layer) => layer.id));
@@ -952,6 +993,48 @@ export function CoverScreen({
 
   const duplicateLayer = (id: string) => duplicateLayers([id]);
   const duplicateSelection = () => duplicateLayers(selectedIds);
+
+  const copySelection = () => {
+    const current = layoutRef.current.cover;
+    const layers = current.doc.layers.filter((layer) => selectedIds.includes(layer.id));
+    if (layers.length === 0) return;
+    clipboardRef.current = cloneCoverLayers(layers, { offsetX: 0, offsetY: 0, stagger: 0, suffix: "" });
+    notify("info", layers.length === 1 ? "Layer copied" : `${layers.length} layers copied`, "Paste with ⌘V or the right-click menu.");
+  };
+
+  const pasteSelection = () => {
+    if (clipboardRef.current.length === 0) {
+      notify("info", "Nothing to paste", "Copy a layer first.");
+      return;
+    }
+    const current = layoutRef.current.cover;
+    const groupIds = new Set(current.doc.groups.map((group) => group.id));
+    const clones = cloneCoverLayers(clipboardRef.current, { offsetX: 0.16, offsetY: 0.16, stagger: 0.03 }).map((layer) => ({
+      ...layer,
+      groupId: activeGroupId ?? (layer.groupId && groupIds.has(layer.groupId) ? layer.groupId : null),
+    }));
+    updateDoc({ ...current.doc, templateId: current.doc.templateId || "custom", layers: [...current.doc.layers, ...clones] }, { key: "paste" });
+    setSelectedLayerId(clones[clones.length - 1]?.id ?? null);
+    setExtraSelectedIds(clones.slice(0, -1).map((layer) => layer.id));
+  };
+
+  const bringSelectionToFront = () => {
+    const current = layoutRef.current.cover;
+    const ids = new Set(selectedIds);
+    const selected = current.doc.layers.filter((layer) => ids.has(layer.id));
+    const rest = current.doc.layers.filter((layer) => !ids.has(layer.id));
+    if (selected.length === 0) return;
+    updateDoc({ ...current.doc, layers: [...rest, ...selected] }, { key: `front:${selectedIds.join(",")}` });
+  };
+
+  const sendSelectionToBack = () => {
+    const current = layoutRef.current.cover;
+    const ids = new Set(selectedIds);
+    const selected = current.doc.layers.filter((layer) => ids.has(layer.id));
+    const rest = current.doc.layers.filter((layer) => !ids.has(layer.id));
+    if (selected.length === 0) return;
+    updateDoc({ ...current.doc, layers: [...selected, ...rest] }, { key: `back:${selectedIds.join(",")}` });
+  };
 
   const deleteLayers = (ids: string[]) => {
     if (ids.length === 0) return;
@@ -1186,6 +1269,7 @@ export function CoverScreen({
       else if (downloadOpen) setDownloadOpen(false);
       else if (templateOpen) setTemplateOpen(false);
       else if (mockupOpen) setMockupOpen(false);
+      else if (layerMenu) setLayerMenu(null);
       else if (selectedIds.length > 1) { setSelectedLayerId(selectedLayerId); setExtraSelectedIds([]); }
       else selectLayer(null);
       return;
@@ -1205,6 +1289,16 @@ export function CoverScreen({
     if (meta && event.key.toLocaleLowerCase() === "a") {
       event.preventDefault();
       selectAllLayers();
+      return;
+    }
+    if (meta && event.key.toLocaleLowerCase() === "c" && selectedIds.length > 0) {
+      event.preventDefault();
+      copySelection();
+      return;
+    }
+    if (meta && event.key.toLocaleLowerCase() === "v") {
+      event.preventDefault();
+      pasteSelection();
       return;
     }
     if (meta && event.key.toLocaleLowerCase() === "g") {
@@ -1249,7 +1343,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, selectedLayerId, selectedIds, undo, redo]);
+  }, [previewing, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, selectedLayerId, selectedIds, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -1268,9 +1362,26 @@ export function CoverScreen({
     return () => window.removeEventListener("mousedown", close);
   }, [downloadOpen]);
 
+  useEffect(() => {
+    if (!layerMenu) return;
+    const close = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".cover-context-menu")) return;
+      setLayerMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [layerMenu]);
+
   const addSymbolAt = (glyph: string) => {
     makeSymbolLayer(glyph);
   };
+
+  const menuLayers = layerMenu ? doc.layers.filter((layer) => selectedIds.includes(layer.id)) : [];
+  const menuLayer = layerMenu ? doc.layers.find((layer) => layer.id === layerMenu.layerId) ?? null : null;
+  const menuGroup = menuLayer?.groupId ? doc.groups.find((group) => group.id === menuLayer.groupId) ?? null : null;
+  const menuAllVisible = menuLayers.length > 0 && menuLayers.every((layer) => coverLayerVisible(doc, layer));
+  const menuAllLocked = menuLayers.length > 0 && menuLayers.every((layer) => coverLayerLocked(doc, layer));
 
   return (
     <div className={`books-screen books-cover-screen ${previewing ? "is-previewing" : ""}`}>
@@ -1377,6 +1488,7 @@ export function CoverScreen({
           {!previewing && showLayers && (
             <LayerPanel
               doc={doc}
+              cover={cover}
               selectedId={selectedLayerId}
               selectedIds={selectedIds}
               activeGroupId={activeGroupId}
@@ -1399,6 +1511,9 @@ export function CoverScreen({
               onRenameGroup={renameGroup}
               onUngroup={ungroup}
               onAssignGroup={assignGroup}
+              onCopySelection={copySelection}
+              onPasteSelection={pasteSelection}
+              onContextMenu={openLayerMenu}
               onDuplicate={duplicateLayer}
               onDelete={deleteLayer}
               onReorder={reorderLayer}
@@ -1430,6 +1545,7 @@ export function CoverScreen({
             onInteractionStart={onInteractionStart}
             onInteractionEnd={NOOP}
             onEditText={requestEditText}
+            onContextMenu={openLayerMenu}
             onGuideAdd={addGuide}
             onGuideChange={changeGuide}
             onGuideDelete={deleteGuide}
@@ -1527,6 +1643,28 @@ export function CoverScreen({
 
       {templateOpen && <TemplateModal book={book} cover={cover} onApply={applyTemplate} onClose={() => setTemplateOpen(false)} />}
       {mockupOpen && <BookMockup book={book} cover={cover} onClose={() => setMockupOpen(false)} />}
+      {layerMenu && menuLayer && (
+        <LayerContextMenu
+          x={layerMenu.x}
+          y={layerMenu.y}
+          layers={menuLayers}
+          layer={menuLayer}
+          group={menuGroup}
+          allVisible={menuAllVisible}
+          allLocked={menuAllLocked}
+          onCopy={copySelection}
+          onPaste={pasteSelection}
+          onDuplicate={duplicateSelection}
+          onBringFront={bringSelectionToFront}
+          onSendBack={sendSelectionToBack}
+          onGroup={groupSelection}
+          onUngroup={() => { if (menuGroup) ungroup(menuGroup.id); }}
+          onToggleVisible={() => updateLayers(menuLayers.map((layer) => ({ id: layer.id, patch: { visible: !menuAllVisible } })), { key: `visible:${selectedIds.join(",")}` })}
+          onToggleLocked={() => updateLayers(menuLayers.map((layer) => ({ id: layer.id, patch: { locked: !menuAllLocked } })), { key: `lock:${selectedIds.join(",")}` })}
+          onDelete={deleteSelection}
+          onClose={() => setLayerMenu(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1778,6 +1916,7 @@ function ArtworkPicker({ onAdd, onClose }: { onAdd: (graphic: BookGraphic) => vo
 
 function LayerPanel({
   doc,
+  cover,
   selectedId,
   selectedIds,
   activeGroupId,
@@ -1800,6 +1939,9 @@ function LayerPanel({
   onRenameGroup,
   onUngroup,
   onAssignGroup,
+  onCopySelection,
+  onPasteSelection,
+  onContextMenu,
   onDuplicate,
   onDelete,
   onReorder,
@@ -1811,6 +1953,12 @@ function LayerPanel({
   const [overGroupId, setOverGroupId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [query, setQuery] = useState("");
+  const search = query.trim().toLocaleLowerCase();
+  const matches = (layer: CoverLayer) => !search
+    || layer.name.toLocaleLowerCase().includes(search)
+    || layer.type.includes(search)
+    || layer.panel.includes(search);
   const layers = [...doc.layers].reverse();
   const groupsById = new Map(doc.groups.map((group) => [group.id, group]));
 
@@ -1839,10 +1987,11 @@ function LayerPanel({
           setOverGroupId(null);
         }}
         onDragEnd={() => { setDragId(null); setOverId(null); setOverGroupId(null); }}
+        onContextMenu={(event) => onContextMenu(event, layer.id)}
         onClick={(event) => onSelect(layer.id, event.shiftKey || event.metaKey || event.ctrlKey)}
       >
         <button type="button" className={`cover-layer-eye ${visible ? "" : "off"}`} onClick={(event) => { event.stopPropagation(); onToggleVisible(layer.id); }} title={layer.visible ? (visible ? "Hide layer" : "Hidden by group") : "Show layer"} aria-label={layer.visible ? "Hide layer" : "Show layer"}>{visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
-        <span className="cover-layer-type-icon"><LayerIcon type={layer.type} size={13} /></span>
+        <LayerThumb layer={layer} cover={cover} />
         <span className="cover-layer-name" title={layer.name}>{layer.name || layerLabel(layer.type)}<small>{layer.panel === "wrap" ? "whole wrap" : layer.panel}</small></span>
         <button type="button" className={`cover-layer-lock ${locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); onToggleLocked(layer.id); }} title={layer.locked ? "Unlock layer" : locked ? "Locked by group" : "Lock layer"} aria-label={layer.locked ? "Unlock layer" : "Lock layer"}>{locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
       </div>
@@ -1894,20 +2043,24 @@ function LayerPanel({
 
   const rows: ReactNode[] = [];
   const renderedGroups = new Set<string>();
+  const groupMatches = (group: CoverLayerGroup, children: CoverLayer[]) => !search || group.name.toLocaleLowerCase().includes(search) || children.some(matches);
   for (const layer of layers) {
     const group = layer.groupId ? groupsById.get(layer.groupId) : null;
     if (group) {
       if (renderedGroups.has(group.id)) continue;
       renderedGroups.add(group.id);
       const children = layers.filter((item) => item.groupId === group.id);
+      if (!groupMatches(group, children)) continue;
+      const nameMatches = group.name.toLocaleLowerCase().includes(search);
+      const visibleChildren = search && !nameMatches ? children.filter(matches) : children;
       rows.push(renderGroupRow(group, children.length));
-      if (!group.collapsed) rows.push(...children.map((child) => renderLayerRow(child, true)));
-    } else {
+      if (!group.collapsed || search) rows.push(...visibleChildren.map((child) => renderLayerRow(child, true)));
+    } else if (matches(layer)) {
       rows.push(renderLayerRow(layer, false));
     }
   }
   for (const group of doc.groups) {
-    if (!renderedGroups.has(group.id)) rows.push(renderGroupRow(group, 0));
+    if (!renderedGroups.has(group.id) && (!search || group.name.toLocaleLowerCase().includes(search))) rows.push(renderGroupRow(group, 0));
   }
 
   return (
@@ -1934,7 +2087,13 @@ function LayerPanel({
       </div>
       {tab === "layers" ? (
         <>
+          <div className="cover-layer-search">
+            <Search size={12} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search layers" aria-label="Search layers" />
+            {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear layer search"><X size={11} /></button>}
+          </div>
           <div className="cover-layer-list">
+            {rows.length === 0 && search && <div className="cover-layer-empty"><Search size={15} /><span>No layers match “{query}”</span></div>}
             {rows}
             <button type="button" className="cover-background-row" onClick={() => onSelect(null)}>
               <span className="cover-layer-type-icon"><Palette size={13} /></span>
@@ -1946,11 +2105,13 @@ function LayerPanel({
             <div className="cover-layer-actions">
               <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "up")} title="Move layer up" aria-label="Move layer up"><ArrowUp size={13} /></button>
               <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "down")} title="Move layer down" aria-label="Move layer down"><ArrowDown size={13} /></button>
+              <button type="button" onClick={onCopySelection} title="Copy selected layers" aria-label="Copy selected layers"><Copy size={13} /></button>
+              <button type="button" onClick={onPasteSelection} title="Paste layers" aria-label="Paste layers"><ClipboardPaste size={13} /></button>
               <button type="button" onClick={() => onDuplicate(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Duplicate selected layers" : "Duplicate layer"} aria-label="Duplicate layer"><Copy size={13} /></button>
               <button type="button" className="danger" onClick={() => onDelete(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Delete selected layers" : "Delete layer"} aria-label="Delete layer"><Trash2 size={13} /></button>
             </div>
           )}
-          <div className="cover-layer-hint"><Move size={11} /> {activeGroupId ? "New layers join the selected group" : selectedIds.length > 1 ? `${selectedIds.length} layers selected` : "Drag to reorder · Shift-click to multi-select"}</div>
+          <div className="cover-layer-hint"><Move size={11} /> {activeGroupId ? "New layers join the selected group" : selectedIds.length > 1 ? `${selectedIds.length} layers selected` : "Drag to reorder · Right-click for layer actions"}</div>
         </>
       ) : (
         <HistoryPanel history={history} future={future} onJump={onJumpHistory} />
@@ -1992,7 +2153,75 @@ function historyTime(value: number) {
 
 /* ========================================================================== */
 
-function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
+function LayerContextMenu({
+  x,
+  y,
+  layers,
+  layer,
+  group,
+  allVisible,
+  allLocked,
+  onCopy,
+  onPaste,
+  onDuplicate,
+  onBringFront,
+  onSendBack,
+  onGroup,
+  onUngroup,
+  onToggleVisible,
+  onToggleLocked,
+  onDelete,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  layers: CoverLayer[];
+  layer: CoverLayer;
+  group: CoverLayerGroup | null;
+  allVisible: boolean;
+  allLocked: boolean;
+  onCopy: () => void;
+  onPaste: () => void;
+  onDuplicate: () => void;
+  onBringFront: () => void;
+  onSendBack: () => void;
+  onGroup: () => void;
+  onUngroup: () => void;
+  onToggleVisible: () => void;
+  onToggleLocked: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const width = 232;
+  const height = 424;
+  const left = Math.max(8, Math.min(x, (typeof window === "undefined" ? 1280 : window.innerWidth) - width - 8));
+  const top = Math.max(8, Math.min(y, (typeof window === "undefined" ? 800 : window.innerHeight) - height - 8));
+  const count = layers.length;
+  const run = (action: () => void) => () => { action(); onClose(); };
+  return (
+    <div className="cover-context-menu" role="menu" style={{ left, top, width }} onContextMenu={(event) => event.preventDefault()}>
+      <div className="cover-context-head"><strong>{count > 1 ? `${count} layers` : layer.name}</strong><small>{count > 1 ? "Selection" : layerLabel(layer.type)}</small></div>
+      <button type="button" role="menuitem" onClick={run(onDuplicate)}><Files size={14} /><span>Duplicate</span><kbd>⌘D</kbd></button>
+      <button type="button" role="menuitem" onClick={run(onCopy)}><ClipboardCopy size={14} /><span>Copy</span><kbd>⌘C</kbd></button>
+      <button type="button" role="menuitem" onClick={run(onPaste)}><ClipboardPaste size={14} /><span>Paste</span><kbd>⌘V</kbd></button>
+      <span className="cover-context-sep" />
+      <button type="button" role="menuitem" onClick={run(onBringFront)}><BringToFront size={14} /><span>Bring to front</span></button>
+      <button type="button" role="menuitem" onClick={run(onSendBack)}><SendToBack size={14} /><span>Send to back</span></button>
+      <span className="cover-context-sep" />
+      <button type="button" role="menuitem" onClick={run(onGroup)}><FolderPlus size={14} /><span>Group selection</span><kbd>⌘G</kbd></button>
+      {group && <button type="button" role="menuitem" onClick={run(onUngroup)}><FolderMinus size={14} /><span>Ungroup {group.name}</span><kbd>⇧⌘G</kbd></button>}
+      <span className="cover-context-sep" />
+      <button type="button" role="menuitem" onClick={run(onToggleVisible)}>{allVisible ? <EyeOff size={14} /> : <Eye size={14} />}<span>{allVisible ? "Hide layers" : "Show layers"}</span></button>
+      <button type="button" role="menuitem" onClick={run(onToggleLocked)}>{allLocked ? <Unlock size={14} /> : <Lock size={14} />}<span>{allLocked ? "Unlock layers" : "Lock layers"}</span></button>
+      <span className="cover-context-sep" />
+      <button type="button" role="menuitem" className="danger" onClick={run(onDelete)}><Trash2 size={14} /><span>Delete</span><kbd>⌫</kbd></button>
+    </div>
+  );
+}
+
+/* ========================================================================== */
+
+function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [interaction, setInteraction] = useState<{
@@ -2373,6 +2602,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
                     zIndex: undefined,
                   }}
                   onPointerDown={(event) => beginMove(event, layer)}
+                  onContextMenu={(event) => onContextMenu(event, layer.id)}
                   onDoubleClick={() => { if (layer.type === "text") onEditText(layer.id); }}
                   title={locked ? `${layer.name} (locked)` : layer.name}
                 >

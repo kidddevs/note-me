@@ -423,6 +423,34 @@ export function newCoverLayerId(prefix = "layer") {
   return `${prefix}-${Date.now().toString(36).slice(-4)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+function cloneFill(fill: CoverFill): CoverFill {
+  return {
+    ...fill,
+    gradient: {
+      ...fill.gradient,
+      stops: fill.gradient.stops.map((stop) => ({ ...stop })),
+    },
+  };
+}
+
+/** Copies layers with fresh ids, staggered positions, and optional group remapping. */
+export function cloneCoverLayers(layers: CoverLayer[], options: { offsetX?: number; offsetY?: number; stagger?: number; suffix?: string; groupId?: string | null } = {}): CoverLayer[] {
+  const offsetX = options.offsetX ?? 0.12;
+  const offsetY = options.offsetY ?? 0.12;
+  const stagger = options.stagger ?? 0.03;
+  return layers.map((layer, index) => {
+    const clone = {
+      ...(layer.type === "shape" ? { ...layer, fill: cloneFill(layer.fill) } : { ...layer }),
+      id: newCoverLayerId(layer.type),
+      name: `${layer.name}${options.suffix ?? " copy"}`,
+      x: roundInches(layer.x + offsetX + index * stagger),
+      y: roundInches(layer.y + offsetY + index * stagger),
+      groupId: options.groupId !== undefined ? options.groupId : layer.groupId,
+    } as CoverLayer;
+    return clone;
+  });
+}
+
 /* ------------------------------------------------------------------ fills */
 
 export function shadeColor(value: string, amount: number) {

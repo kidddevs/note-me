@@ -5984,10 +5984,40 @@ kbd {
 .cover-history-empty small { max-width: 150px; font-size: 8px; line-height: 1.45; }
 .cover-history-redo { display: flex; align-items: center; gap: 5px; margin: 0 8px; padding: 6px 8px; border: 1px dashed var(--border); border-radius: 5px; color: var(--text-4); font-size: 8px; }
 .cover-layer-list { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; padding: 6px; overflow-y: auto; }
+.cover-layer-search { display: flex; height: 30px; flex-shrink: 0; align-items: center; gap: 5px; margin: 6px 6px 0; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-2); color: var(--text-4); }
+.cover-layer-search:focus-within { border-color: var(--book-accent); background: var(--surface); color: var(--book-accent); }
+.cover-layer-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 8.5px; }
+.cover-layer-search input::placeholder { color: var(--text-4); }
+.cover-layer-search button { display: flex; width: 16px; height: 16px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--text-4); cursor: pointer; }
+.cover-layer-search button:hover { background: var(--surface-active); color: var(--text); }
+.cover-layer-empty { display: flex; align-items: center; flex-direction: column; gap: 6px; padding: 26px 10px; color: var(--text-4); font-size: 8px; text-align: center; }
+.cover-layer-thumb { display: flex; width: 28px; height: 32px; align-items: center; justify-content: center; overflow: hidden; padding: 2px; border: 1px solid var(--border-subtle); border-radius: 4px; background: #f4eee4; color: var(--text-3); }
+.cover-layer-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cover-layer-thumb svg { display: block; width: 76%; height: 76%; }
+.cover-layer-thumb.thumb-barcode { background: #fff; }
+.cover-layer-thumb.thumb-barcode svg { width: 90%; height: 72%; }
+.cover-layer-thumb .thumb-text { font-size: 13px; line-height: 1; }
+.cover-layer-thumb .thumb-symbol { font-size: 15px; line-height: 1; }
+.cover-layer-thumb .thumb-fill { display: block; width: 82%; height: 82%; }
+.cover-layer-thumb .thumb-line { display: block; width: 82%; border-top-width: 2px; }
+.cover-layer-row.is-hidden .cover-layer-thumb { opacity: 0.55; }
+.cover-context-menu { position: fixed; z-index: 260; display: flex; flex-direction: column; gap: 1px; padding: 5px; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface-modal); box-shadow: var(--shadow-lg); }
+.cover-context-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 5px 7px 7px; border-bottom: 1px solid var(--border-subtle); }
+.cover-context-head strong { overflow: hidden; max-width: 145px; color: var(--text); font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.cover-context-head small { flex-shrink: 0; color: var(--text-4); font-size: 7px; text-transform: uppercase; letter-spacing: 0.05em; }
+.cover-context-menu button { display: grid; min-height: 28px; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 0 7px; border: 0; border-radius: 5px; background: transparent; color: var(--text-2); text-align: left; font: inherit; font-size: 8.5px; cursor: pointer; }
+.cover-context-menu button:hover { background: var(--surface-hover); color: var(--text); }
+.cover-context-menu button svg { color: var(--text-4); }
+.cover-context-menu button:hover svg { color: var(--book-accent); }
+.cover-context-menu button.danger { color: var(--danger); }
+.cover-context-menu button.danger svg { color: var(--danger); }
+.cover-context-menu button.danger:hover { background: var(--danger-soft); }
+.cover-context-menu kbd { color: var(--text-4); font-family: var(--mono); font-size: 7px; }
+.cover-context-sep { height: 1px; margin: 3px 6px; background: var(--border-subtle); }
 .cover-layer-row {
   display: grid;
-  min-height: 36px;
-  grid-template-columns: 20px 20px minmax(0, 1fr) 22px;
+  min-height: 42px;
+  grid-template-columns: 20px 30px minmax(0, 1fr) 22px;
   align-items: center;
   gap: 3px;
   padding: 3px 4px;
@@ -6026,7 +6056,7 @@ kbd {
 .cover-background-row { display: grid; min-height: 35px; grid-template-columns: 20px minmax(0, 1fr) 22px; align-items: center; gap: 6px; margin-top: auto; padding: 3px 4px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-2); color: var(--text-2); text-align: left; font: inherit; cursor: pointer; }
 .cover-background-row:hover { border-color: var(--book-accent); background: var(--book-accent-soft); }
 .cover-background-swatch { display: block; width: 20px; height: 20px; border: 1px solid var(--border-strong); border-radius: 4px; }
-.cover-layer-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 6px; border-top: 1px solid var(--border-subtle); }
+.cover-layer-actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; padding: 6px; border-top: 1px solid var(--border-subtle); }
 .cover-layer-actions button { display: flex; height: 26px; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-3); cursor: pointer; }
 .cover-layer-actions button:hover { border-color: var(--book-accent); color: var(--book-accent); }
 .cover-layer-actions button.danger:hover { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
