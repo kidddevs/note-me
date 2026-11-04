@@ -189,6 +189,7 @@ import { coverPreflight, coverPreflightFix, coverPreflightSummary, type CoverPre
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import { extractPaletteFromPixels } from "../lib/bookCoverPalette";
 import { deleteCoverImageAsset, listCoverImageAssets, saveCoverImageAsset, type CoverImageAsset } from "../lib/bookImageLibrary";
+import { getCoverLayerClipboard, setCoverLayerClipboard } from "../lib/bookCoverClipboard";
 import {
   applyLayerStyle,
   deleteLayerStylePreset,
@@ -632,7 +633,6 @@ export function CoverScreen({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const replaceImageInputRef = useRef<HTMLInputElement | null>(null);
-  const clipboardRef = useRef<CoverLayer[]>([]);
   const lastHistoryKeyRef = useRef("");
   const lastHistoryTimeRef = useRef(0);
   const historyRef = useRef(history);
@@ -1206,18 +1206,19 @@ export function CoverScreen({
     const current = layoutRef.current.cover;
     const layers = current.doc.layers.filter((layer) => selectedIds.includes(layer.id));
     if (layers.length === 0) return;
-    clipboardRef.current = cloneCoverLayers(layers, { offsetX: 0, offsetY: 0, stagger: 0, suffix: "" });
-    notify("info", layers.length === 1 ? "Layer copied" : `${layers.length} layers copied`, "Paste with ⌘V or the right-click menu.");
+    setCoverLayerClipboard(cloneCoverLayers(layers, { offsetX: 0, offsetY: 0, stagger: 0, suffix: "" }));
+    notify("info", layers.length === 1 ? "Layer copied" : `${layers.length} layers copied`, "Paste with ⌘V in this or any other cover.");
   };
 
   const pasteSelection = () => {
-    if (clipboardRef.current.length === 0) {
+    const clipboard = getCoverLayerClipboard();
+    if (clipboard.length === 0) {
       notify("info", "Nothing to paste", "Copy a layer first.");
       return;
     }
     const current = layoutRef.current.cover;
     const groupIds = new Set(current.doc.groups.map((group) => group.id));
-    const clones = cloneCoverLayers(clipboardRef.current, { offsetX: 0.16, offsetY: 0.16, stagger: 0.03 }).map((layer) => ({
+    const clones = cloneCoverLayers(clipboard, { offsetX: 0.16, offsetY: 0.16, stagger: 0.03 }).map((layer) => ({
       ...layer,
       groupId: activeGroupId ?? (layer.groupId && groupIds.has(layer.groupId) ? layer.groupId : null),
     }));
