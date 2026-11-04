@@ -18,6 +18,7 @@
     "src/lib/bookCoverMockup.ts",
     "src/lib/bookCoverPackage.ts",
     "src/lib/bookCoverPreflight.ts",
+    "src/lib/bookCoverStyles.ts",
     "src/lib/bookCoverPdf.ts",
     "src/lib/bookCover.ts",
     "src/lib/bookPublishing.ts",

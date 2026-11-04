@@ -62,6 +62,7 @@ import {
   Minus,
   Move,
   Package,
+  Paintbrush,
   Palette,
   Pencil,
   Pipette,
@@ -183,6 +184,15 @@ import { downloadCoverPackage } from "../lib/bookCoverPackage";
 import { coverPreflight, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import {
+  applyLayerStyle,
+  deleteLayerStylePreset,
+  readLayerStylePresets,
+  saveLayerStylePreset,
+  styleValuesFromLayer,
+  type CoverLayerStylePreset,
+  type CoverLayerStyleValues,
+} from "../lib/bookCoverStyles";
+import {
   addSavedCoverTemplate,
   coverTemplateFilename,
   createSavedCoverTemplate,
@@ -280,6 +290,13 @@ interface InspectorProps {
   onClearBarcode: () => void;
   imagePanMode: boolean;
   onImagePanMode: (value: boolean) => void;
+  stylePresets: CoverLayerStylePreset[];
+  hasStyleClipboard: boolean;
+  onCopyStyle: () => void;
+  onPasteStyle: () => void;
+  onApplyStylePreset: (preset: CoverLayerStylePreset) => void;
+  onSaveStyle: () => void;
+  onDeleteStylePreset: (id: string) => void;
   focusContent: number;
 }
 
@@ -428,6 +445,8 @@ function historyLabel(key?: string) {
     return "Updated group";
   }
   if (value.startsWith("pan:")) return "Repositioned image";
+  if (value === "style:paste") return "Pasted layer style";
+  if (value.startsWith("style:preset:")) return "Applied layer style";
   if (value.startsWith("move:")) return "Moved layer";
   if (value.startsWith("resize:")) return "Resized layer";
   if (value.startsWith("rotate:")) return "Rotated layer";
@@ -557,6 +576,8 @@ export function CoverScreen({
   const [templateOpen, setTemplateOpen] = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState<SavedCoverTemplate[]>(() => readSavedCoverTemplates());
+  const [stylePresets, setStylePresets] = useState<CoverLayerStylePreset[]>(() => readLayerStylePresets());
+  const [styleClipboard, setStyleClipboard] = useState<CoverLayerStyleValues | null>(null);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [artworkOpen, setArtworkOpen] = useState(false);
@@ -1153,6 +1174,66 @@ export function CoverScreen({
     setExtraSelectedIds(clones.slice(0, -1).map((layer) => layer.id));
   };
 
+  const copySelectedStyle = () => {
+    const current = layoutRef.current.cover;
+    const layer = current.doc.layers.find((item) => item.id === selectedLayerId) ?? current.doc.layers.find((item) => selectedIds.includes(item.id));
+    if (!layer) return;
+    setStyleClipboard(styleValuesFromLayer(layer));
+    notify("info", "Layer style copied", `${layer.name} · paste with ⌥⌘V or the Style panel.`);
+  };
+
+  const pasteSelectedStyle = () => {
+    if (!styleClipboard) {
+      notify("info", "Nothing to paste", "Copy a layer style first with ⌥⌘C.");
+      return;
+    }
+    const current = layoutRef.current.cover;
+    const ids = selectedIds.length > 0 ? selectedIds : selectedLayerId ? [selectedLayerId] : [];
+    const updates = ids.flatMap((id) => {
+      const layer = current.doc.layers.find((item) => item.id === id);
+      return layer ? [{ id, patch: applyLayerStyle(layer, styleClipboard) }] : [];
+    });
+    if (updates.length === 0) return;
+    updateLayers(updates, { key: "style:paste" });
+    notify("success", updates.length === 1 ? "Style pasted" : `Style pasted to ${updates.length} layers`);
+  };
+
+  const saveCurrentStyle = () => {
+    const current = layoutRef.current.cover;
+    const layer = current.doc.layers.find((item) => item.id === selectedLayerId);
+    if (!layer) return;
+    const name = window.prompt("Name this layer style", `${layer.name} style`);
+    if (!name?.trim()) return;
+    const result = saveLayerStylePreset(name, layer, stylePresets);
+    if (!result.ok) {
+      notify("error", "Style not saved", result.message);
+      return;
+    }
+    setStylePresets(result.presets);
+    notify("success", "Layer style saved", `“${name.trim()}” is ready in the Style panel.`);
+  };
+
+  const applyStylePreset = (preset: CoverLayerStylePreset) => {
+    const current = layoutRef.current.cover;
+    const ids = selectedIds.length > 0 ? selectedIds : selectedLayerId ? [selectedLayerId] : [];
+    const updates = ids.flatMap((id) => {
+      const layer = current.doc.layers.find((item) => item.id === id);
+      return layer ? [{ id, patch: applyLayerStyle(layer, preset.values) }] : [];
+    });
+    if (updates.length === 0) return;
+    updateLayers(updates, { key: `style:preset:${preset.id}` });
+    notify("success", "Style applied", updates.length === 1 ? preset.name : `${preset.name} · ${updates.length} layers`);
+  };
+
+  const removeStylePreset = (id: string) => {
+    const result = deleteLayerStylePreset(id, stylePresets);
+    if (!result.ok) {
+      notify("error", "Style not removed", result.message);
+      return;
+    }
+    setStylePresets(result.presets);
+  };
+
   const bringSelectionToFront = () => {
     const current = layoutRef.current.cover;
     const ids = new Set(selectedIds);
@@ -1480,6 +1561,16 @@ export function CoverScreen({
       selectAllLayers();
       return;
     }
+    if (meta && event.altKey && event.key.toLocaleLowerCase() === "c") {
+      event.preventDefault();
+      copySelectedStyle();
+      return;
+    }
+    if (meta && event.altKey && event.key.toLocaleLowerCase() === "v") {
+      event.preventDefault();
+      pasteSelectedStyle();
+      return;
+    }
     if (meta && event.key.toLocaleLowerCase() === "c" && selectedIds.length > 0) {
       event.preventDefault();
       copySelection();
@@ -1534,7 +1625,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, selectedLayerId, selectedIds, selected?.type, undo, redo]);
+  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, selectedLayerId, selectedIds, selected?.type, styleClipboard, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -1793,6 +1884,13 @@ export function CoverScreen({
               onClearBarcode={() => updateCover({ barcodeImage: "" }, { key: "barcode-image" })}
               imagePanMode={imagePanMode}
               onImagePanMode={setImagePanMode}
+              stylePresets={stylePresets}
+              hasStyleClipboard={Boolean(styleClipboard)}
+              onCopyStyle={copySelectedStyle}
+              onPasteStyle={pasteSelectedStyle}
+              onApplyStylePreset={applyStylePreset}
+              onSaveStyle={saveCurrentStyle}
+              onDeleteStylePreset={removeStylePreset}
               focusContent={focusContent}
             />
           )}
@@ -1887,6 +1985,9 @@ export function CoverScreen({
           allLocked={menuAllLocked}
           onCopy={copySelection}
           onPaste={pasteSelection}
+          onCopyStyle={copySelectedStyle}
+          onPasteStyle={pasteSelectedStyle}
+          canPasteStyle={Boolean(styleClipboard)}
           onDuplicate={duplicateSelection}
           onBringFront={bringSelectionToFront}
           onSendBack={sendSelectionToBack}
@@ -2454,6 +2555,9 @@ function LayerContextMenu({
   allLocked,
   onCopy,
   onPaste,
+  onCopyStyle,
+  onPasteStyle,
+  canPasteStyle,
   onDuplicate,
   onBringFront,
   onSendBack,
@@ -2473,6 +2577,9 @@ function LayerContextMenu({
   allLocked: boolean;
   onCopy: () => void;
   onPaste: () => void;
+  onCopyStyle: () => void;
+  onPasteStyle: () => void;
+  canPasteStyle: boolean;
   onDuplicate: () => void;
   onBringFront: () => void;
   onSendBack: () => void;
@@ -2484,7 +2591,7 @@ function LayerContextMenu({
   onClose: () => void;
 }) {
   const width = 232;
-  const height = 424;
+  const height = 488;
   const left = Math.max(8, Math.min(x, (typeof window === "undefined" ? 1280 : window.innerWidth) - width - 8));
   const top = Math.max(8, Math.min(y, (typeof window === "undefined" ? 800 : window.innerHeight) - height - 8));
   const count = layers.length;
@@ -2495,6 +2602,8 @@ function LayerContextMenu({
       <button type="button" role="menuitem" onClick={run(onDuplicate)}><Files size={14} /><span>Duplicate</span><kbd>⌘D</kbd></button>
       <button type="button" role="menuitem" onClick={run(onCopy)}><ClipboardCopy size={14} /><span>Copy</span><kbd>⌘C</kbd></button>
       <button type="button" role="menuitem" onClick={run(onPaste)}><ClipboardPaste size={14} /><span>Paste</span><kbd>⌘V</kbd></button>
+      <button type="button" role="menuitem" onClick={run(onCopyStyle)}><Paintbrush size={14} /><span>Copy style</span><kbd>⌥⌘C</kbd></button>
+      <button type="button" role="menuitem" disabled={!canPasteStyle} onClick={run(onPasteStyle)}><ClipboardPaste size={14} /><span>Paste style</span><kbd>⌥⌘V</kbd></button>
       <span className="cover-context-sep" />
       <button type="button" role="menuitem" onClick={run(onBringFront)}><BringToFront size={14} /><span>Bring to front</span></button>
       <button type="button" role="menuitem" onClick={run(onSendBack)}><SendToBack size={14} /><span>Send to back</span></button>
@@ -3054,7 +3163,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, imagePanMode, onImagePanMode, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, focusContent }: InspectorProps) {
   return (
     <aside className="cover-inspector" aria-label={selected ? "Layer properties" : "Cover properties"}>
       <div className="cover-inspector-head">
@@ -3075,6 +3184,13 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             onClearBarcode={onClearBarcode}
             imagePanMode={imagePanMode}
             onImagePanMode={onImagePanMode}
+            stylePresets={stylePresets}
+            hasStyleClipboard={hasStyleClipboard}
+            onCopyStyle={onCopyStyle}
+            onPasteStyle={onPasteStyle}
+            onApplyStylePreset={onApplyStylePreset}
+            onSaveStyle={onSaveStyle}
+            onDeleteStylePreset={onDeleteStylePreset}
             focusContent={focusContent}
           />
         ) : (
@@ -3230,6 +3346,13 @@ function LayerInspector({
   onClearBarcode,
   imagePanMode,
   onImagePanMode,
+  stylePresets,
+  hasStyleClipboard,
+  onCopyStyle,
+  onPasteStyle,
+  onApplyStylePreset,
+  onSaveStyle,
+  onDeleteStylePreset,
   focusContent,
 }: {
   book: Book;
@@ -3243,6 +3366,13 @@ function LayerInspector({
   onClearBarcode: () => void;
   imagePanMode: boolean;
   onImagePanMode: (value: boolean) => void;
+  stylePresets: CoverLayerStylePreset[];
+  hasStyleClipboard: boolean;
+  onCopyStyle: () => void;
+  onPasteStyle: () => void;
+  onApplyStylePreset: (preset: CoverLayerStylePreset) => void;
+  onSaveStyle: () => void;
+  onDeleteStylePreset: (id: string) => void;
   focusContent: number;
 }) {
   const contentRef = useRef<HTMLTextAreaElement>(null);
@@ -3339,6 +3469,30 @@ function LayerInspector({
           <SliderField label="Opacity" value={layer.opacity} onChange={(opacity) => onUpdate({ opacity }, { key: `opacity:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
           <label className="cover-select-field"><span>Blend</span><select value={layer.blendMode} onChange={(event) => onUpdate({ blendMode: event.target.value as CoverBlendMode }, { key: `blend:${layer.id}` })}><option value="normal">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="overlay">Overlay</option><option value="soft-light">Soft light</option><option value="hard-light">Hard light</option><option value="color-dodge">Color dodge</option><option value="color-burn">Color burn</option><option value="darken">Darken</option><option value="lighten">Lighten</option><option value="difference">Difference</option><option value="exclusion">Exclusion</option><option value="hue">Hue</option><option value="saturation">Saturation</option><option value="color">Color</option><option value="luminosity">Luminosity</option></select></label>
         </div>
+      </Section>
+
+      <Section title="Style" hint="Copy & presets" defaultOpen={false}>
+        <div className="cover-style-actions">
+          <button type="button" className="cover-mini-button" onClick={onCopyStyle} title="Copy this layer's appearance"><Paintbrush size={12} /> Copy style</button>
+          <button type="button" className="cover-mini-button" disabled={!hasStyleClipboard} onClick={onPasteStyle} title="Paste appearance onto the selection"><ClipboardPaste size={12} /> Paste style</button>
+        </div>
+        <div className="cover-style-presets">
+          <span className="cover-field-heading">Saved styles</span>
+          {stylePresets.length === 0 ? (
+            <p className="cover-style-empty">Save a look to reuse its type, fill, effects, and mask across layers and covers.</p>
+          ) : (
+            <div className="cover-style-preset-list">
+              {stylePresets.map((preset) => (
+                <div className="cover-style-preset" key={preset.id}>
+                  <button type="button" onClick={() => onApplyStylePreset(preset)} title={`Apply ${preset.name}`}><span>{preset.name}</span><small>{preset.sourceType}</small></button>
+                  <button type="button" className="cover-style-delete" onClick={() => onDeleteStylePreset(preset.id)} title={`Delete ${preset.name}`} aria-label={`Delete ${preset.name} style`}><Trash2 size={11} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button type="button" className="cover-wide-button subtle" onClick={onSaveStyle}><Plus size={12} /> Save current style</button>
+        </div>
+        <small className="cover-field-hint">Shared effects, opacity, blend mode, and masks apply to any layer. Type settings apply to matching layers. Shortcuts: ⌥⌘C / ⌥⌘V.</small>
       </Section>
 
       <Section title="Layer mask" hint="Gradient fade" defaultOpen={layer.fade.mode !== "none"}>
