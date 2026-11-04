@@ -7,6 +7,7 @@ const {
   coverDocMarkup,
   coverFillCss,
   coverImageFilterCss,
+  coverLayerFadeCss,
   coverImageMaskCss,
   coverImageOverflow,
   coverPatternDataUrl,
@@ -469,4 +470,39 @@ test("cover image panning maps drag distance to clamped focus", () => {
   assert.deepEqual(coverImageOverflow(wide, 2000, 1000), { x: 0, y: 0 });
   assert.deepEqual(coverImageOverflow({ ...wide, fit: "contain" }, 2000, 1000), { x: 0, y: 0 });
   assert.deepEqual(coverImageOverflow(wide, 0, 0), { x: 0, y: 0 });
+});
+
+
+test("layer fade masks persist, clamp, and render into markup", () => {
+  const doc = parseCoverDocument({
+    layers: [{
+      id: "fade",
+      type: "text",
+      name: "Fade",
+      panel: "front",
+      x: 0.5,
+      y: 0.5,
+      width: 3,
+      height: 2,
+      text: "Fade",
+      fade: { mode: "bottom", size: 0.4 },
+    }],
+  });
+  assert.equal(doc.layers[0].fade.mode, "bottom");
+  assert.equal(doc.layers[0].fade.size, 0.4);
+  const css = coverLayerFadeCss(doc.layers[0]);
+  assert.equal(css.maskImage, "linear-gradient(to top, transparent 0%, #000000 40%)");
+  assert.equal(css.WebkitMaskImage, css.maskImage);
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.match(markup, /mask-image:linear-gradient\(to top, transparent 0%, #000000 40%\)/);
+  assert.match(markup, /-webkit-mask-image:linear-gradient/);
+
+  const legacy = parseCoverDocument({ layers: [{ id: "old", type: "text", name: "Old", panel: "front", x: 0, y: 0, width: 2, height: 1, text: "Old" }] });
+  assert.equal(legacy.layers[0].fade.mode, "none");
+  assert.equal(legacy.layers[0].fade.size, 0.35);
+  const clamped = parseCoverDocument({ layers: [{ ...doc.layers[0], fade: { mode: "vignette", size: 9 } }] });
+  assert.equal(clamped.layers[0].fade.mode, "vignette");
+  assert.equal(clamped.layers[0].fade.size, 1);
+  assert.equal(coverLayerFadeCss(clamped.layers[0]).maskImage, "radial-gradient(ellipse at center, #000000 0%, transparent 100%)");
+  assert.deepEqual(coverLayerFadeCss({ ...doc.layers[0], fade: { mode: "none", size: 0.4 } }), {});
 });

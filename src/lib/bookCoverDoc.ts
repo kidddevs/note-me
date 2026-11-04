@@ -58,6 +58,13 @@ export interface CoverLayerGlow {
   opacity: number;
 }
 
+export type CoverLayerFadeMode = "none" | "bottom" | "top" | "left" | "right" | "vignette";
+
+export interface CoverLayerFade {
+  mode: CoverLayerFadeMode;
+  size: number;
+}
+
 export interface CoverLayerBase {
   id: string;
   type: CoverLayerType;
@@ -75,6 +82,7 @@ export interface CoverLayerBase {
   groupId: string | null;
   shadow: CoverLayerShadow;
   glow: CoverLayerGlow;
+  fade: CoverLayerFade;
 }
 
 export interface CoverLayerGroup {
@@ -623,7 +631,7 @@ function gradientMeta(gradient: BookCoverGradient) {
 
 /* ---------------------------------------------------------------- layers */
 
-function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow"> & Partial<Pick<CoverLayerBase, "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow">>): Omit<CoverLayerBase, "type"> {
+function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow" | "fade"> & Partial<Pick<CoverLayerBase, "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow" | "fade">>): Omit<CoverLayerBase, "type"> {
   return {
     id: input.id,
     name: input.name,
@@ -640,6 +648,7 @@ function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" |
     groupId: input.groupId ?? null,
     shadow: input.shadow ?? { enabled: false, color: "#000000", blur: 0.16, offsetX: 0.04, offsetY: 0.06, opacity: 0.35 },
     glow: input.glow ?? { enabled: false, color: "#c9a227", blur: 0.22, opacity: 0.4 },
+    fade: input.fade ?? { mode: "none", size: 0.35 },
   };
 }
 
@@ -765,6 +774,15 @@ function normalizeLayerBase(source: Record<string, unknown>, type: CoverLayerTyp
     groupId: text(source.groupId, "", 80) || null,
     shadow: normalizeShadow(source.shadow),
     glow: normalizeGlow(source.glow),
+    fade: normalizeFade(source.fade),
+  };
+}
+
+function normalizeFade(value: unknown): CoverLayerFade {
+  const source = isRecord(value) ? value : {};
+  return {
+    mode: oneOf(source.mode, ["none", "bottom", "top", "left", "right", "vignette"] as const, "none"),
+    size: decimal(source.size, 0.35, 0, 1),
   };
 }
 
@@ -2438,6 +2456,55 @@ function coverLayerEffectCanvas(layer: CoverLayer, dpi: number) {
   return filters.join(" ");
 }
 
+export function coverLayerFadeCss(layer: Pick<CoverLayerBase, "fade">) {
+  const mode = layer.fade.mode;
+  const size = clamp(layer.fade.size, 0, 1);
+  if (mode === "none" || size <= 0) return {};
+  const amount = Math.round(size * 1000) / 10;
+  const image = mode === "bottom"
+    ? `linear-gradient(to top, transparent 0%, #000000 ${amount}%)`
+    : mode === "top"
+      ? `linear-gradient(to bottom, transparent 0%, #000000 ${amount}%)`
+      : mode === "left"
+        ? `linear-gradient(to right, transparent 0%, #000000 ${amount}%)`
+        : mode === "right"
+          ? `linear-gradient(to left, transparent 0%, #000000 ${amount}%)`
+          : `radial-gradient(ellipse at center, #000000 ${100 - amount}%, transparent 100%)`;
+  return { maskImage: image, WebkitMaskImage: image };
+}
+
+export function coverLayerFadeActive(layer: Pick<CoverLayerBase, "fade">) {
+  return layer.fade.mode !== "none" && layer.fade.size > 0;
+}
+
+function applyLayerFadeCanvas(ctx: CanvasRenderingContext2D, fade: CoverLayerFade, width: number, height: number) {
+  if (fade.mode === "none" || fade.size <= 0) return;
+  const size = clamp(fade.size, 0, 1);
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.globalAlpha = 1;
+  ctx.filter = "none";
+  ctx.fillStyle = fade.mode === "vignette"
+    ? (() => {
+        const gradient = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, Math.max(width, height) * 0.72);
+        gradient.addColorStop(0, "rgba(0,0,0,1)");
+        gradient.addColorStop(1 - size, "rgba(0,0,0,1)");
+        gradient.addColorStop(1, "rgba(0,0,0,0)");
+        return gradient;
+      })()
+    : (() => {
+        const horizontal = fade.mode === "left" || fade.mode === "right";
+        const gradient = horizontal ? ctx.createLinearGradient(0, 0, width, 0) : ctx.createLinearGradient(0, 0, 0, height);
+        const stops: Array<[number, number]> = fade.mode === "bottom" || fade.mode === "right"
+          ? [[0, 1], [1 - size, 1], [1, 0]]
+          : [[0, 0], [size, 1], [1, 1]];
+        stops.forEach(([position, alpha]) => gradient.addColorStop(position, `rgba(0,0,0,${alpha})`));
+        return gradient;
+      })();
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
 export function coverLayerStyle(layer: CoverLayer): Record<string, string> {
   const style: Record<string, string> = {
     left: `${layer.panel === "wrap" ? layer.x : layer.x}in`,
@@ -2450,6 +2517,7 @@ export function coverLayerStyle(layer: CoverLayer): Record<string, string> {
   };
   const effects = coverLayerEffectsCss(layer);
   if (effects) style.filter = effects;
+  Object.assign(style, coverLayerFadeCss(layer));
   return style;
 }
 
@@ -2939,29 +3007,16 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   const barcodeImage = cover.barcodeImage ? await loadImage(cover.barcodeImage) : null;
   applyFill(ctx, cover.doc.background, 0, 0, metrics.fullWidth, metrics.fullHeight, patternBySource);
   const layers = cover.doc.layers.filter((layer) => coverLayerVisible(cover.doc, layer) && layerForPanel(layer, target));
-  for (const layer of layers) {
-    const spread = layerSpreadRect(metrics, layer);
-    if (spread.x + spread.width < rect.x || spread.x > rect.x + rect.width || spread.y + spread.height < rect.y || spread.y > rect.y + rect.height) continue;
-    ctx.save();
-    ctx.globalAlpha = layer.opacity;
-    ctx.globalCompositeOperation = layer.blendMode === "normal" ? "source-over" : layer.blendMode as GlobalCompositeOperation;
-    const effectFilter = coverLayerEffectCanvas(layer, dpi);
-    if (effectFilter) ctx.filter = effectFilter;
-    const centerX = spread.x + spread.width / 2;
-    const centerY = spread.y + spread.height / 2;
-    ctx.translate(centerX, centerY);
-    ctx.rotate((layer.rotation * Math.PI) / 180);
-    ctx.translate(-spread.width / 2, -spread.height / 2);
+  const drawLayerContent = (target: CanvasRenderingContext2D, layer: CoverLayer, spread: CoverPanelRect, imageFilter: string) => {
     if (layer.type === "text") {
       const content = resolveCoverTokenText(layer.text, book, cover);
-      if (layer.curve !== 0) drawCurvedTextLayer(ctx, layer, content, spread.width, spread.height);
-      else drawTextLayer(ctx, layer, content, spread.width, spread.height);
+      if (layer.curve !== 0) drawCurvedTextLayer(target, layer, content, spread.width, spread.height);
+      else drawTextLayer(target, layer, content, spread.width, spread.height);
     } else if (layer.type === "image") {
       const image = imageBySource.get(layer.src);
       if (image) {
-        const imageFilter = [effectFilter, coverImageFilterCanvas(layer, dpi)].filter(Boolean).join(" ");
-        ctx.filter = "none";
-        drawImageFit(ctx, image, 0, 0, spread.width, spread.height, layer.fit, layer.radius, {
+        target.filter = "none";
+        drawImageFit(target, image, 0, 0, spread.width, spread.height, layer.fit, layer.radius, {
           focusX: layer.focusX,
           focusY: layer.focusY,
           mask: layer.mask,
@@ -2972,38 +3027,72 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
           tintStrength: layer.tintStrength,
         });
       } else {
-        ctx.fillStyle = "rgba(0,0,0,.08)";
-        roundRectPath(ctx, 0, 0, spread.width, spread.height, layer.radius);
-        ctx.fill();
+        target.fillStyle = "rgba(0,0,0,.08)";
+        roundRectPath(target, 0, 0, spread.width, spread.height, layer.radius);
+        target.fill();
       }
     } else if (layer.type === "shape") {
-      drawShape(ctx, layer, 0, 0, spread.width, spread.height, patternBySource);
+      drawShape(target, layer, 0, 0, spread.width, spread.height, patternBySource);
     } else if (layer.type === "line") {
-      ctx.fillStyle = layer.color;
+      target.fillStyle = layer.color;
       if (layer.dash === "solid") {
-        ctx.fillRect(0, 0, spread.width, spread.height);
+        target.fillRect(0, 0, spread.width, spread.height);
       } else {
-        ctx.setLineDash(layer.dash === "dashed" ? [Math.max(0.06, spread.height * 2.2), Math.max(0.05, spread.height * 1.6)] : [spread.height, spread.height]);
-        ctx.lineWidth = spread.height;
-        ctx.strokeStyle = layer.color;
-        ctx.beginPath();
-        ctx.moveTo(0, spread.height / 2);
-        ctx.lineTo(spread.width, spread.height / 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        target.setLineDash(layer.dash === "dashed" ? [Math.max(0.06, spread.height * 2.2), Math.max(0.05, spread.height * 1.6)] : [spread.height, spread.height]);
+        target.lineWidth = spread.height;
+        target.strokeStyle = layer.color;
+        target.beginPath();
+        target.moveTo(0, spread.height / 2);
+        target.lineTo(spread.width, spread.height / 2);
+        target.stroke();
+        target.setLineDash([]);
       }
     } else if (layer.type === "symbol") {
       const size = Math.min(spread.width, spread.height);
-      ctx.fillStyle = layer.color;
-      ctx.font = `${size * 0.92}px 'Apple Symbols','Segoe UI Symbol','Noto Sans Symbols',serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(layer.glyph, spread.width / 2, spread.height / 2);
+      target.fillStyle = layer.color;
+      target.font = `${size * 0.92}px 'Apple Symbols','Segoe UI Symbol','Noto Sans Symbols',serif`;
+      target.textAlign = "center";
+      target.textBaseline = "middle";
+      target.fillText(layer.glyph, spread.width / 2, spread.height / 2);
     } else if (layer.type === "artwork") {
       const image = imageBySource.get(coverArtworkDataUrl(layer));
-      if (image) drawImageFit(ctx, image, 0, 0, spread.width, spread.height, "contain", 0);
+      if (image) drawImageFit(target, image, 0, 0, spread.width, spread.height, "contain", 0);
     } else {
-      drawBarcodeLayer(ctx, layer, cover, spread.width, spread.height, barcodeImage);
+      drawBarcodeLayer(target, layer, cover, spread.width, spread.height, barcodeImage);
+    }
+  };
+
+  for (const layer of layers) {
+    const spread = layerSpreadRect(metrics, layer);
+    if (spread.x + spread.width < rect.x || spread.x > rect.x + rect.width || spread.y + spread.height < rect.y || spread.y > rect.y + rect.height) continue;
+    const effectFilter = coverLayerEffectCanvas(layer, dpi);
+    const imageGrade = layer.type === "image" ? coverImageFilterCanvas(layer, dpi) : "";
+    const masked = coverLayerFadeActive(layer);
+    ctx.save();
+    ctx.globalAlpha = layer.opacity;
+    ctx.globalCompositeOperation = layer.blendMode === "normal" ? "source-over" : layer.blendMode as GlobalCompositeOperation;
+    if (!masked && effectFilter) ctx.filter = effectFilter;
+    const centerX = spread.x + spread.width / 2;
+    const centerY = spread.y + spread.height / 2;
+    ctx.translate(centerX, centerY);
+    ctx.rotate((layer.rotation * Math.PI) / 180);
+    ctx.translate(-spread.width / 2, -spread.height / 2);
+    if (masked) {
+      const pixelWidth = Math.max(1, Math.round(spread.width * dpi));
+      const pixelHeight = Math.max(1, Math.round(spread.height * dpi));
+      const layerCanvas = document.createElement("canvas");
+      layerCanvas.width = pixelWidth;
+      layerCanvas.height = pixelHeight;
+      const layerCtx = layerCanvas.getContext("2d");
+      if (layerCtx) {
+        layerCtx.scale(pixelWidth / spread.width, pixelHeight / spread.height);
+        drawLayerContent(layerCtx, layer, spread, imageGrade);
+        applyLayerFadeCanvas(layerCtx, layer.fade, spread.width, spread.height);
+        if (effectFilter) ctx.filter = effectFilter;
+        ctx.drawImage(layerCanvas, 0, 0, spread.width, spread.height);
+      }
+    } else {
+      drawLayerContent(ctx, layer, spread, [effectFilter, imageGrade].filter(Boolean).join(" "));
     }
     ctx.restore();
   }

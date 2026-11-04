@@ -106,6 +106,7 @@ import {
   coverFill,
   coverFillCss,
   coverLayerEffectsCss,
+  coverLayerFadeCss,
   coverLayerInnerHtml,
   coverLayerLocked,
   coverShapePath,
@@ -2907,7 +2908,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
                   onDoubleClick={() => { if (!eyedropper && layer.type === "text") onEditText(layer.id); }}
                   title={locked ? `${layer.name} (locked)` : layer.name}
                 >
-                  <div className="cover-canvas-layer-content" style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: coverLayerInnerHtml(book, cover, layer, "editor") }} />
+                  <div className="cover-canvas-layer-content" style={{ pointerEvents: "none", ...coverLayerFadeCss(layer) }} dangerouslySetInnerHTML={{ __html: coverLayerInnerHtml(book, cover, layer, "editor") }} />
                   {isSelected && (
                     <>
                       <span className="cover-selection-outline" />
@@ -3297,6 +3298,17 @@ function LayerInspector({
           <SliderField label="Opacity" value={layer.opacity} onChange={(opacity) => onUpdate({ opacity }, { key: `opacity:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
           <label className="cover-select-field"><span>Blend</span><select value={layer.blendMode} onChange={(event) => onUpdate({ blendMode: event.target.value as CoverBlendMode }, { key: `blend:${layer.id}` })}><option value="normal">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="overlay">Overlay</option><option value="soft-light">Soft light</option><option value="hard-light">Hard light</option><option value="color-dodge">Color dodge</option><option value="color-burn">Color burn</option><option value="darken">Darken</option><option value="lighten">Lighten</option><option value="difference">Difference</option><option value="exclusion">Exclusion</option><option value="hue">Hue</option><option value="saturation">Saturation</option><option value="color">Color</option><option value="luminosity">Luminosity</option></select></label>
         </div>
+      </Section>
+
+      <Section title="Layer mask" hint="Gradient fade" defaultOpen={layer.fade.mode !== "none"}>
+        <label className="cover-select-field full"><span>Fade edge</span><select value={layer.fade.mode} onChange={(event) => onUpdate({ fade: { ...layer.fade, mode: event.target.value as CoverLayer["fade"]["mode"] } }, { key: `fade-mode:${layer.id}` })}><option value="none">No mask</option><option value="bottom">Fade bottom</option><option value="top">Fade top</option><option value="left">Fade left</option><option value="right">Fade right</option><option value="vignette">Vignette</option></select></label>
+        {layer.fade.mode !== "none" && (
+          <>
+            <SliderField label={layer.fade.mode === "vignette" ? "Fade spread" : "Fade length"} value={layer.fade.size} onChange={(size) => onUpdate({ fade: { ...layer.fade, size } }, { key: `fade-size:${layer.id}` })} min={0.02} max={0.95} step={0.01} suffix="" />
+            <div className="cover-mask-preview" style={{ background: "var(--book-accent)", ...coverLayerFadeCss(layer) }} />
+          </>
+        )}
+        <small className="cover-field-hint">Fades this layer to transparent without changing its pixels. The mask carries through panel exports, mockups, HTML, and print PDFs.</small>
       </Section>
 
       {layer.type === "text" && (
