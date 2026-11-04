@@ -467,6 +467,7 @@ export function CoverScreen({
   const [zoom, setZoom] = useState(1);
   const [autoFit, setAutoFit] = useState(true);
   const [dpi, setDpi] = useState(300);
+  const [pdfx, setPdfx] = useState(false);
   const [busyDownload, setBusyDownload] = useState<string | null>(null);
   const [history, setHistory] = useState<CoverHistoryEntry[]>([]);
   const [future, setFuture] = useState<CoverHistoryEntry[]>([]);
@@ -1159,7 +1160,7 @@ export function CoverScreen({
   const handleDownloadPdf = async (marks: boolean) => {
     setBusyDownload(marks ? "pdf-marks" : "pdf");
     try {
-      const filename = await downloadCoverPdf(book, layoutRef.current.cover, { dpi, marks });
+      const filename = await downloadCoverPdf(book, layoutRef.current.cover, { dpi, marks, pdfx });
       if (filename) notify("success", "Print PDF ready", filename);
       setDownloadOpen(false);
     } catch (error) {
@@ -1326,8 +1327,12 @@ export function CoverScreen({
                   <button type="button" role="menuitem" onClick={() => void handleDownload("wrap", "jpeg")}><FileDown size={14} /><span><strong>Full wrap JPEG</strong><small>Smaller file for proofs & sharing</small></span></button>
                   <div className="cover-download-sep" />
                   <div className="cover-download-subhead">Print-ready PDF <small>Vector page · embedded image</small></div>
-                  <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPdf(true)}><FileText size={14} /><span><strong>Full wrap PDF with marks</strong><small>Crop marks, fold marks, colour bar & slug</small></span></button>
-                  <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPdf(false)}><FileText size={14} /><span><strong>Full wrap PDF</strong><small>Trim + bleed without printer marks</small></span></button>
+                  <label className="cover-download-toggle">
+                    <span><strong>PDF/X-4 output intent</strong><small>sRGB · flattened · trim/bleed boxes</small></span>
+                    <input type="checkbox" checked={pdfx} onChange={(event) => setPdfx(event.target.checked)} />
+                  </label>
+                  <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPdf(true)}><FileText size={14} /><span><strong>{pdfx ? "Full wrap PDF/X-4 with marks" : "Full wrap PDF with marks"}</strong><small>Crop marks, fold marks, colour bar & slug</small></span></button>
+                  <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPdf(false)}><FileText size={14} /><span><strong>{pdfx ? "Full wrap PDF/X-4" : "Full wrap PDF"}</strong><small>Trim + bleed without printer marks</small></span></button>
                   <div className="cover-download-sep" />
                   <button type="button" role="menuitem" onClick={() => { setDownloadOpen(false); printCover(); }}><Printer size={14} /><span><strong>Print / Save via browser</strong><small>Uses the full print wrap</small></span></button>
                 </div>

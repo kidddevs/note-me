@@ -5850,6 +5850,11 @@ kbd {
 .cover-download-sep { height: 1px; margin: 4px 5px; background: var(--border); }
 .cover-download-subhead { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 5px 7px 2px; color: var(--text-4); font-size: 7.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
 .cover-download-subhead small { color: var(--text-4); font-size: 7px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.cover-download-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 0 4px; padding: 7px 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-2); cursor: pointer; }
+.cover-download-toggle > span { display: flex; flex-direction: column; gap: 1px; }
+.cover-download-toggle strong { color: var(--text); font-size: 8.5px; font-weight: 650; }
+.cover-download-toggle small { color: var(--text-4); font-size: 7.3px; line-height: 1.3; }
+.cover-download-toggle input { width: 28px; height: 16px; flex-shrink: 0; accent-color: var(--book-accent); }
 .cover-download-menu > button:disabled { opacity: 0.45; cursor: default; }
 .cover-spinner { width: 12px; height: 12px; border: 1.5px solid rgba(255, 255, 255, 0.35); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
 .cover-designer-body { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; }
