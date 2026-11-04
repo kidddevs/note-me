@@ -6438,6 +6438,36 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-template-modal-foot span { color: var(--text-3); font-size: 8.5px; line-height: 1.45; }
 .cover-template-modal-foot strong { color: var(--text-2); font-family: var(--mono); font-size: 8px; }
 .cover-template-modal-foot button { flex-shrink: 0; }
+.cover-template-section-head { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 14px; padding: 2px 0 1px; }
+.cover-template-section-head > div { display: flex; flex-direction: column; gap: 2px; }
+.cover-template-section-head strong { color: var(--text); font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
+.cover-template-empty { display: flex; grid-column: 1 / -1; align-items: center; flex-direction: column; gap: 6px; padding: 22px 20px; border: 1px dashed var(--border-strong); border-radius: 10px; background: var(--surface-2); text-align: center; }
+.cover-template-empty > span { display: flex; width: 42px; height: 42px; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--book-accent); }
+.cover-template-empty strong { color: var(--text); font-size: 11px; font-weight: 650; }
+.cover-template-empty p { max-width: 430px; margin: 0; color: var(--text-3); font-size: 9px; line-height: 1.5; }
+.cover-template-empty button { margin-top: 4px; }
+.cover-template-card-actions { display: flex; align-items: center; gap: 4px; }
+.cover-template-card-actions .cover-primary-button { flex: 1; }
+.cover-template-card-actions .cover-icon-button { width: 27px; height: 27px; flex-shrink: 0; }
+.cover-template-card-actions .cover-icon-button.danger:hover { background: var(--danger-soft); color: var(--danger); }
+.cover-template-rename { min-width: 0; width: 100%; height: 24px; padding: 0 5px; border: 1px solid var(--book-accent); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; font-size: 10.5px; font-weight: 650; outline: none; }
+.cover-save-template-modal { width: min(760px, 100%); }
+.cover-save-template-body { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 22px; padding: 20px 24px 24px; overflow-y: auto; }
+.cover-save-template-preview { position: relative; overflow: hidden; align-self: start; border: 1px solid var(--border); border-radius: 8px; background: repeating-conic-gradient(var(--surface-2) 0 25%, var(--surface) 0 50%) 0 0 / 18px 18px; }
+.cover-save-template-preview > div { position: absolute; top: 0; left: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24); }
+.cover-save-template-form { display: flex; min-width: 0; flex-direction: column; gap: 13px; }
+.cover-save-template-name { display: flex; flex-direction: column; gap: 5px; }
+.cover-save-template-name span { color: var(--text-3); font-size: 8px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.cover-save-template-name input { height: 36px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 12px; outline: none; }
+.cover-save-template-name input:focus { border-color: var(--book-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--book-accent) 16%, transparent); }
+.cover-save-template-meta { display: flex; flex-wrap: wrap; gap: 5px; }
+.cover-save-template-meta span { padding: 5px 8px; border: 1px solid var(--border-subtle); border-radius: 999px; background: var(--surface-2); color: var(--text-3); font-size: 8px; }
+.cover-save-template-meta strong { color: var(--text-2); font-size: 8.5px; }
+.cover-save-template-note { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 9px 10px; border: 1px solid var(--border-subtle); border-radius: 7px; background: var(--surface-2); color: var(--text-3); font-size: 8.5px; line-height: 1.5; }
+.cover-save-template-note svg { flex-shrink: 0; margin-top: 1px; color: var(--book-accent); }
+.cover-save-template-note strong { color: var(--text-2); font-family: var(--mono); font-size: 8px; }
+.cover-save-template-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: auto; padding-top: 4px; }
+.cover-outline-button.small { height: 27px; font-size: 9px; }
 
 /* Static wrap artwork used by Export studio and Print */
 .books-wrap-art-frame { position: relative; display: block; width: 100%; overflow: hidden; }

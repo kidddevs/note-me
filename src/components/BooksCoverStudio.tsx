@@ -23,6 +23,7 @@ import {
   ArrowUp,
   Barcode,
   BookOpen,
+  BookmarkPlus,
   BringToFront,
   CaseUpper,
   Check,
@@ -59,6 +60,7 @@ import {
   Move,
   Package,
   Palette,
+  Pencil,
   Pipette,
   Plus,
   Printer,
@@ -174,6 +176,14 @@ import { downloadCoverMockup } from "../lib/bookCoverMockup";
 import { downloadCoverPackage } from "../lib/bookCoverPackage";
 import { coverPreflight, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
+import {
+  deleteSavedCoverTemplate,
+  readSavedCoverTemplates,
+  renameCoverTemplate,
+  saveCoverTemplate,
+  savedTemplateDocument,
+  type SavedCoverTemplate,
+} from "../lib/bookCoverLibrary";
 import { useBooks } from "../store/books";
 import { notify } from "../store/toast";
 
@@ -296,7 +306,12 @@ interface LayerPanelProps {
 interface TemplateModalProps {
   book: Book;
   cover: BookCoverDesign;
+  savedTemplates: SavedCoverTemplate[];
   onApply: (templateId: string) => void;
+  onApplySaved: (template: SavedCoverTemplate) => void;
+  onDeleteSaved: (id: string) => void;
+  onRenameSaved: (id: string, name: string) => void;
+  onSaveCurrent: () => void;
   onClose: () => void;
 }
 
@@ -381,6 +396,7 @@ function pageCountFor(book: Book, chapters: Chapter[]) {
 function historyLabel(key?: string) {
   if (!key) return "Edited cover";
   const value = key.toLocaleLowerCase();
+  if (value.startsWith("template:saved:")) return "Applied saved template";
   const template = COVER_TEMPLATE_PRESETS.find((preset) => value === `template:${preset.id}`);
   if (template) return `Applied ${template.label}`;
   if (value.startsWith("group:create")) return "Grouped layers";
@@ -520,6 +536,8 @@ export function CoverScreen({
   const [showLayers, setShowLayers] = useState(true);
   const [previewing, setPreviewing] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [savedTemplates, setSavedTemplates] = useState<SavedCoverTemplate[]>(() => readSavedCoverTemplates());
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [artworkOpen, setArtworkOpen] = useState(false);
@@ -990,6 +1008,50 @@ export function CoverScreen({
     setPanel("wrap");
     setAutoFit(true);
     notify("success", templateId === "blank" ? "Blank cover created" : "Cover template applied", "Your previous design is available in undo.");
+  };
+
+  const saveAsTemplate = (name: string) => {
+    const currentCover = layoutRef.current.cover;
+    const result = saveCoverTemplate(name, currentCover.doc, coverMetrics(bookRef.current.trim_size, currentCover), savedTemplates);
+    if (!result.ok) {
+      notify("error", "Template not saved", result.message);
+      return false;
+    }
+    setSavedTemplates(result.templates);
+    setSaveTemplateOpen(false);
+    notify("success", "Template saved", `“${name.trim()}” is ready in My templates.`);
+    return true;
+  };
+
+  const applySavedTemplate = (template: SavedCoverTemplate) => {
+    const currentCover = layoutRef.current.cover;
+    const nextDoc = savedTemplateDocument(template, coverMetrics(bookRef.current.trim_size, currentCover));
+    updateCover({ doc: { ...nextDoc, templateId: `saved:${template.id}` }, enabled: true }, { key: `template:saved:${template.id}`, history: true });
+    setTemplateOpen(false);
+    setSelectedLayerId(null);
+    setExtraSelectedIds([]);
+    setPanel("wrap");
+    setAutoFit(true);
+    notify("success", "Saved template applied", `“${template.name}” is ready to edit. Your previous design is available in undo.`);
+  };
+
+  const removeSavedTemplate = (id: string) => {
+    const result = deleteSavedCoverTemplate(id, savedTemplates);
+    if (!result.ok) {
+      notify("error", "Template not removed", result.message);
+      return;
+    }
+    setSavedTemplates(result.templates);
+    notify("success", "Template removed");
+  };
+
+  const renameSavedTemplate = (id: string, name: string) => {
+    const result = renameCoverTemplate(id, name, savedTemplates);
+    if (!result.ok) {
+      notify("error", "Template not renamed", result.message);
+      return;
+    }
+    setSavedTemplates(result.templates);
   };
 
   const toggleVisible = (id: string) => {
@@ -1494,6 +1556,7 @@ export function CoverScreen({
             <button type="button" className="cover-icon-button" title="Undo" aria-label="Undo" disabled={history.length === 0} onClick={undo}><Undo2 size={15} /></button>
             <button type="button" className="cover-icon-button" title="Redo" aria-label="Redo" disabled={future.length === 0} onClick={redo}><Redo2 size={15} /></button>
             <button type="button" className="cover-outline-button" onClick={() => { setTemplateOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><LayoutTemplate size={14} /><span>Templates</span></button>
+            <button type="button" className="cover-icon-button" title="Save current design as a template" aria-label="Save current design as a template" onClick={() => { setSaveTemplateOpen(true); setTemplateOpen(false); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><BookmarkPlus size={15} /></button>
             <button type="button" className="cover-icon-button" title="Print cover" aria-label="Print cover" onClick={printCover}><Printer size={15} /></button>
             <div className="cover-download-wrap">
               <button type="button" className="cover-primary-button" onClick={() => { setDownloadOpen((value) => !value); setSymbolOpen(false); setArtworkOpen(false); }} disabled={Boolean(busyDownload)}>
@@ -1724,7 +1787,27 @@ export function CoverScreen({
         )}
       </div>
 
-      {templateOpen && <TemplateModal book={book} cover={cover} onApply={applyTemplate} onClose={() => setTemplateOpen(false)} />}
+      {templateOpen && (
+        <TemplateModal
+          book={book}
+          cover={cover}
+          savedTemplates={savedTemplates}
+          onApply={applyTemplate}
+          onApplySaved={applySavedTemplate}
+          onDeleteSaved={removeSavedTemplate}
+          onRenameSaved={renameSavedTemplate}
+          onSaveCurrent={() => { setTemplateOpen(false); setSaveTemplateOpen(true); }}
+          onClose={() => setTemplateOpen(false)}
+        />
+      )}
+      {saveTemplateOpen && (
+        <SaveTemplateModal
+          book={book}
+          cover={cover}
+          onSave={saveAsTemplate}
+          onClose={() => setSaveTemplateOpen(false)}
+        />
+      )}
       {mockupOpen && <BookMockup book={book} cover={cover} onClose={() => setMockupOpen(false)} />}
       {preflightOpen && (
         <PreflightModal
@@ -3480,23 +3563,86 @@ function DocumentInspector({
 
 /* ========================================================================== */
 
-function TemplateModal({ book, cover, onApply, onClose }: TemplateModalProps) {
+function TemplateModal({ book, cover, savedTemplates, onApply, onApplySaved, onDeleteSaved, onRenameSaved, onSaveCurrent, onClose }: TemplateModalProps) {
   const imageLayerSource = cover.doc.layers.find((layer): layer is CoverImageLayer => layer.type === "image" && Boolean(layer.src));
   const previewCover = { ...cover, image: cover.image || imageLayerSource?.src || "" };
-  const templates = useMemo(() => COVER_TEMPLATE_PRESETS.map((preset, index) => {
-    const doc = createCoverDocument(preset.id, book, previewCover);
-    const metrics = coverMetrics(book.trim_size, previewCover);
-    return { preset, doc, metrics, index };
-  }), [book, previewCover, cover.pageCount, cover.paperStock, cover.spineWidthOverride, cover.bleed]);
+  const metrics = coverMetrics(book.trim_size, previewCover);
+  const templates = COVER_TEMPLATE_PRESETS.map((preset) => ({ preset, doc: createCoverDocument(preset.id, book, previewCover), metrics }));
+  const savedPreviews = savedTemplates.map((template) => ({ template, doc: savedTemplateDocument(template, metrics) }));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+
+  const commitRename = (template: SavedCoverTemplate) => {
+    const name = draftName.trim();
+    if (name && name !== template.name) onRenameSaved(template.id, name);
+    setEditingId(null);
+  };
+
   return (
     <div className="cover-modal-overlay" role="dialog" aria-modal="true" aria-label="Cover templates" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="cover-template-modal">
         <div className="cover-template-modal-head">
-          <div><span className="books-eyebrow"><LayoutTemplate size={13} /> Cover templates</span><h2>Start from a complete wrap.</h2><p>Each template includes a designed front, spine, back, blurb zone, and a movable ISBN barcode. Metadata, trim size, and page count stay yours.</p></div>
+          <div><span className="books-eyebrow"><LayoutTemplate size={13} /> Cover templates</span><h2>Start from a complete wrap.</h2><p>Each template includes a designed front, spine, back, blurb zone, and a movable ISBN barcode. Metadata, trim size, and page count stay yours — saved templates reflow to the active book.</p></div>
           <button type="button" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="cover-template-grid">
-          {templates.map(({ preset, doc, metrics }) => {
+          <div className="cover-template-section-head">
+            <div><span className="books-eyebrow"><BookmarkPlus size={12} /> My templates</span><strong>{savedTemplates.length === 0 ? "Build your own library" : `${savedTemplates.length} saved ${savedTemplates.length === 1 ? "design" : "designs"}`}</strong></div>
+            <button type="button" className="cover-outline-button small" onClick={onSaveCurrent}><BookmarkPlus size={13} /> Save current design</button>
+          </div>
+          {savedTemplates.length === 0 ? (
+            <div className="cover-template-empty">
+              <span><BookmarkPlus size={19} /></span>
+              <strong>No saved templates yet</strong>
+              <p>Save this wrap to reuse its layers, type, artwork, and token copy across books. Trim size and spine width adapt automatically.</p>
+              <button type="button" className="cover-outline-button" onClick={onSaveCurrent}><BookmarkPlus size={13} /> Save this cover</button>
+            </div>
+          ) : savedPreviews.map(({ template, doc }) => {
+            const scale = 240 / (metrics.fullWidth * 96);
+            const palette = template.doc.palette;
+            return (
+              <article className="cover-template-card saved" key={template.id}>
+                <div className="cover-template-preview" style={{ height: metrics.fullHeight * 96 * scale }}>
+                  <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: metrics.fullWidth * 96, height: metrics.fullHeight * 96 }} dangerouslySetInnerHTML={{ __html: coverDocMarkup(book, { ...previewCover, doc }, "wrap", { instanceId: `saved-${template.id}` }) }} />
+                </div>
+                <div className="cover-template-card-body">
+                  <div className="cover-template-card-title">
+                    <span style={{ background: palette[0] || "#d8c7ae" }} />
+                    <span style={{ background: palette[2] || template.doc.background.color || "#a56b3e" }} />
+                    {editingId === template.id ? (
+                      <input
+                        className="cover-template-rename"
+                        value={draftName}
+                        autoFocus
+                        maxLength={60}
+                        aria-label="Template name"
+                        onChange={(event) => setDraftName(event.target.value)}
+                        onBlur={() => commitRename(template)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") { event.preventDefault(); commitRename(template); }
+                          if (event.key === "Escape") setEditingId(null);
+                        }}
+                      />
+                    ) : (
+                      <strong>{template.name}</strong>
+                    )}
+                    <em>Saved</em>
+                  </div>
+                  <p>{doc.layers.length} layers{doc.groups.length > 0 ? ` · ${doc.groups.length} groups` : ""} · updated {new Date(template.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>
+                  <div className="cover-template-card-actions">
+                    <button type="button" className="cover-primary-button small" onClick={() => onApplySaved(template)}><Check size={13} /> Use template</button>
+                    <button type="button" className="cover-icon-button" title={`Rename ${template.name}`} aria-label={`Rename ${template.name}`} onClick={() => { setEditingId(template.id); setDraftName(template.name); }}><Pencil size={13} /></button>
+                    <button type="button" className="cover-icon-button danger" title={`Delete ${template.name}`} aria-label={`Delete ${template.name}`} onClick={() => { if (window.confirm(`Delete template “${template.name}”?`)) onDeleteSaved(template.id); }}><Trash2 size={13} /></button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+
+          <div className="cover-template-section-head">
+            <div><span className="books-eyebrow"><LayoutTemplate size={12} /> Studio templates</span><strong>Six complete starting points</strong></div>
+          </div>
+          {templates.map(({ preset, doc }) => {
             const scale = 240 / (metrics.fullWidth * 96);
             return (
               <article className="cover-template-card" key={preset.id}>
@@ -3515,7 +3661,7 @@ function TemplateModal({ book, cover, onApply, onClose }: TemplateModalProps) {
             <div className="cover-template-preview blank-canvas" style={{ height: 174 }}>
               <span><Plus size={20} /></span>
               <strong>Blank wrap</strong>
-              <small>{formatDimension(metricsPreviewWidth(book, cover))} × {formatDimension(metricsPreviewHeight(book, cover))} in</small>
+              <small>{formatDimension(metrics.fullWidth)} × {formatDimension(metrics.fullHeight)} in</small>
             </div>
             <div className="cover-template-card-body">
               <div className="cover-template-card-title"><strong>Blank canvas</strong><em>Custom</em></div>
@@ -3530,10 +3676,40 @@ function TemplateModal({ book, cover, onApply, onClose }: TemplateModalProps) {
   );
 }
 
-function metricsPreviewWidth(book: Book, cover: BookCoverDesign) {
-  return coverMetrics(book.trim_size, cover).fullWidth;
+function SaveTemplateModal({ book, cover, onSave, onClose }: { book: Book; cover: BookCoverDesign; onSave: (name: string) => boolean; onClose: () => void }) {
+  const [name, setName] = useState(() => `${book.title?.trim() || "Untitled"} cover`);
+  const metrics = coverMetrics(book.trim_size, cover);
+  const scale = 240 / (metrics.fullWidth * 96);
+  const trimmed = name.trim();
+  const save = () => { if (trimmed) onSave(trimmed); };
+  return (
+    <div className="cover-modal-overlay" role="dialog" aria-modal="true" aria-label="Save cover template" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="cover-template-modal cover-save-template-modal">
+        <div className="cover-template-modal-head">
+          <div><span className="books-eyebrow"><BookmarkPlus size={13} /> Save template</span><h2>Reuse this wrap.</h2><p>Keep every layer, group, guide, effect, and token. The template will adapt its layout when you use it on a book with a different trim size or spine.</p></div>
+          <button type="button" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="cover-save-template-body">
+          <div className="cover-save-template-preview" style={{ height: metrics.fullHeight * 96 * scale }}>
+            <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: metrics.fullWidth * 96, height: metrics.fullHeight * 96 }} dangerouslySetInnerHTML={{ __html: coverDocMarkup(book, cover, "wrap", { instanceId: "save-template-preview" }) }} />
+          </div>
+          <div className="cover-save-template-form">
+            <label className="cover-save-template-name"><span>Template name</span><input value={name} maxLength={60} autoFocus onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); save(); } }} /></label>
+            <div className="cover-save-template-meta">
+              <span><strong>{cover.doc.layers.length}</strong> layers</span>
+              {cover.doc.groups.length > 0 && <span><strong>{cover.doc.groups.length}</strong> groups</span>}
+              <span><strong>{formatDimension(metrics.fullWidth)} × {formatDimension(metrics.fullHeight)}</strong> in wrap</span>
+              <span><strong>{formatDimension(metrics.spineWidth)}</strong> in spine</span>
+            </div>
+            <p className="cover-save-template-note"><Feather size={13} /><span>Text that uses <strong>{`{{title}}`}</strong>, <strong>{`{{author}}`}</strong>, or <strong>{`{{backCopy}}`}</strong> stays linked to each book when the template is applied. Literal copy is preserved exactly.</span></p>
+            <div className="cover-save-template-actions">
+              <button type="button" className="cover-outline-button" onClick={onClose}>Cancel</button>
+              <button type="button" className="cover-primary-button" disabled={!trimmed} onClick={save}><BookmarkPlus size={13} /> Save template</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function metricsPreviewHeight(book: Book, cover: BookCoverDesign) {
-  return coverMetrics(book.trim_size, cover).fullHeight;
-}
