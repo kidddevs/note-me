@@ -163,12 +163,12 @@ export function buildCoverPdf(jpeg: Uint8Array, options: CoverPdfOptions): Uint8
   return concat(chunks);
 }
 
-export async function buildCoverPdfFile(book: Book, cover: BookCoverDesign, options: { dpi?: number; marks?: boolean; pdfx?: boolean } = {}) {
+export async function buildCoverPdfFile(book: Book, cover: BookCoverDesign, options: { dpi?: number; marks?: boolean; pdfx?: boolean; watermark?: boolean } = {}) {
   const marks = options.marks ?? true;
   const pdfx = options.pdfx ?? false;
   const slug = marks ? COVER_PDF_SLUG : 0;
   const dpi = Math.min(450, Math.max(72, Math.round(options.dpi ?? 300)));
-  const canvas = await renderCoverCanvas(book, cover, "wrap", { dpi, bleed: true, marks, slug });
+  const canvas = await renderCoverCanvas(book, cover, "wrap", { dpi, bleed: true, marks, slug, watermark: options.watermark });
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.96));
   if (!blob) throw new Error("The print cover could not be generated.");
   const metrics = coverMetrics(book.trim_size, cover);
@@ -197,7 +197,7 @@ export async function buildCoverPdfFile(book: Book, cover: BookCoverDesign, opti
   return { bytes, filename: coverExportFilename(book, "wrap", "pdf").replace(/\.pdf$/, suffix) };
 }
 
-export async function downloadCoverPdf(book: Book, cover: BookCoverDesign, options: { dpi?: number; marks?: boolean; pdfx?: boolean } = {}) {
+export async function downloadCoverPdf(book: Book, cover: BookCoverDesign, options: { dpi?: number; marks?: boolean; pdfx?: boolean; watermark?: boolean } = {}) {
   const file = await buildCoverPdfFile(book, cover, options);
   return saveCoverBlob(new Blob([file.bytes], { type: "application/pdf" }), file.filename);
 }

@@ -2989,6 +2989,7 @@ export interface CoverCanvasOptions {
   bleed?: boolean;
   marks?: boolean;
   slug?: number;
+  watermark?: boolean;
 }
 
 function drawProductionMarks(ctx: CanvasRenderingContext2D, book: Book, cover: BookCoverDesign, metrics: CoverMetrics, slug: number) {
@@ -3046,6 +3047,28 @@ function drawProductionMarks(ctx: CanvasRenderingContext2D, book: Book, cover: B
   ctx.fillText("BACK", left + metrics.trimWidth / 2, -slug / 2);
   ctx.fillText("SPINE", left + metrics.trimWidth + metrics.spineWidth / 2, -slug / 2);
   ctx.fillText("FRONT", left + metrics.trimWidth + metrics.spineWidth + metrics.trimWidth / 2, -slug / 2);
+  ctx.restore();
+}
+
+function drawProofWatermark(ctx: CanvasRenderingContext2D, rect: CoverPanelRect) {
+  const text = "PROOF";
+  ctx.save();
+  ctx.globalAlpha = 0.16;
+  ctx.fillStyle = "#111111";
+  ctx.font = "700 0.38px 'Helvetica Neue', Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const stepX = 4.1;
+  const stepY = 2.4;
+  for (let y = rect.y + 1.3; y < rect.y + rect.height; y += stepY) {
+    for (let x = rect.x + 1.2; x < rect.x + rect.width; x += stepX) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(-Math.PI / 9);
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+  }
   ctx.restore();
 }
 
@@ -3177,6 +3200,7 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "source-over";
+  if (options.watermark) drawProofWatermark(ctx, rect);
   if (slug > 0) drawProductionMarks(ctx, book, cover, metrics, slug);
   return canvas;
 }
@@ -3219,7 +3243,7 @@ export async function saveCoverBlob(blob: Blob, filename: string) {
   return filename;
 }
 
-export async function downloadCoverFile(book: Book, cover: BookCoverDesign, target: ExportTarget, options: { dpi?: number; format?: "png" | "jpeg"; bleed?: boolean } = {}) {
+export async function downloadCoverFile(book: Book, cover: BookCoverDesign, target: ExportTarget, options: { dpi?: number; format?: "png" | "jpeg"; bleed?: boolean; watermark?: boolean } = {}) {
   const canvas = await renderCoverCanvas(book, cover, target, options);
   const format = options.format ?? "png";
   const mime = format === "jpeg" ? "image/jpeg" : "image/png";
