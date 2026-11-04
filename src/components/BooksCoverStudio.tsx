@@ -184,6 +184,7 @@ import { downloadCoverMockup } from "../lib/bookCoverMockup";
 import { downloadCoverPackage } from "../lib/bookCoverPackage";
 import { coverPreflight, coverPreflightFix, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
+import { extractPaletteFromPixels } from "../lib/bookCoverPalette";
 import {
   applyLayerStyle,
   deleteLayerStylePreset,
@@ -298,6 +299,7 @@ interface InspectorProps {
   onApplyStylePreset: (preset: CoverLayerStylePreset) => void;
   onSaveStyle: () => void;
   onDeleteStylePreset: (id: string) => void;
+  onExtractPalette: (layer: CoverImageLayer) => void;
   focusContent: number;
 }
 
@@ -448,6 +450,7 @@ function historyLabel(key?: string) {
   }
   if (value.startsWith("pan:")) return "Repositioned image";
   if (value.startsWith("highlight-")) return "Changed text highlight";
+  if (value.startsWith("palette:image:")) return "Extracted image palette";
   if (value === "style:paste") return "Pasted layer style";
   if (value.startsWith("style:preset:")) return "Applied layer style";
   if (value.startsWith("move:")) return "Moved layer";
@@ -1499,6 +1502,37 @@ export function CoverScreen({
     }
   };
 
+  const extractImagePalette = async (layer: CoverImageLayer) => {
+    if (!layer.src) return;
+    try {
+      const image = new Image();
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("The image could not be read."));
+        image.src = layer.src;
+      });
+      const maxSide = 180;
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || 1, image.naturalHeight || 1));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round((image.naturalWidth || 1) * scale));
+      canvas.height = Math.max(1, Math.round((image.naturalHeight || 1) * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas is unavailable.");
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const colors = extractPaletteFromPixels(ctx.getImageData(0, 0, canvas.width, canvas.height).data, 8);
+      if (colors.length === 0) {
+        notify("info", "No palette found", "This image doesn't contain enough visible colour.");
+        return;
+      }
+      const current = layoutRef.current.cover;
+      const merged = [...colors, ...current.doc.palette.filter((entry) => !colors.includes(entry.toLocaleLowerCase()))].slice(0, 16);
+      updateDoc({ ...current.doc, palette: merged }, { key: `palette:image:${layer.id}` });
+      notify("success", "Image palette extracted", `${colors.length} colours added to the document palette.`);
+    } catch (error) {
+      notify("error", "Palette could not be extracted", String(error));
+    }
+  };
+
   const handleDownloadPdf = async (marks: boolean) => {
     setBusyDownload(marks ? "pdf-marks" : "pdf");
     try {
@@ -1904,6 +1938,7 @@ export function CoverScreen({
               onApplyStylePreset={applyStylePreset}
               onSaveStyle={saveCurrentStyle}
               onDeleteStylePreset={removeStylePreset}
+              onExtractPalette={extractImagePalette}
               focusContent={focusContent}
             />
           )}
@@ -3180,7 +3215,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, focusContent }: InspectorProps) {
   return (
     <aside className="cover-inspector" aria-label={selected ? "Layer properties" : "Cover properties"}>
       <div className="cover-inspector-head">
@@ -3208,6 +3243,7 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             onApplyStylePreset={onApplyStylePreset}
             onSaveStyle={onSaveStyle}
             onDeleteStylePreset={onDeleteStylePreset}
+            onExtractPalette={onExtractPalette}
             focusContent={focusContent}
           />
         ) : (
@@ -3370,6 +3406,7 @@ function LayerInspector({
   onApplyStylePreset,
   onSaveStyle,
   onDeleteStylePreset,
+  onExtractPalette,
   focusContent,
 }: {
   book: Book;
@@ -3390,6 +3427,7 @@ function LayerInspector({
   onApplyStylePreset: (preset: CoverLayerStylePreset) => void;
   onSaveStyle: () => void;
   onDeleteStylePreset: (id: string) => void;
+  onExtractPalette: (layer: CoverImageLayer) => void;
   focusContent: number;
 }) {
   const contentRef = useRef<HTMLTextAreaElement>(null);
@@ -3577,6 +3615,7 @@ function LayerInspector({
       {layer.type === "image" && (
         <Section title="Image lab" hint="Crop, tone & frame">
           <button type="button" className="cover-wide-button" onClick={onReplaceImage}><Upload size={13} /> Replace image</button>
+          <button type="button" className="cover-wide-button subtle" onClick={() => onExtractPalette(layer)}><Palette size={13} /> Extract image palette</button>
           <div className="cover-image-preset-grid">
             {COVER_IMAGE_PRESETS.map((preset) => (
               <button key={preset.id} type="button" title={preset.description} onClick={() => onUpdate(preset.patch, { key: `image-preset:${layer.id}:${preset.id}` })}>{preset.label}</button>
