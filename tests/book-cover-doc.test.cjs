@@ -388,10 +388,10 @@ test("curved text clamps and the font library includes editorial faces", () => {
   const low = parseCoverDocument({ layers: [{ id: "b", type: "text", name: "B", panel: "front", x: 0, y: 0, width: 2, height: 1, text: "B", curve: -999 }] });
   assert.equal(high.layers[0].curve, 100);
   assert.equal(low.layers[0].curve, -100);
-  for (const id of ["baskerville", "garamond", "avenir", "futura", "optima", "copperplate", "typewriter"]) {
+  for (const id of ["baskerville", "garamond", "avenir", "futura", "optima", "copperplate", "typewriter", "hoefler", "bodoni", "gill", "bradley"]) {
     assert.ok(COVER_FONTS.some((font) => font.id === id), id);
   }
-  assert.ok(COVER_FONTS.length >= 15);
+  assert.ok(COVER_FONTS.length >= 23);
 });
 
 test("cover documents persist a deduplicated palette and expanded blend modes", () => {

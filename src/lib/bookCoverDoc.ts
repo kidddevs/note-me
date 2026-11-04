@@ -17,7 +17,7 @@ export type CoverTextEffect = "none" | "soft" | "hard" | "glow" | "outline";
 export type CoverShapeKind = "rectangle" | "ellipse" | "triangle" | "diamond" | "star" | "burst" | "heart" | "arch" | "octagon" | "shield" | "ticket" | "banner" | "leaf" | "arrow";
 export type CoverDashStyle = "solid" | "dashed" | "dotted";
 export type CoverBlendMode = "normal" | "multiply" | "screen" | "overlay" | "soft-light" | "hard-light" | "color-dodge" | "color-burn" | "darken" | "lighten" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
-export type CoverFontId = "serif" | "display" | "sans" | "condensed" | "mono" | "humanist" | "script" | "slab" | "baskerville" | "garamond" | "avenir" | "futura" | "optima" | "copperplate" | "typewriter";
+export type CoverFontId = "serif" | "display" | "sans" | "condensed" | "mono" | "humanist" | "script" | "slab" | "baskerville" | "garamond" | "avenir" | "futura" | "optima" | "copperplate" | "typewriter" | "hoefler" | "iowan" | "charter" | "bodoni" | "gill" | "avenir-next" | "menlo" | "bradley";
 export type CoverFillType = "solid" | "gradient" | "pattern" | "none";
 export type CoverPatternId = "dots" | "stripes" | "grid" | "checks" | "waves" | "crosshatch" | "diagonal" | "confetti";
 export type CoverImageMask = "none" | "circle" | "arch" | "diamond" | "hexagon";
@@ -252,6 +252,14 @@ export const COVER_FONTS: { id: CoverFontId; label: string; css: string; group: 
   { id: "optima", label: "Optima", css: "Optima, Candara, 'Gill Sans', sans-serif", group: "Sans" },
   { id: "copperplate", label: "Copperplate", css: "Copperplate, 'Copperplate Gothic Light', Georgia, serif", group: "Display" },
   { id: "typewriter", label: "Typewriter", css: "'American Typewriter', 'Courier New', monospace", group: "Mono" },
+  { id: "hoefler", label: "Hoefler Text", css: "'Hoefler Text', Baskerville, Georgia, serif", group: "Serif" },
+  { id: "iowan", label: "Iowan Old Style", css: "'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif", group: "Serif" },
+  { id: "charter", label: "Charter", css: "Charter, 'Bitstream Charter', Georgia, serif", group: "Serif" },
+  { id: "bodoni", label: "Bodoni 72", css: "'Bodoni 72', Didot, 'Times New Roman', serif", group: "Display" },
+  { id: "gill", label: "Gill Sans", css: "'Gill Sans', 'Gill Sans MT', Calibri, sans-serif", group: "Sans" },
+  { id: "avenir-next", label: "Avenir Next", css: "'Avenir Next', Avenir, 'Helvetica Neue', sans-serif", group: "Sans" },
+  { id: "menlo", label: "Menlo", css: "Menlo, Monaco, 'SF Mono', Consolas, monospace", group: "Mono" },
+  { id: "bradley", label: "Bradley Hand", css: "'Bradley Hand', 'Segoe Print', 'Comic Sans MS', cursive", group: "Script" },
 ];
 
 export const COVER_SYMBOLS: string[] = [
