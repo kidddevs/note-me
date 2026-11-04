@@ -87,6 +87,7 @@ import {
   Undo2,
   Unlock,
   Upload,
+  Wand2,
   X,
   ZoomIn,
   ZoomOut,
@@ -181,7 +182,7 @@ import {
 import { bookInputFromBook, TRIM_SIZES } from "../lib/bookPublishing";
 import { downloadCoverMockup } from "../lib/bookCoverMockup";
 import { downloadCoverPackage } from "../lib/bookCoverPackage";
-import { coverPreflight, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
+import { coverPreflight, coverPreflightFix, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import {
   applyLayerStyle,
@@ -431,6 +432,7 @@ function historyLabel(key?: string) {
   if (!key) return "Edited cover";
   const value = key.toLocaleLowerCase();
   if (value.startsWith("template:saved:")) return "Applied saved template";
+  if (value.startsWith("preflight-fix:")) return "Applied preflight fix";
   const template = COVER_TEMPLATE_PRESETS.find((preset) => value === `template:${preset.id}`);
   if (template) return `Applied ${template.label}`;
   if (value.startsWith("group:create")) return "Grouped layers";
@@ -1509,6 +1511,16 @@ export function CoverScreen({
     }
   };
 
+  const fixPreflightCheck = (check: CoverPreflightCheck) => {
+    const result = coverPreflightFix(bookRef.current, layoutRef.current.cover, check);
+    if (!result) {
+      notify("info", "Fix needs a manual edit", "This issue can't be corrected automatically.");
+      return;
+    }
+    updateCover(result.patch, { key: `preflight-fix:${check.id}`, history: true });
+    notify("success", "Preflight fix applied", result.message);
+  };
+
   const handleDownloadPackage = async () => {
     setBusyDownload("package");
     try {
@@ -1970,6 +1982,7 @@ export function CoverScreen({
           book={book}
           cover={cover}
           onSelectLayer={(id) => { selectLayer(id); setPreflightOpen(false); }}
+          onFix={fixPreflightCheck}
           onClose={() => setPreflightOpen(false)}
           onPackage={() => { setPreflightOpen(false); void handleDownloadPackage(); }}
         />
@@ -2495,7 +2508,7 @@ function preflightIcon(severity: CoverPreflightCheck["severity"]) {
   return <Info size={15} />;
 }
 
-function PreflightModal({ book, cover, onSelectLayer, onClose, onPackage }: { book: Book; cover: BookCoverDesign; onSelectLayer: (id: string) => void; onClose: () => void; onPackage: () => void }) {
+function PreflightModal({ book, cover, onSelectLayer, onFix, onClose, onPackage }: { book: Book; cover: BookCoverDesign; onSelectLayer: (id: string) => void; onFix: (check: CoverPreflightCheck) => void; onClose: () => void; onPackage: () => void }) {
   const checks = useMemo(() => coverPreflight(book, cover), [book, cover]);
   const summary = useMemo(() => coverPreflightSummary(checks), [checks]);
   const order: Record<CoverPreflightCheck["severity"], number> = { error: 0, warning: 1, info: 2, pass: 3 };
@@ -2524,11 +2537,14 @@ function PreflightModal({ book, cover, onSelectLayer, onClose, onPackage }: { bo
         </div>
         <div className="cover-preflight-list">
           {sorted.map((check) => (
-            <button key={check.id} type="button" className={`cover-preflight-row severity-${check.severity} ${check.layerId ? "has-target" : ""}`} onClick={() => check.layerId && onSelectLayer(check.layerId)} disabled={!check.layerId}>
+            <div key={check.id} className={`cover-preflight-row severity-${check.severity} ${check.layerId ? "has-target" : ""}`}>
               <span className="cover-preflight-icon">{preflightIcon(check.severity)}</span>
-              <span className="cover-preflight-copy"><strong>{check.label}</strong><small>{check.detail}</small></span>
-              {check.layerId && <span className="cover-preflight-jump">Select layer <ArrowRight size={12} /></span>}
-            </button>
+              <button type="button" className="cover-preflight-copy" onClick={() => check.layerId && onSelectLayer(check.layerId)} disabled={!check.layerId}><strong>{check.label}</strong><small>{check.detail}</small></button>
+              <div className="cover-preflight-actions">
+                {check.fix && <button type="button" className="cover-preflight-fix" onClick={() => onFix(check)}><Wand2 size={11} /> {check.fix.label}</button>}
+                {check.layerId && <button type="button" className="cover-preflight-jump" onClick={() => onSelectLayer(check.layerId!)}>Select <ArrowRight size={12} /></button>}
+              </div>
+            </div>
           ))}
         </div>
         <div className="cover-preflight-foot">

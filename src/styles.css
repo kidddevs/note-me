@@ -6414,17 +6414,20 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-preflight-pill.pass strong { color: #3d9469; }
 .cover-preflight-list { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 3px; padding: 10px 14px 14px; overflow-y: auto; }
 .cover-preflight-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 10px 11px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
-.cover-preflight-row:hover:not(:disabled) { border-color: var(--border-subtle); background: var(--surface-hover); }
-.cover-preflight-row:disabled { cursor: default; }
+.cover-preflight-row:hover { border-color: var(--border-subtle); background: var(--surface-hover); }
 .cover-preflight-icon { display: flex; width: 25px; height: 25px; align-items: center; justify-content: center; border-radius: 6px; }
 .cover-preflight-row.severity-error .cover-preflight-icon { background: var(--danger-soft); color: var(--danger); }
 .cover-preflight-row.severity-warning .cover-preflight-icon { background: rgba(183, 133, 35, 0.12); color: #b78523; }
 .cover-preflight-row.severity-pass .cover-preflight-icon { background: rgba(61, 148, 105, 0.12); color: #3d9469; }
 .cover-preflight-row.severity-info .cover-preflight-icon { background: var(--surface-2); color: var(--text-3); }
-.cover-preflight-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.cover-preflight-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; padding: 0; border: 0; background: transparent; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.cover-preflight-copy:disabled { cursor: default; }
 .cover-preflight-copy strong { color: var(--text); font-size: 9.5px; font-weight: 650; }
 .cover-preflight-copy small { color: var(--text-3); font-size: 8.5px; line-height: 1.45; }
-.cover-preflight-jump { display: inline-flex; align-items: center; gap: 3px; padding-top: 3px; color: var(--book-accent); font-size: 7.5px; font-weight: 650; white-space: nowrap; }
+.cover-preflight-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding-top: 2px; }
+.cover-preflight-jump { display: inline-flex; align-items: center; gap: 3px; padding: 3px 0 0; border: 0; background: transparent; color: var(--book-accent); font: inherit; font-size: 7.5px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.cover-preflight-fix { display: inline-flex; height: 22px; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid color-mix(in srgb, var(--book-accent) 45%, var(--border)); border-radius: 5px; background: var(--book-accent-soft); color: var(--book-accent); font: inherit; font-size: 7.5px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.cover-preflight-fix:hover { border-color: var(--book-accent); background: color-mix(in srgb, var(--book-accent) 18%, transparent); }
 .cover-preflight-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 24px; border-top: 1px solid var(--border-subtle); background: var(--surface-2); }
 .cover-preflight-foot > span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-4); font-size: 8px; line-height: 1.4; }
 .cover-preflight-foot > div { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
