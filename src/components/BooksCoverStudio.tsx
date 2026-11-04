@@ -113,6 +113,7 @@ import {
   newCoverLayerId,
   normalizeIsbn13,
   reflowSpineLayers,
+  resolveCoverTokenText,
   shapeLayer,
   spineWidthMillimetres,
   symbolLayer,
@@ -2721,6 +2722,7 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
       <div className="cover-inspector-scroll">
         {selected ? (
           <LayerInspector
+            book={book}
             cover={cover}
             layer={selected}
             metrics={metrics}
@@ -2859,6 +2861,7 @@ function FillEditor({ label, fill, onChange }: { label: string; fill: CoverFill;
 }
 
 function LayerInspector({
+  book,
   cover,
   layer,
   metrics,
@@ -2869,6 +2872,7 @@ function LayerInspector({
   onClearBarcode,
   focusContent,
 }: {
+  book: Book;
   cover: BookCoverDesign;
   layer: CoverLayer;
   metrics: ReturnType<typeof coverMetrics>;
@@ -2892,6 +2896,48 @@ function LayerInspector({
 
   const contentTokens = ["{{title}}", "{{subtitle}}", "{{tagline}}", "{{author}}", "{{authorBio}}", "{{description}}", "{{backCopy}}", "{{genre}}", "{{publisher}}", "{{isbn}}", "{{year}}"];
   const panelBounds = layer.panel === "wrap" ? { width: metrics.fullWidth, height: metrics.fullHeight } : layer.panel === "back" ? { width: metrics.panelWidths.back, height: metrics.trimHeight } : layer.panel === "spine" ? { width: metrics.panelWidths.spine, height: metrics.trimHeight } : { width: metrics.panelWidths.front, height: metrics.trimHeight };
+
+  const fitTextToFrame = () => {
+    if (layer.type !== "text") return;
+    const value = resolveCoverTokenText(layer.text, book, cover) || "Text";
+    const maxWidth = Math.max(0.2, layer.width) * 96;
+    const maxHeight = Math.max(0.2, layer.height) * 96;
+    const fontCss = COVER_FONTS.find((font) => font.id === layer.fontFamily)?.css ?? "Georgia, serif";
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const fits = (px: number) => {
+      ctx.font = `${layer.italic ? "italic " : ""}${layer.fontWeight} ${px}px ${fontCss}`;
+      const tracking = layer.letterSpacing * px;
+      if (layer.curve !== 0) {
+        const width = ctx.measureText(value.replace(/\s*\n+\s*/g, " ")).width + tracking * Math.max(0, value.length - 1);
+        return width <= maxWidth && px <= maxHeight;
+      }
+      const lines: string[] = [];
+      for (const paragraph of value.split("\n")) {
+        if (paragraph === "") {
+          lines.push("");
+          continue;
+        }
+        let line = "";
+        for (const word of paragraph.split(/\s+/)) {
+          const test = line ? `${line} ${word}` : word;
+          if (ctx.measureText(test).width + tracking * test.length > maxWidth && line) {
+            lines.push(line);
+            line = word;
+          } else {
+            line = test;
+          }
+        }
+        if (line) lines.push(line);
+      }
+      return Math.max(1, lines.length) * px * layer.lineHeight <= maxHeight;
+    };
+    let fit = Math.max(4, (layer.fontSize * 96) / 72);
+    while (fit > 4 && !fits(fit)) fit -= 0.5;
+    const points = Math.max(4, Math.round(((fit * 72) / 96) * 10) / 10);
+    onUpdate({ fontSize: points }, { key: `fit-text:${layer.id}` });
+  };
 
   const align = (horizontal: "left" | "center" | "right", vertical: "top" | "middle" | "bottom") => {
     const x = horizontal === "left" ? 0 : horizontal === "center" ? (panelBounds.width - layer.width) / 2 : panelBounds.width - layer.width;
@@ -2942,6 +2988,7 @@ function LayerInspector({
             <NumberField label="Size" value={layer.fontSize} onChange={(fontSize) => onUpdate({ fontSize: Math.max(4, fontSize) }, { key: `size:${layer.id}` })} step={1} min={4} max={240} suffix="pt" />
             <label className="cover-select-field"><span>Weight</span><select value={layer.fontWeight} onChange={(event) => onUpdate({ fontWeight: Number(event.target.value) }, { key: `weight:${layer.id}` })}>{[300, 400, 500, 600, 700, 800, 900].map((weight) => <option key={weight} value={weight}>{weight}</option>)}</select></label>
           </div>
+          <button type="button" className="cover-wide-button subtle" onClick={fitTextToFrame}><Maximize2 size={13} /> Fit text to frame</button>
           <div className="cover-text-format-row">
             <button type="button" className={layer.italic ? "active" : ""} onClick={() => onUpdate({ italic: !layer.italic }, { key: `italic:${layer.id}` })} title="Italic"><Italic size={13} /></button>
             <button type="button" className={layer.uppercase ? "active" : ""} onClick={() => onUpdate({ uppercase: !layer.uppercase }, { key: `case:${layer.id}` })} title="Uppercase"><CaseUpper size={13} /></button>
@@ -2959,6 +3006,8 @@ function LayerInspector({
             <NumberField label="Leading" value={layer.lineHeight} onChange={(lineHeight) => onUpdate({ lineHeight }, { key: `leading:${layer.id}` })} step={0.01} min={0.7} max={3} suffix="×" />
             <NumberField label="Tracking" value={layer.letterSpacing} onChange={(letterSpacing) => onUpdate({ letterSpacing }, { key: `tracking:${layer.id}` })} step={0.005} min={-0.15} max={1} suffix="em" />
           </div>
+          <SliderField label="Curve" value={layer.curve} onChange={(curve) => onUpdate({ curve }, { key: `curve:${layer.id}` })} min={-100} max={100} step={1} suffix="%" />
+          {layer.curve !== 0 && <p className="cover-inspector-note">Curved text is set on a single line. Line breaks are converted to spaces.</p>}
           <div className="cover-select-grid">
             <label className="cover-select-field"><span>Effect</span><select value={layer.effect} onChange={(event) => onUpdate({ effect: event.target.value as CoverTextEffect }, { key: `effect:${layer.id}` })}><option value="none">None</option><option value="soft">Soft shadow</option><option value="hard">Hard shadow</option><option value="glow">Glow</option><option value="outline">Outline</option></select></label>
             {layer.effect !== "none" && <ColorField label="Effect colour" value={layer.effectColor} onChange={(effectColor) => onUpdate({ effectColor }, { key: `effect-color:${layer.id}` })} />}

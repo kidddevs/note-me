@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   barcodeSvgMarkup,
+  COVER_FONTS,
   COVER_IMAGE_PRESETS,
   coverDocMarkup,
   coverImageFilterCss,
@@ -349,4 +350,40 @@ test("cloning layers creates fresh ids, offsets, and group remapping", () => {
   assert.notEqual(clones[1].fill, source[1].fill);
   clones[1].fill.color = "#000000";
   assert.equal(source[1].fill.color, "#123456");
+});
+
+
+test("curved text persists and renders as an SVG textPath", () => {
+  const doc = parseCoverDocument({
+    layers: [{
+      id: "arc",
+      type: "text",
+      name: "Curved title",
+      panel: "front",
+      x: 0.5,
+      y: 0.5,
+      width: 4,
+      height: 2,
+      text: "Curved Title",
+      fontSize: 42,
+      curve: 55,
+    }],
+  });
+  assert.equal(doc.layers[0].curve, 55);
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.match(markup, /cover-doc-curved-text/);
+  assert.match(markup, /<textPath/);
+  assert.match(markup, /Curved Title/);
+  assert.doesNotMatch(markup, /cover-doc-text/);
+});
+
+test("curved text clamps and the font library includes editorial faces", () => {
+  const high = parseCoverDocument({ layers: [{ id: "a", type: "text", name: "A", panel: "front", x: 0, y: 0, width: 2, height: 1, text: "A", curve: 999 }] });
+  const low = parseCoverDocument({ layers: [{ id: "b", type: "text", name: "B", panel: "front", x: 0, y: 0, width: 2, height: 1, text: "B", curve: -999 }] });
+  assert.equal(high.layers[0].curve, 100);
+  assert.equal(low.layers[0].curve, -100);
+  for (const id of ["baskerville", "garamond", "avenir", "futura", "optima", "copperplate", "typewriter"]) {
+    assert.ok(COVER_FONTS.some((font) => font.id === id), id);
+  }
+  assert.ok(COVER_FONTS.length >= 15);
 });

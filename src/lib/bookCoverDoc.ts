@@ -17,7 +17,7 @@ export type CoverTextEffect = "none" | "soft" | "hard" | "glow" | "outline";
 export type CoverShapeKind = "rectangle" | "ellipse" | "triangle" | "diamond" | "star" | "burst" | "heart" | "arch";
 export type CoverDashStyle = "solid" | "dashed" | "dotted";
 export type CoverBlendMode = "normal" | "multiply" | "screen" | "overlay" | "soft-light" | "darken" | "lighten";
-export type CoverFontId = "serif" | "display" | "sans" | "condensed" | "mono" | "humanist" | "script" | "slab";
+export type CoverFontId = "serif" | "display" | "sans" | "condensed" | "mono" | "humanist" | "script" | "slab" | "baskerville" | "garamond" | "avenir" | "futura" | "optima" | "copperplate" | "typewriter";
 export type CoverFillType = "solid" | "gradient" | "none";
 export type CoverImageMask = "none" | "circle" | "arch" | "diamond" | "hexagon";
 
@@ -72,6 +72,7 @@ export interface CoverTextLayer extends CoverLayerBase {
   uppercase: boolean;
   effect: CoverTextEffect;
   effectColor: string;
+  curve: number;
 }
 
 export interface CoverImageLayer extends CoverLayerBase {
@@ -196,6 +197,13 @@ export const COVER_FONTS: { id: CoverFontId; label: string; css: string; group: 
   { id: "condensed", label: "Condensed", css: "'Arial Narrow', 'Helvetica Neue Condensed', 'Helvetica Neue', sans-serif", group: "Sans" },
   { id: "mono", label: "Courier", css: "'Courier New', 'SF Mono', monospace", group: "Mono" },
   { id: "script", label: "Snell", css: "'Snell Roundhand', 'Brush Script MT', 'Segoe Script', cursive", group: "Script" },
+  { id: "baskerville", label: "Baskerville", css: "Baskerville, 'Baskerville Old Face', 'Libre Baskerville', Georgia, serif", group: "Serif" },
+  { id: "garamond", label: "Garamond", css: "Garamond, 'EB Garamond', 'Adobe Garamond Pro', Georgia, serif", group: "Serif" },
+  { id: "avenir", label: "Avenir", css: "Avenir, 'Avenir Next', 'Helvetica Neue', sans-serif", group: "Sans" },
+  { id: "futura", label: "Futura", css: "Futura, 'Futura PT', 'Avenir Next Condensed', sans-serif", group: "Sans" },
+  { id: "optima", label: "Optima", css: "Optima, Candara, 'Gill Sans', sans-serif", group: "Sans" },
+  { id: "copperplate", label: "Copperplate", css: "Copperplate, 'Copperplate Gothic Light', Georgia, serif", group: "Display" },
+  { id: "typewriter", label: "Typewriter", css: "'American Typewriter', 'Courier New', monospace", group: "Mono" },
 ];
 
 export const COVER_SYMBOLS: string[] = [
@@ -558,6 +566,7 @@ export function textLayer(input: Partial<CoverTextLayer> & Pick<CoverTextLayer, 
     uppercase: input.uppercase ?? false,
     effect: input.effect ?? "none",
     effectColor: input.effectColor ?? "#000000",
+    curve: input.curve ?? 0,
   };
 }
 
@@ -684,6 +693,7 @@ function normalizeLayer(value: unknown, index: number): CoverLayer | null {
       uppercase: boolean(value.uppercase, false),
       effect: oneOf(value.effect, ["none", "soft", "hard", "glow", "outline"] as const, "none"),
       effectColor: color(value.effectColor, "#000000"),
+      curve: decimal(value.curve, 0, -100, 100),
     };
   }
   if (type === "image") {
@@ -2126,6 +2136,36 @@ export function coverTextStyle(layer: CoverTextLayer): Record<string, string | u
   };
 }
 
+function curvedTextSvg(layer: CoverTextLayer, content: string, idPrefix: string) {
+  const width = Math.max(0.2, layer.width);
+  const height = Math.max(0.2, layer.height);
+  const curve = clamp(layer.curve, -100, 100);
+  const fontSize = layer.fontSize / 72;
+  const baseline = layer.verticalAlign === "top" ? height * 0.34 : layer.verticalAlign === "middle" ? height * 0.56 : height * 0.8;
+  const sag = (curve / 100) * height * 0.32;
+  const path = `M 0 ${roundInches(baseline)} Q ${roundInches(width / 2)} ${roundInches(baseline - sag * 2)} ${roundInches(width)} ${roundInches(baseline)}`;
+  const anchor = layer.align === "left" || layer.align === "justify" ? "start" : layer.align === "right" ? "end" : "middle";
+  const offset = anchor === "start" ? "0%" : anchor === "end" ? "100%" : "50%";
+  const safeId = `${idPrefix}-${layer.id}-curve`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const effectStyle = layer.effect === "soft"
+    ? `filter:drop-shadow(0 0.02in 0.08in ${layer.effectColor}66);`
+    : layer.effect === "hard"
+      ? `filter:drop-shadow(0.04in 0.04in 0 ${layer.effectColor});`
+      : layer.effect === "glow"
+        ? `filter:drop-shadow(0 0 0.18in ${layer.effectColor});`
+        : "";
+  const outline = layer.effect === "outline"
+    ? `stroke="${escapeHtml(layer.effectColor)}" stroke-width="${Math.max(0.004, fontSize * 0.035)}" paint-order="stroke"`
+    : "";
+  const value = (layer.uppercase ? content.toLocaleUpperCase() : content).replace(/\s*\n+\s*/g, " ");
+  return `<svg class="cover-doc-curved-text" viewBox="0 0 ${roundInches(width)} ${roundInches(height)}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block;width:100%;height:100%;overflow:visible">
+    <path id="${safeId}" d="${path}" fill="none"/>
+    <text font-family="${escapeHtml(coverFontCss(layer.fontFamily))}" font-size="${roundInches(fontSize)}" font-weight="${layer.fontWeight}" font-style="${layer.italic ? "italic" : "normal"}" fill="${escapeHtml(layer.color)}" letter-spacing="${layer.letterSpacing}em" text-anchor="${anchor}" dominant-baseline="middle" style="${effectStyle}${layer.uppercase ? "text-transform:uppercase;" : ""}" ${outline}>
+      <textPath href="#${safeId}" startOffset="${offset}">${escapeHtml(value)}</textPath>
+    </text>
+  </svg>`;
+}
+
 function shapeSvgMarkup(layer: CoverShapeLayer, layerId: string) {
   const fill = layer.fill.type === "none" ? "none" : layer.fill.type === "solid" ? layer.fill.color : `url(#${layerId}-gradient)`;
   const gradientId = `${layerId}-gradient`;
@@ -2191,6 +2231,7 @@ function clipImageMask(ctx: CanvasRenderingContext2D, mask: CoverImageMask, x: n
 export function coverLayerInnerHtml(book: Book, cover: BookCoverDesign, layer: CoverLayer, idPrefix = "cover") {
   if (layer.type === "text") {
     const content = resolveCoverTokenText(layer.text, book, cover);
+    if (layer.curve !== 0) return curvedTextSvg(layer, content, idPrefix);
     const style = coverTextStyle(layer);
     const styleString = Object.entries(style).filter(([, value]) => value !== undefined).map(([key, value]) => `${key.replace(/[A-Z]/g, (letter) => `-${letter.toLocaleLowerCase()}`)}:${value}`).join(";");
     return `<div class="cover-doc-text" style="${styleString}">${escapeHtml(content) || "&#8203;"}</div>`;
@@ -2288,6 +2329,7 @@ export function coverDocCss() {
 .cover-doc-layer { position:absolute; transform-origin:50% 50%; }
 .cover-doc-layer img { display:block; }
 .cover-doc-text { min-width:0; }
+.cover-doc-curved-text { display:block; }
 .cover-doc-image-empty { display:flex; width:100%; height:100%; align-items:center; justify-content:center; border:1px dashed rgba(0,0,0,.24); background:rgba(0,0,0,.04); color:rgba(0,0,0,.38); font-family:-apple-system,BlinkMacSystemFont,sans-serif; font-size:8pt; }
 .cover-doc-barcode { display:flex; width:100%; height:100%; flex-direction:column; align-items:center; gap:.03in; border-radius:.03in; }
 .cover-doc-barcode-label { display:block; max-width:100%; overflow:hidden; font-family:'Helvetica Neue',Arial,sans-serif; font-weight:600; letter-spacing:.04em; line-height:1.1; text-overflow:ellipsis; white-space:nowrap; }
@@ -2500,6 +2542,75 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: CoverTextLayer, con
   ctx.shadowOffsetY = 0;
 }
 
+function drawCurvedTextLayer(ctx: CanvasRenderingContext2D, layer: CoverTextLayer, content: string, width: number, height: number) {
+  const fontSize = layer.fontSize / 72;
+  const value = (layer.uppercase ? content.toLocaleUpperCase() : content).replace(/\s*\n+\s*/g, " ").trim();
+  if (!value) return;
+  ctx.font = `${layer.italic ? "italic " : ""}${layer.fontWeight} ${fontSize}px ${coverFontCss(layer.fontFamily)}`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  if ("letterSpacing" in ctx) (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = "0px";
+  const tracking = layer.letterSpacing * fontSize;
+  const chars = Array.from(value);
+  const widths = chars.map((char) => ctx.measureText(char).width);
+  const total = widths.reduce((sum, item) => sum + item, 0) + tracking * Math.max(0, chars.length - 1);
+  const baseline = layer.verticalAlign === "top" ? height * 0.34 : layer.verticalAlign === "middle" ? height * 0.56 : height * 0.8;
+  const sag = (layer.curve / 100) * height * 0.32;
+  const p0 = { x: 0, y: baseline };
+  const p1 = { x: width / 2, y: baseline - sag * 2 };
+  const p2 = { x: width, y: baseline };
+  const samples = 100;
+  const points: Array<{ x: number; y: number; angle: number }> = [];
+  const cumulative: number[] = [0];
+  for (let index = 0; index <= samples; index += 1) {
+    const t = index / samples;
+    const mt = 1 - t;
+    const x = mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x;
+    const y = mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y;
+    const dx = 2 * mt * (p1.x - p0.x) + 2 * t * (p2.x - p1.x);
+    const dy = 2 * mt * (p1.y - p0.y) + 2 * t * (p2.y - p1.y);
+    points.push({ x, y, angle: Math.atan2(dy, dx) });
+    if (index > 0) cumulative.push(cumulative[index - 1] + Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y));
+  }
+  const pathLength = cumulative[cumulative.length - 1];
+  let cursor = layer.align === "center" ? (pathLength - total) / 2 : layer.align === "right" ? pathLength - total : 0;
+  const tForDistance = (distance: number) => {
+    let index = 0;
+    while (index < cumulative.length - 2 && cumulative[index + 1] < distance) index += 1;
+    const span = cumulative[index + 1] - cumulative[index] || 1;
+    return Math.min(1, Math.max(0, (index + (distance - cumulative[index]) / span) / samples));
+  };
+  if (layer.effect === "soft" || layer.effect === "hard" || layer.effect === "glow") {
+    ctx.shadowColor = layer.effectColor;
+    ctx.shadowBlur = layer.effect === "soft" ? 0.08 : layer.effect === "glow" ? 0.18 : 0;
+    ctx.shadowOffsetX = layer.effect === "hard" ? 0.04 : 0;
+    ctx.shadowOffsetY = layer.effect === "hard" ? 0.04 : 0;
+  }
+  ctx.fillStyle = layer.color;
+  chars.forEach((char, index) => {
+    const distance = cursor + widths[index] / 2;
+    const t = tForDistance(distance);
+    const pointIndex = Math.round(t * samples);
+    const point = points[pointIndex];
+    if (!point) return;
+    ctx.save();
+    ctx.translate(point.x, point.y);
+    ctx.rotate(point.angle);
+    if (layer.effect === "outline") {
+      ctx.strokeStyle = layer.effectColor;
+      ctx.lineWidth = Math.max(0.005, fontSize * 0.012);
+      ctx.strokeText(char, 0, 0);
+    }
+    ctx.fillText(char, 0, 0);
+    ctx.restore();
+    cursor += widths[index] + tracking;
+  });
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+}
+
 function drawBarcodeLayer(ctx: CanvasRenderingContext2D, layer: CoverBarcodeLayer, cover: BookCoverDesign, width: number, height: number, barcodeImage: HTMLImageElement | null) {
   ctx.fillStyle = layer.background;
   roundRectPath(ctx, 0, 0, width, height, 0.03);
@@ -2649,7 +2760,9 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
     ctx.rotate((layer.rotation * Math.PI) / 180);
     ctx.translate(-spread.width / 2, -spread.height / 2);
     if (layer.type === "text") {
-      drawTextLayer(ctx, layer, resolveCoverTokenText(layer.text, book, cover), spread.width, spread.height);
+      const content = resolveCoverTokenText(layer.text, book, cover);
+      if (layer.curve !== 0) drawCurvedTextLayer(ctx, layer, content, spread.width, spread.height);
+      else drawTextLayer(ctx, layer, content, spread.width, spread.height);
     } else if (layer.type === "image") {
       const image = imageBySource.get(layer.src);
       if (image) {
