@@ -6445,6 +6445,10 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-template-modal-foot button { flex-shrink: 0; }
 .cover-template-section-head { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 14px; padding: 2px 0 1px; }
 .cover-template-section-head > div { display: flex; flex-direction: column; gap: 2px; }
+.cover-template-section-head > .cover-template-section-actions { display: flex; flex-direction: row; flex-shrink: 0; align-items: center; gap: 4px; }
+.cover-template-import-error { display: flex; grid-column: 1 / -1; align-items: center; gap: 5px; margin: -4px 0 0; color: var(--danger); font-size: 8.5px; }
+.cover-template-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; margin-top: 4px; }
+.cover-template-empty-actions .cover-outline-button { margin-top: 0; }
 .cover-template-section-head strong { color: var(--text); font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
 .cover-template-empty { display: flex; grid-column: 1 / -1; align-items: center; flex-direction: column; gap: 6px; padding: 22px 20px; border: 1px dashed var(--border-strong); border-radius: 10px; background: var(--surface-2); text-align: center; }
 .cover-template-empty > span { display: flex; width: 42px; height: 42px; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--book-accent); }

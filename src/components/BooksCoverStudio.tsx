@@ -41,8 +41,10 @@ import {
   Feather,
   FileDown,
   FileImage,
+  FileJson,
   Files,
   FileText,
+  FileUp,
   FlipHorizontal2,
   FlipVertical2,
   Folder,
@@ -181,11 +183,17 @@ import { downloadCoverPackage } from "../lib/bookCoverPackage";
 import { coverPreflight, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import {
+  addSavedCoverTemplate,
+  coverTemplateFilename,
+  createSavedCoverTemplate,
   deleteSavedCoverTemplate,
+  parseCoverTemplateFile,
   readSavedCoverTemplates,
   renameCoverTemplate,
   saveCoverTemplate,
+  saveCoverTemplateFile,
   savedTemplateDocument,
+  serializeCoverTemplateFile,
   type SavedCoverTemplate,
 } from "../lib/bookCoverLibrary";
 import { useBooks } from "../store/books";
@@ -319,6 +327,8 @@ interface TemplateModalProps {
   onDeleteSaved: (id: string) => void;
   onRenameSaved: (id: string, name: string) => void;
   onSaveCurrent: () => void;
+  onImportTemplate: (template: SavedCoverTemplate) => void;
+  onExportTemplate: (template: SavedCoverTemplate) => void;
   onClose: () => void;
 }
 
@@ -1064,6 +1074,34 @@ export function CoverScreen({
       return;
     }
     setSavedTemplates(result.templates);
+  };
+
+  const importSavedTemplate = (template: SavedCoverTemplate) => {
+    const result = addSavedCoverTemplate(template, savedTemplates);
+    if (!result.ok) {
+      notify("error", "Template not imported", result.message);
+      return;
+    }
+    setSavedTemplates(result.templates);
+    notify("success", "Template imported", `“${result.templates[0]?.name ?? template.name}” is ready in My templates.`);
+  };
+
+  const exportSavedTemplate = async (template: SavedCoverTemplate) => {
+    try {
+      const filename = coverTemplateFilename(template.name);
+      const saved = await saveCoverTemplateFile(filename, serializeCoverTemplateFile(template));
+      if (saved) notify("success", "Template exported", filename);
+      return Boolean(saved);
+    } catch (error) {
+      notify("error", "Template could not be exported", String(error));
+      return false;
+    }
+  };
+
+  const exportCurrentTemplate = async (name: string) => {
+    const currentCover = layoutRef.current.cover;
+    const template = createSavedCoverTemplate(name, currentCover.doc, coverMetrics(bookRef.current.trim_size, currentCover));
+    return exportSavedTemplate(template);
   };
 
   const toggleVisible = (id: string) => {
@@ -1814,6 +1852,8 @@ export function CoverScreen({
           onDeleteSaved={removeSavedTemplate}
           onRenameSaved={renameSavedTemplate}
           onSaveCurrent={() => { setTemplateOpen(false); setSaveTemplateOpen(true); }}
+          onImportTemplate={importSavedTemplate}
+          onExportTemplate={(template) => void exportSavedTemplate(template)}
           onClose={() => setTemplateOpen(false)}
         />
       )}
@@ -1822,6 +1862,7 @@ export function CoverScreen({
           book={book}
           cover={cover}
           onSave={saveAsTemplate}
+          onExportFile={exportCurrentTemplate}
           onClose={() => setSaveTemplateOpen(false)}
         />
       )}
@@ -3638,7 +3679,7 @@ function DocumentInspector({
 
 /* ========================================================================== */
 
-function TemplateModal({ book, cover, savedTemplates, onApply, onApplySaved, onDeleteSaved, onRenameSaved, onSaveCurrent, onClose }: TemplateModalProps) {
+function TemplateModal({ book, cover, savedTemplates, onApply, onApplySaved, onDeleteSaved, onRenameSaved, onSaveCurrent, onImportTemplate, onExportTemplate, onClose }: TemplateModalProps) {
   const imageLayerSource = cover.doc.layers.find((layer): layer is CoverImageLayer => layer.type === "image" && Boolean(layer.src));
   const previewCover = { ...cover, image: cover.image || imageLayerSource?.src || "" };
   const metrics = coverMetrics(book.trim_size, previewCover);
@@ -3646,6 +3687,23 @@ function TemplateModal({ book, cover, savedTemplates, onApply, onApplySaved, onD
   const savedPreviews = savedTemplates.map((template) => ({ template, doc: savedTemplateDocument(template, metrics) }));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
+  const [importError, setImportError] = useState("");
+  const importRef = useRef<HTMLInputElement>(null);
+
+  const importFile = async (file: File | null) => {
+    if (!file) return;
+    setImportError("");
+    try {
+      const template = parseCoverTemplateFile(await file.text());
+      if (!template) {
+        setImportError("That file isn't a valid Book Studio .bookcover template.");
+        return;
+      }
+      onImportTemplate(template);
+    } catch {
+      setImportError("The template file couldn't be read.");
+    }
+  };
 
   const commitRename = (template: SavedCoverTemplate) => {
     const name = draftName.trim();
@@ -3663,14 +3721,22 @@ function TemplateModal({ book, cover, savedTemplates, onApply, onApplySaved, onD
         <div className="cover-template-grid">
           <div className="cover-template-section-head">
             <div><span className="books-eyebrow"><BookmarkPlus size={12} /> My templates</span><strong>{savedTemplates.length === 0 ? "Build your own library" : `${savedTemplates.length} saved ${savedTemplates.length === 1 ? "design" : "designs"}`}</strong></div>
-            <button type="button" className="cover-outline-button small" onClick={onSaveCurrent}><BookmarkPlus size={13} /> Save current design</button>
+            <div className="cover-template-section-actions">
+              <input ref={importRef} type="file" accept=".bookcover,application/json" className="cover-hidden-input" onChange={(event) => { void importFile(event.target.files?.[0] ?? null); event.target.value = ""; }} />
+              <button type="button" className="cover-outline-button small" onClick={() => importRef.current?.click()}><FileUp size={13} /> Import file</button>
+              <button type="button" className="cover-outline-button small" onClick={onSaveCurrent}><BookmarkPlus size={13} /> Save current design</button>
+            </div>
           </div>
+          {importError && <p className="cover-template-import-error" role="alert"><AlertCircle size={12} /> {importError}</p>}
           {savedTemplates.length === 0 ? (
             <div className="cover-template-empty">
               <span><BookmarkPlus size={19} /></span>
               <strong>No saved templates yet</strong>
               <p>Save this wrap to reuse its layers, type, artwork, and token copy across books. Trim size and spine width adapt automatically.</p>
-              <button type="button" className="cover-outline-button" onClick={onSaveCurrent}><BookmarkPlus size={13} /> Save this cover</button>
+              <div className="cover-template-empty-actions">
+                <button type="button" className="cover-outline-button" onClick={onSaveCurrent}><BookmarkPlus size={13} /> Save this cover</button>
+                <button type="button" className="cover-outline-button" onClick={() => importRef.current?.click()}><FileUp size={13} /> Import .bookcover</button>
+              </div>
             </div>
           ) : savedPreviews.map(({ template, doc }) => {
             const scale = 240 / (metrics.fullWidth * 96);
@@ -3707,6 +3773,7 @@ function TemplateModal({ book, cover, savedTemplates, onApply, onApplySaved, onD
                   <div className="cover-template-card-actions">
                     <button type="button" className="cover-primary-button small" onClick={() => onApplySaved(template)}><Check size={13} /> Use template</button>
                     <button type="button" className="cover-icon-button" title={`Rename ${template.name}`} aria-label={`Rename ${template.name}`} onClick={() => { setEditingId(template.id); setDraftName(template.name); }}><Pencil size={13} /></button>
+                    <button type="button" className="cover-icon-button" title={`Export ${template.name} as a .bookcover file`} aria-label={`Export ${template.name}`} onClick={() => onExportTemplate(template)}><FileJson size={13} /></button>
                     <button type="button" className="cover-icon-button danger" title={`Delete ${template.name}`} aria-label={`Delete ${template.name}`} onClick={() => { if (window.confirm(`Delete template “${template.name}”?`)) onDeleteSaved(template.id); }}><Trash2 size={13} /></button>
                   </div>
                 </div>
@@ -3751,7 +3818,7 @@ function TemplateModal({ book, cover, savedTemplates, onApply, onApplySaved, onD
   );
 }
 
-function SaveTemplateModal({ book, cover, onSave, onClose }: { book: Book; cover: BookCoverDesign; onSave: (name: string) => boolean; onClose: () => void }) {
+function SaveTemplateModal({ book, cover, onSave, onExportFile, onClose }: { book: Book; cover: BookCoverDesign; onSave: (name: string) => boolean; onExportFile: (name: string) => Promise<boolean>; onClose: () => void }) {
   const [name, setName] = useState(() => `${book.title?.trim() || "Untitled"} cover`);
   const metrics = coverMetrics(book.trim_size, cover);
   const scale = 240 / (metrics.fullWidth * 96);
@@ -3779,6 +3846,7 @@ function SaveTemplateModal({ book, cover, onSave, onClose }: { book: Book; cover
             <p className="cover-save-template-note"><Feather size={13} /><span>Text that uses <strong>{`{{title}}`}</strong>, <strong>{`{{author}}`}</strong>, or <strong>{`{{backCopy}}`}</strong> stays linked to each book when the template is applied. Literal copy is preserved exactly.</span></p>
             <div className="cover-save-template-actions">
               <button type="button" className="cover-outline-button" onClick={onClose}>Cancel</button>
+              <button type="button" className="cover-outline-button" disabled={!trimmed} onClick={() => { void onExportFile(trimmed).then((ok) => { if (ok) onClose(); }); }}><FileJson size={13} /> Export .bookcover</button>
               <button type="button" className="cover-primary-button" disabled={!trimmed} onClick={save}><BookmarkPlus size={13} /> Save template</button>
             </div>
           </div>

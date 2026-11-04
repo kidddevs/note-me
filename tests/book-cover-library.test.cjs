@@ -1,16 +1,21 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  COVER_TEMPLATE_FILE_FORMAT,
   MAX_SAVED_COVER_TEMPLATE_NAME,
   SAVED_COVER_TEMPLATES_KEY,
   adaptCoverDocumentToMetrics,
+  addSavedCoverTemplate,
+  coverTemplateFilename,
   createSavedCoverTemplate,
   deleteSavedCoverTemplate,
+  parseCoverTemplateFile,
   parseSavedCoverTemplates,
   readSavedCoverTemplates,
   renameCoverTemplate,
   saveCoverTemplate,
   savedTemplateDocument,
+  serializeCoverTemplateFile,
   serializeSavedCoverTemplates,
 } = require("./.compiled/src/lib/bookCoverLibrary");
 const {
@@ -125,6 +130,50 @@ test("saved template storage supports save, read, rename, delete, and quota fail
     const failed = saveCoverTemplate("No room", sampleDoc(), metrics, []);
     assert.equal(failed.ok, false);
     assert.match(failed.message, /local storage is full/i);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+
+test("cover template files round-trip and validate their format", () => {
+  const template = createSavedCoverTemplate("House style", sampleDoc(), metrics, new Date("2026-02-03T04:05:06Z"));
+  const file = serializeCoverTemplateFile(template);
+  const parsed = JSON.parse(file);
+  assert.equal(parsed.format, COVER_TEMPLATE_FILE_FORMAT);
+  assert.equal(parsed.version, 1);
+  assert.equal(parsed.doc.layers.length, 3);
+  const restored = parseCoverTemplateFile(file, new Date("2026-04-05T06:07:08Z"));
+  assert.equal(restored.name, "House style");
+  assert.equal(restored.metrics.spineWidth, template.metrics.spineWidth);
+  assert.equal(restored.doc.layers[0].text, "{{title}}");
+  assert.equal("error" in restored, false);
+
+  assert.equal(parseCoverTemplateFile("{"), null);
+  assert.equal(parseCoverTemplateFile({ ...parsed, format: "something-else" }), null);
+  assert.equal(parseCoverTemplateFile({ ...parsed, version: 2 }), null);
+  assert.equal(parseCoverTemplateFile({ ...parsed, doc: { layers: [] }, name: "" }), null);
+  assert.equal(coverTemplateFilename("The Quiet Hour — House Style!"), "the-quiet-hour-house-style.bookcover");
+  assert.equal(coverTemplateFilename(""), "cover-template.bookcover");
+});
+
+test("importing a template file adds it to storage with a fresh id", () => {
+  const previousWindow = global.window;
+  const map = new Map();
+  global.window = { localStorage: {
+    getItem: (key) => map.has(key) ? map.get(key) : null,
+    setItem: (key, value) => map.set(key, String(value)),
+    removeItem: (key) => map.delete(key),
+  } };
+  try {
+    const original = createSavedCoverTemplate("Shared wrap", sampleDoc(), metrics);
+    const result = addSavedCoverTemplate(original, [], new Date("2026-05-06T07:08:09Z"));
+    assert.equal(result.ok, true);
+    assert.equal(result.templates.length, 1);
+    assert.notEqual(result.templates[0].id, original.id);
+    assert.equal(result.templates[0].name, "Shared wrap");
+    assert.equal(result.templates[0].createdAt, "2026-05-06T07:08:09.000Z");
+    assert.equal(readSavedCoverTemplates().length, 1);
   } finally {
     global.window = previousWindow;
   }
