@@ -387,3 +387,15 @@ test("curved text clamps and the font library includes editorial faces", () => {
   }
   assert.ok(COVER_FONTS.length >= 15);
 });
+
+test("cover documents persist a deduplicated palette and expanded blend modes", () => {
+  const doc = parseCoverDocument({
+    palette: ["#FF0000", "#ff0000", "not-a-colour", "#00FF00", "#00ff00"],
+    layers: [{ id: "blend", type: "text", name: "Blend", panel: "front", x: 0, y: 0, width: 2, height: 1, text: "A", blendMode: "color-dodge" }],
+  });
+  assert.deepEqual(doc.palette, ["#ff0000", "#00ff00"]);
+  assert.equal(doc.layers[0].blendMode, "color-dodge");
+  const invalid = parseCoverDocument({ layers: [{ id: "b", type: "text", name: "B", panel: "front", x: 0, y: 0, width: 2, height: 1, text: "B", blendMode: "not-real" }] });
+  assert.equal(invalid.layers[0].blendMode, "normal");
+  assert.deepEqual(emptyCoverDocument().palette, []);
+});

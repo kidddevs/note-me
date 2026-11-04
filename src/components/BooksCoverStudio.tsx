@@ -54,6 +54,7 @@ import {
   Move,
   Package,
   Palette,
+  Pipette,
   Plus,
   Printer,
   Redo2,
@@ -114,6 +115,7 @@ import {
   newCoverLayerId,
   normalizeIsbn13,
   reflowSpineLayers,
+  renderCoverCanvas,
   resolveCoverTokenText,
   shapeLayer,
   spineWidthMillimetres,
@@ -198,6 +200,7 @@ interface CoverStageProps {
   showGrid: boolean;
   showBleed: boolean;
   previewing: boolean;
+  eyedropper: boolean;
   zoom: number;
   autoFit: boolean;
   onSelect: (id: string | null, additive?: boolean) => void;
@@ -208,6 +211,7 @@ interface CoverStageProps {
   onInteractionEnd: () => void;
   onEditText: (id: string) => void;
   onDropImage: (dataUrl: string, x: number, y: number) => void;
+  onSample: (x: number, y: number) => void;
   onContextMenu: (event: React.MouseEvent<HTMLElement>, layerId: string) => void;
   onGuideAdd: (axis: "x" | "y", spreadPosition: number) => void;
   onGuideChange: (id: string, spreadPosition: number) => void;
@@ -393,6 +397,8 @@ function historyLabel(key?: string) {
   if (value.startsWith("guide:add")) return "Added guide";
   if (value.startsWith("guide-delete")) return "Removed guide";
   if (value.startsWith("guide:")) return "Moved guide";
+  if (value === "eyedropper") return "Sampled colour";
+  if (value.startsWith("palette")) return "Updated palette";
   if (value === "isbn") return "Updated ISBN";
   if (value.startsWith("barcode")) return "Updated barcode";
   if (value.startsWith("background")) return "Changed background";
@@ -960,9 +966,10 @@ export function CoverScreen({
     const current = layoutRef.current.cover;
     const imageLayerSource = current.doc.layers.find((layer): layer is CoverImageLayer => layer.type === "image" && Boolean(layer.src));
     const templateCover = { ...current, image: current.image || imageLayerSource?.src || "" };
+    const preset = COVER_TEMPLATE_PRESETS.find((template) => template.id === templateId);
     const nextDoc = templateId === "blank"
-      ? { ...emptyCoverDocument(), templateId: "blank", background: coverFill(shelfColor) }
-      : createCoverDocument(templateId, book, templateCover);
+      ? { ...emptyCoverDocument(), templateId: "blank", background: coverFill(shelfColor), palette: [shelfColor] }
+      : { ...createCoverDocument(templateId, book, templateCover), palette: preset ? [...preset.palette] : [] };
     updateCover({ doc: nextDoc, enabled: true }, { key: `template:${templateId}`, history: true });
     setTemplateOpen(false);
     setSelectedLayerId(null);
@@ -1244,6 +1251,45 @@ export function CoverScreen({
     void saveNow(layoutRef.current).then(() => window.setTimeout(start, 120)).catch(() => start());
   };
 
+  const sampleCoverColour = async (x: number, y: number) => {
+    const current = layoutRef.current.cover;
+    try {
+      const currentBook = bookRef.current;
+      const metrics = coverMetrics(currentBook.trim_size, current);
+      const canvas = await renderCoverCanvas(currentBook, current, "wrap", { dpi: 120, bleed: true });
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const px = Math.min(canvas.width - 1, Math.max(0, Math.round((x / metrics.fullWidth) * canvas.width)));
+      const py = Math.min(canvas.height - 1, Math.max(0, Math.round((y / metrics.fullHeight) * canvas.height)));
+      const data = ctx.getImageData(px, py, 1, 1).data;
+      const hex = `#${[data[0], data[1], data[2]].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+      const layer = selectedLayerId ? current.doc.layers.find((item) => item.id === selectedLayerId) ?? null : null;
+      let nextLayer: CoverLayer | null = null;
+      if (layer) {
+        if (layer.type === "text" || layer.type === "line" || layer.type === "symbol" || layer.type === "artwork") {
+          nextLayer = { ...layer, color: hex };
+        } else if (layer.type === "shape") {
+          nextLayer = { ...layer, fill: coverFill(hex) };
+        } else if (layer.type === "image") {
+          nextLayer = { ...layer, tint: hex, tintStrength: Math.max(0.25, layer.tintStrength) };
+        } else if (layer.type === "barcode") {
+          nextLayer = { ...layer, barColor: hex };
+        }
+      }
+      const palette = [hex, ...current.doc.palette.filter((entry) => entry.toLocaleLowerCase() !== hex)].slice(0, 16);
+      const nextDoc: BookCoverDocument = {
+        ...current.doc,
+        palette,
+        background: nextLayer ? current.doc.background : coverFill(hex),
+        layers: nextLayer ? current.doc.layers.map((item) => item.id === nextLayer?.id ? nextLayer as CoverLayer : item) : current.doc.layers,
+      };
+      updateDoc(nextDoc, { key: "eyedropper" });
+      notify("success", "Colour sampled", `${hex}${nextLayer ? ` · applied to ${nextLayer.name}` : " · set as background"}`);
+    } catch (error) {
+      notify("error", "Colour could not be sampled", String(error));
+    }
+  };
+
   const handleDownloadPdf = async (marks: boolean) => {
     setBusyDownload(marks ? "pdf-marks" : "pdf");
     try {
@@ -1350,6 +1396,7 @@ export function CoverScreen({
     if (meta || event.altKey) return;
     const key = event.key.toLocaleLowerCase();
     if (key === "v") setTool("select");
+    if (key === "e") setTool("eyedropper");
     if (key === "t") { setTool("text"); makeTextLayer(); setTool("select"); }
     if (key === "i") { fileInputRef.current?.click(); }
     if (key === "r") makeShapeLayer("rectangle");
@@ -1555,6 +1602,7 @@ export function CoverScreen({
             showGrid={doc.showGrid && !previewing}
             showBleed={doc.showBleed}
             previewing={previewing}
+            eyedropper={tool === "eyedropper"}
             zoom={zoom}
             autoFit={autoFit}
             onSelect={selectLayer}
@@ -1564,6 +1612,7 @@ export function CoverScreen({
             onInteractionStart={onInteractionStart}
             onInteractionEnd={NOOP}
             onEditText={requestEditText}
+            onSample={(x, y) => void sampleCoverColour(x, y)}
             onContextMenu={openLayerMenu}
             onGuideAdd={addGuide}
             onGuideChange={changeGuide}
@@ -1882,6 +1931,7 @@ function ToolRail({
 }) {
   const tools: { id: string; label: string; shortcut: string; icon: ReactNode; action?: () => void }[] = [
     { id: "select", label: "Select & move", shortcut: "V", icon: <Move size={18} /> },
+    { id: "eyedropper", label: "Eyedropper", shortcut: "E", icon: <Pipette size={18} /> },
     { id: "text", label: "Add text", shortcut: "T", icon: <Type size={18} />, action: onAddText },
     { id: "image", label: "Add image", shortcut: "I", icon: <ImagePlus size={18} />, action: onAddImage },
     { id: "rect", label: "Rectangle", shortcut: "R", icon: <Square size={18} /> },
@@ -2240,7 +2290,7 @@ function LayerContextMenu({
 
 /* ========================================================================== */
 
-function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
+function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [interaction, setInteraction] = useState<{
@@ -2360,6 +2410,10 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           if (layer.panel === "wrap") {
             targetsX.push(metrics.bleed, metrics.bleed + metrics.trimWidth, metrics.bleed + metrics.trimWidth + metrics.spineWidth, metrics.fullWidth - metrics.bleed);
             targetsY.push(metrics.bleed, metrics.fullHeight - metrics.bleed);
+          }
+          if (showGrid) {
+            for (let gridX = 0.25; gridX < stageWidth; gridX += 0.25) targetsX.push(gridX);
+            for (let gridY = 0.25; gridY < stageHeight; gridY += 0.25) targetsY.push(gridY);
           }
           const otherLayers = cover.doc.layers.filter((item) => item.id !== layer.id && coverLayerVisible(cover.doc, item) && item.panel === layer.panel && !selectedIds.includes(item.id));
           for (const other of otherLayers) {
@@ -2554,7 +2608,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   };
 
   return (
-    <main className={`cover-stage ${previewing ? "is-previewing" : ""}`} ref={viewportRef}>
+    <main className={`cover-stage ${previewing ? "is-previewing" : ""} ${eyedropper ? "is-eyedropper" : ""}`} ref={viewportRef}>
       <div className="cover-stage-meta">
         <span className="cover-stage-context">{panel === "wrap" ? "Full wrap" : panel === "front" ? "Front cover" : panel === "back" ? "Back cover" : "Spine"}</span>
         <span className="cover-stage-sep" />
@@ -2589,6 +2643,14 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
             className="cover-stage-sheet"
             data-cover-sheet
             onPointerDown={(event) => { if (event.target === event.currentTarget) onSelect(null); }}
+            onPointerDownCapture={(event) => {
+              if (!eyedropper) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              const scale = rect.width / metrics.fullWidth;
+              onSample((event.clientX - rect.left) / scale, (event.clientY - rect.top) / scale);
+            }}
             onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
             onDrop={(event) => void onDrop(event)}
             style={{
@@ -2622,7 +2684,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
                   }}
                   onPointerDown={(event) => beginMove(event, layer)}
                   onContextMenu={(event) => onContextMenu(event, layer.id)}
-                  onDoubleClick={() => { if (layer.type === "text") onEditText(layer.id); }}
+                  onDoubleClick={() => { if (!eyedropper && layer.type === "text") onEditText(layer.id); }}
                   title={locked ? `${layer.name} (locked)` : layer.name}
                 >
                   <div className="cover-canvas-layer-content" style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: coverLayerInnerHtml(book, cover, layer, "editor") }} />
@@ -2722,7 +2784,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           <button type="button" onClick={() => onZoom(Math.min(3, effectiveZoom + 0.1))} aria-label="Zoom in"><ZoomIn size={14} /></button>
           <button type="button" className={autoFit ? "active" : ""} onClick={onFit}><Maximize2 size={13} /> Fit</button>
         </div>
-        <span className="cover-stage-hint"><Move size={12} /> Drag to move · Shift-click multi-select · Drag from rulers for guides · Alt disables snapping</span>
+        <span className="cover-stage-hint">{eyedropper ? <><Pipette size={12} /> Click the cover to sample a colour · press Esc or V to exit</> : <><Move size={12} /> Drag to move · Shift-click multi-select · Drag from rulers for guides · Alt disables snapping</>}</span>
       </div>
     </main>
   );
@@ -2993,7 +3055,7 @@ function LayerInspector({
         <label className="cover-text-input"><span>Layer name</span><input value={layer.name} onChange={(event) => onUpdate({ name: event.target.value }, { key: `name:${layer.id}` })} /></label>
         <div className="cover-opacity-row">
           <SliderField label="Opacity" value={layer.opacity} onChange={(opacity) => onUpdate({ opacity }, { key: `opacity:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
-          <label className="cover-select-field"><span>Blend</span><select value={layer.blendMode} onChange={(event) => onUpdate({ blendMode: event.target.value as CoverBlendMode }, { key: `blend:${layer.id}` })}><option value="normal">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="overlay">Overlay</option><option value="soft-light">Soft light</option><option value="darken">Darken</option><option value="lighten">Lighten</option></select></label>
+          <label className="cover-select-field"><span>Blend</span><select value={layer.blendMode} onChange={(event) => onUpdate({ blendMode: event.target.value as CoverBlendMode }, { key: `blend:${layer.id}` })}><option value="normal">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="overlay">Overlay</option><option value="soft-light">Soft light</option><option value="hard-light">Hard light</option><option value="color-dodge">Color dodge</option><option value="color-burn">Color burn</option><option value="darken">Darken</option><option value="lighten">Lighten</option><option value="difference">Difference</option><option value="exclusion">Exclusion</option><option value="hue">Hue</option><option value="saturation">Saturation</option><option value="color">Color</option><option value="luminosity">Luminosity</option></select></label>
         </div>
       </Section>
 
@@ -3207,6 +3269,34 @@ function DocumentInspector({
         <div className="cover-swatch-row">
           {["#f6efe3", "#fffdf8", "#1f3a2d", "#14161a", "#e4583a", "#315f73", "#d4b26b", "#e8d9c7"].map((color) => <button key={color} type="button" style={{ background: color }} onClick={() => onUpdateDoc({ ...doc, background: coverFill(color) }, { key: "background-swatch" })} aria-label={`Set background ${color}`} />)}
         </div>
+      </Section>
+
+      <Section title="Document palette" hint="Sampled colours">
+        {doc.palette.length === 0 ? (
+          <p className="cover-inspector-note">Use the eyedropper (<strong>E</strong>) to sample colours from the cover. They collect here for reuse.</p>
+        ) : (
+          <div className="cover-palette-row">
+            {doc.palette.map((color) => (
+              <button
+                key={color}
+                type="button"
+                className="cover-palette-swatch"
+                style={{ background: color }}
+                title={`${color} · Click to set background · Shift-click to remove`}
+                aria-label={`Use palette colour ${color}`}
+                onClick={(event) => {
+                  if (event.shiftKey) onUpdateDoc({ ...doc, palette: doc.palette.filter((entry) => entry !== color) }, { key: `palette-remove:${color}` });
+                  else onUpdateDoc({ ...doc, background: coverFill(color) }, { key: `palette-background:${color}` });
+                }}
+              />
+            ))}
+          </div>
+        )}
+        <button type="button" className="cover-wide-button subtle" onClick={() => {
+          const color = doc.background.type === "solid" ? doc.background.color : doc.background.gradient.stops[0]?.color;
+          if (!color) return;
+          onUpdateDoc({ ...doc, palette: [color, ...doc.palette.filter((entry) => entry !== color)].slice(0, 16) }, { key: "palette-add-background" });
+        }}><Palette size={13} /> Save background colour</button>
       </Section>
 
       <Section title="Print setup" hint="Trim, spine & bleed">

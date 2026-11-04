@@ -6347,6 +6347,9 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-swatch-row { display: flex; flex-wrap: wrap; gap: 4px; }
 .cover-swatch-row button { width: 25px; height: 25px; padding: 0; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22); cursor: pointer; }
 .cover-swatch-row button:hover { outline: 2px solid var(--book-accent); outline-offset: 1px; }
+.cover-palette-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.cover-palette-swatch { width: 27px; height: 27px; padding: 0; border: 1px solid rgba(0, 0, 0, 0.14); border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22); cursor: pointer; }
+.cover-palette-swatch:hover { outline: 2px solid var(--book-accent); outline-offset: 1px; }
 .cover-spine-readout { display: grid; grid-template-columns: 1fr 1.2fr; gap: 6px; }
 .cover-spine-readout > div { display: flex; flex-direction: column; gap: 1px; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-2); }
 .cover-spine-readout span { color: var(--text-4); font-size: 7.5px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; }

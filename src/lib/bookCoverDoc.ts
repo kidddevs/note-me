@@ -16,7 +16,7 @@ export type CoverVerticalAlign = "top" | "middle" | "bottom";
 export type CoverTextEffect = "none" | "soft" | "hard" | "glow" | "outline";
 export type CoverShapeKind = "rectangle" | "ellipse" | "triangle" | "diamond" | "star" | "burst" | "heart" | "arch";
 export type CoverDashStyle = "solid" | "dashed" | "dotted";
-export type CoverBlendMode = "normal" | "multiply" | "screen" | "overlay" | "soft-light" | "darken" | "lighten";
+export type CoverBlendMode = "normal" | "multiply" | "screen" | "overlay" | "soft-light" | "hard-light" | "color-dodge" | "color-burn" | "darken" | "lighten" | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
 export type CoverFontId = "serif" | "display" | "sans" | "condensed" | "mono" | "humanist" | "script" | "slab" | "baskerville" | "garamond" | "avenir" | "futura" | "optima" | "copperplate" | "typewriter";
 export type CoverFillType = "solid" | "gradient" | "none";
 export type CoverImageMask = "none" | "circle" | "arch" | "diamond" | "hexagon";
@@ -146,6 +146,7 @@ export interface BookCoverDocument {
   background: CoverFill;
   layers: CoverLayer[];
   groups: CoverLayerGroup[];
+  palette: string[];
   guides: CoverGuideline[];
   showGuides: boolean;
   showGrid: boolean;
@@ -291,7 +292,7 @@ const DEFAULT_ACCENT = "#a56b3e";
 const LAYER_TYPES: CoverLayerType[] = ["text", "image", "shape", "line", "symbol", "artwork", "barcode"];
 const PANELS: CoverPanel[] = ["front", "back", "spine", "wrap"];
 const FONT_IDS = COVER_FONTS.map((font) => font.id);
-const BLEND_MODES: CoverBlendMode[] = ["normal", "multiply", "screen", "overlay", "soft-light", "darken", "lighten"];
+const BLEND_MODES: CoverBlendMode[] = ["normal", "multiply", "screen", "overlay", "soft-light", "hard-light", "color-dodge", "color-burn", "darken", "lighten", "difference", "exclusion", "hue", "saturation", "color", "luminosity"];
 const SHAPES: CoverShapeKind[] = ["rectangle", "ellipse", "triangle", "diamond", "star", "burst", "heart", "arch"];
 const DASH_STYLES: CoverDashStyle[] = ["solid", "dashed", "dotted"];
 const IMAGE_MASKS: CoverImageMask[] = ["none", "circle", "arch", "diamond", "hexagon"];
@@ -412,6 +413,7 @@ export function emptyCoverDocument(): BookCoverDocument {
   return {
     version: 1,
     groups: [],
+    palette: [],
     templateId: "",
     background: coverFill("#f5efe4"),
     layers: [],
@@ -785,12 +787,16 @@ export function parseCoverDocument(value: unknown, fallback: BookCoverDocument =
   const guides = Array.isArray(source.guides)
     ? source.guides.slice(0, 80).map((guide, index) => normalizeGuide(guide, index)).filter((guide): guide is CoverGuideline => Boolean(guide))
     : fallback.guides.map((guide) => ({ ...guide }));
+  const palette = Array.isArray(source.palette)
+    ? [...new Set(source.palette.filter((entry): entry is string => typeof entry === "string" && /^#[0-9a-f]{6}$/i.test(entry)).map((entry) => entry.toLocaleLowerCase()))].slice(0, 16)
+    : fallback.palette.map((entry) => entry);
   return {
     version: 1,
     templateId: text(source.templateId, fallback.templateId, 80),
     background: normalizeFill(source.background, fallback.background),
     layers,
     groups,
+    palette,
     guides,
     showGuides: boolean(source.showGuides, fallback.showGuides),
     showGrid: boolean(source.showGrid, fallback.showGrid),
@@ -1297,6 +1303,7 @@ function atelierTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetr
   return {
     version: 1,
     groups: [],
+    palette: [],
     templateId: "atelier",
     guides: [],
     background: {
@@ -1438,6 +1445,7 @@ function noirTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics
   return {
     version: 1,
     groups: [],
+    palette: [],
     templateId: "noir",
     guides: [],
     background: {
@@ -1614,6 +1622,7 @@ function photoTemplate(book: Book, cover: BookCoverDesign, metrics: CoverMetrics
   return {
     version: 1,
     groups: [],
+    palette: [],
     templateId: "photo",
     guides: [],
     background: {
@@ -1741,6 +1750,7 @@ function minimalTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetr
   return {
     version: 1,
     groups: [],
+    palette: [],
     templateId: "minimal",
     guides: [],
     background: { type: "solid", color: "#fbfaf7", gradient: coverFill("#fbfaf7").gradient },
@@ -1931,6 +1941,7 @@ function heritageTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMet
   return {
     version: 1,
     groups: [],
+    palette: [],
     templateId: "heritage",
     guides: [],
     background: {
@@ -2077,6 +2088,7 @@ function boldTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics
   return {
     version: 1,
     groups: [],
+    palette: [],
     templateId: "bold",
     guides: [],
     background: { type: "solid", color: cream, gradient: coverFill(cream).gradient },
