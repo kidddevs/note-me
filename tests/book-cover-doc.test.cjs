@@ -399,3 +399,33 @@ test("cover documents persist a deduplicated palette and expanded blend modes", 
   assert.equal(invalid.layers[0].blendMode, "normal");
   assert.deepEqual(emptyCoverDocument().palette, []);
 });
+
+test("layer shadow and glow survive parsing and render into markup", () => {
+  const doc = parseCoverDocument({
+    layers: [{
+      id: "effect",
+      type: "text",
+      name: "Effect",
+      panel: "front",
+      x: 0.5,
+      y: 0.5,
+      width: 3,
+      height: 1,
+      text: "Shadow",
+      shadow: { enabled: true, color: "#000000", blur: 0.2, offsetX: 0.1, offsetY: 0.12, opacity: 0.5 },
+      glow: { enabled: true, color: "#c9a227", blur: 0.3, opacity: 0.4 },
+    }],
+  });
+  const layer = doc.layers[0];
+  assert.equal(layer.shadow.enabled, true);
+  assert.equal(layer.shadow.blur, 0.2);
+  assert.equal(layer.glow.enabled, true);
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.match(markup, /filter:drop-shadow\(0\.1in 0\.12in 0\.2in rgba\(0, 0, 0, 0\.5\)\)/);
+  assert.match(markup, /drop-shadow\(0 0 0\.3in rgba\(201, 162, 39, 0\.4\)\)/);
+
+  const legacy = parseCoverDocument({ layers: [{ id: "old", type: "text", name: "Old", panel: "front", x: 0, y: 0, width: 2, height: 1, text: "Old" }] });
+  assert.equal(legacy.layers[0].shadow.enabled, false);
+  assert.equal(legacy.layers[0].glow.enabled, false);
+  assert.equal(legacy.layers[0].shadow.blur, 0.16);
+});

@@ -32,6 +32,22 @@ export interface CoverFill {
   gradient: BookCoverGradient;
 }
 
+export interface CoverLayerShadow {
+  enabled: boolean;
+  color: string;
+  blur: number;
+  offsetX: number;
+  offsetY: number;
+  opacity: number;
+}
+
+export interface CoverLayerGlow {
+  enabled: boolean;
+  color: string;
+  blur: number;
+  opacity: number;
+}
+
 export interface CoverLayerBase {
   id: string;
   type: CoverLayerType;
@@ -47,6 +63,8 @@ export interface CoverLayerBase {
   visible: boolean;
   locked: boolean;
   groupId: string | null;
+  shadow: CoverLayerShadow;
+  glow: CoverLayerGlow;
 }
 
 export interface CoverLayerGroup {
@@ -533,7 +551,7 @@ function gradientMeta(gradient: BookCoverGradient) {
 
 /* ---------------------------------------------------------------- layers */
 
-function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId"> & Partial<Pick<CoverLayerBase, "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId">>): Omit<CoverLayerBase, "type"> {
+function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow"> & Partial<Pick<CoverLayerBase, "rotation" | "opacity" | "blendMode" | "visible" | "locked" | "groupId" | "shadow" | "glow">>): Omit<CoverLayerBase, "type"> {
   return {
     id: input.id,
     name: input.name,
@@ -548,6 +566,8 @@ function baseLayer(input: Omit<CoverLayerBase, "type" | "rotation" | "opacity" |
     visible: input.visible ?? true,
     locked: input.locked ?? false,
     groupId: input.groupId ?? null,
+    shadow: input.shadow ?? { enabled: false, color: "#000000", blur: 0.16, offsetX: 0.04, offsetY: 0.06, opacity: 0.35 },
+    glow: input.glow ?? { enabled: false, color: "#c9a227", blur: 0.22, opacity: 0.4 },
   };
 }
 
@@ -671,6 +691,30 @@ function normalizeLayerBase(source: Record<string, unknown>, type: CoverLayerTyp
     visible: boolean(source.visible, true),
     locked: boolean(source.locked, false),
     groupId: text(source.groupId, "", 80) || null,
+    shadow: normalizeShadow(source.shadow),
+    glow: normalizeGlow(source.glow),
+  };
+}
+
+function normalizeShadow(value: unknown): CoverLayerShadow {
+  const source = isRecord(value) ? value : {};
+  return {
+    enabled: boolean(source.enabled, false),
+    color: color(source.color, "#000000"),
+    blur: decimal(source.blur, 0.16, 0, 1),
+    offsetX: decimal(source.offsetX, 0.04, -1, 1),
+    offsetY: decimal(source.offsetY, 0.06, -1, 1),
+    opacity: decimal(source.opacity, 0.35, 0, 1),
+  };
+}
+
+function normalizeGlow(value: unknown): CoverLayerGlow {
+  const source = isRecord(value) ? value : {};
+  return {
+    enabled: boolean(source.enabled, false),
+    color: color(source.color, "#c9a227"),
+    blur: decimal(source.blur, 0.22, 0, 1),
+    opacity: decimal(source.opacity, 0.4, 0, 1),
   };
 }
 
@@ -2287,8 +2331,31 @@ export function coverLayerInnerHtml(book: Book, cover: BookCoverDesign, layer: C
   </div>`;
 }
 
+function rgbaColor(value: string, opacity: number) {
+  const match = /^#([0-9a-f]{6})$/i.exec(value);
+  if (!match) return value;
+  const red = Number.parseInt(match[1].slice(0, 2), 16);
+  const green = Number.parseInt(match[1].slice(2, 4), 16);
+  const blue = Number.parseInt(match[1].slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${Math.round(clamp(opacity, 0, 1) * 1000) / 1000})`;
+}
+
+export function coverLayerEffectsCss(layer: CoverLayer) {
+  const filters: string[] = [];
+  if (layer.shadow.enabled) filters.push(`drop-shadow(${layer.shadow.offsetX}in ${layer.shadow.offsetY}in ${layer.shadow.blur}in ${rgbaColor(layer.shadow.color, layer.shadow.opacity)})`);
+  if (layer.glow.enabled) filters.push(`drop-shadow(0 0 ${layer.glow.blur}in ${rgbaColor(layer.glow.color, layer.glow.opacity)})`);
+  return filters.join(" ");
+}
+
+function coverLayerEffectCanvas(layer: CoverLayer, dpi: number) {
+  const filters: string[] = [];
+  if (layer.shadow.enabled) filters.push(`drop-shadow(${Math.round(layer.shadow.offsetX * dpi * 100) / 100}px ${Math.round(layer.shadow.offsetY * dpi * 100) / 100}px ${Math.round(layer.shadow.blur * dpi * 100) / 100}px ${rgbaColor(layer.shadow.color, layer.shadow.opacity)})`);
+  if (layer.glow.enabled) filters.push(`drop-shadow(0 0 ${Math.round(layer.glow.blur * dpi * 100) / 100}px ${rgbaColor(layer.glow.color, layer.glow.opacity)})`);
+  return filters.join(" ");
+}
+
 export function coverLayerStyle(layer: CoverLayer): Record<string, string> {
-  return {
+  const style: Record<string, string> = {
     left: `${layer.panel === "wrap" ? layer.x : layer.x}in`,
     top: `${layer.y}in`,
     width: `${layer.width}in`,
@@ -2297,6 +2364,9 @@ export function coverLayerStyle(layer: CoverLayer): Record<string, string> {
     opacity: String(layer.opacity),
     mixBlendMode: layer.blendMode,
   };
+  const effects = coverLayerEffectsCss(layer);
+  if (effects) style.filter = effects;
+  return style;
 }
 
 let coverMarkupInstance = 0;
@@ -2766,6 +2836,8 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
     ctx.save();
     ctx.globalAlpha = layer.opacity;
     ctx.globalCompositeOperation = layer.blendMode === "normal" ? "source-over" : layer.blendMode as GlobalCompositeOperation;
+    const effectFilter = coverLayerEffectCanvas(layer, dpi);
+    if (effectFilter) ctx.filter = effectFilter;
     const centerX = spread.x + spread.width / 2;
     const centerY = spread.y + spread.height / 2;
     ctx.translate(centerX, centerY);
@@ -2778,13 +2850,15 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
     } else if (layer.type === "image") {
       const image = imageBySource.get(layer.src);
       if (image) {
+        const imageFilter = [effectFilter, coverImageFilterCanvas(layer, dpi)].filter(Boolean).join(" ");
+        ctx.filter = "none";
         drawImageFit(ctx, image, 0, 0, spread.width, spread.height, layer.fit, layer.radius, {
           focusX: layer.focusX,
           focusY: layer.focusY,
           mask: layer.mask,
           flipX: layer.flipX,
           flipY: layer.flipY,
-          filter: coverImageFilterCanvas(layer, dpi),
+          filter: imageFilter,
           tint: layer.tint,
           tintStrength: layer.tintStrength,
         });

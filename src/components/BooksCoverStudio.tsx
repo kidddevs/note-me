@@ -102,6 +102,7 @@ import {
   coverDocMarkup,
   coverFill,
   coverFillCss,
+  coverLayerEffectsCss,
   coverLayerInnerHtml,
   coverLayerLocked,
   coverShapePath,
@@ -404,6 +405,8 @@ function historyLabel(key?: string) {
   if (value.startsWith("guide:add")) return "Added guide";
   if (value.startsWith("guide-delete")) return "Removed guide";
   if (value.startsWith("guide:")) return "Moved guide";
+  if (value.startsWith("shadow")) return "Changed layer shadow";
+  if (value.startsWith("glow")) return "Changed layer glow";
   if (value === "eyedropper") return "Sampled colour";
   if (value.startsWith("palette")) return "Updated palette";
   if (value === "isbn") return "Updated ISBN";
@@ -2756,6 +2759,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
                     transform: `rotate(${layer.rotation}deg)`,
                     opacity: layer.opacity,
                     mixBlendMode: layer.blendMode as CSSProperties["mixBlendMode"],
+                    filter: coverLayerEffectsCss(layer) || undefined,
                     zIndex: undefined,
                   }}
                   onPointerDown={(event) => beginMove(event, layer)}
@@ -3254,6 +3258,39 @@ function LayerInspector({
       {layer.type === "barcode" && (
         <BarcodeControls cover={cover} layer={layer} onUpdateCover={onUpdateCover} updateLayer={(patch) => onUpdate(patch, { key: `barcode:${layer.id}` })} onUploadBarcode={onUploadBarcode} onClearBarcode={onClearBarcode} />
       )}
+
+      <Section title="Effects" hint="Shadow & glow" defaultOpen={false}>
+        <div className="cover-effect-editor">
+          <label className="cover-toggle-row">
+            <span><strong>Drop shadow</strong><small>Lifts the layer off the paper.</small></span>
+            <input type="checkbox" checked={layer.shadow.enabled} onChange={(event) => onUpdate({ shadow: { ...layer.shadow, enabled: event.target.checked } }, { key: `shadow-toggle:${layer.id}` })} />
+          </label>
+          {layer.shadow.enabled && (
+            <div className="cover-effect-fields">
+              <ColorField label="Shadow colour" value={layer.shadow.color} onChange={(shadowColor) => onUpdate({ shadow: { ...layer.shadow, color: shadowColor } }, { key: `shadow-color:${layer.id}` })} />
+              <SliderField label="Blur" value={layer.shadow.blur} onChange={(shadowBlur) => onUpdate({ shadow: { ...layer.shadow, blur: shadowBlur } }, { key: `shadow-blur:${layer.id}` })} min={0} max={1} step={0.01} suffix="in" />
+              <div className="cover-transform-grid">
+                <NumberField label="Offset X" value={layer.shadow.offsetX} onChange={(offsetX) => onUpdate({ shadow: { ...layer.shadow, offsetX } }, { key: `shadow-x:${layer.id}` })} step={0.01} min={-1} max={1} suffix="in" />
+                <NumberField label="Offset Y" value={layer.shadow.offsetY} onChange={(offsetY) => onUpdate({ shadow: { ...layer.shadow, offsetY } }, { key: `shadow-y:${layer.id}` })} step={0.01} min={-1} max={1} suffix="in" />
+              </div>
+              <SliderField label="Shadow opacity" value={layer.shadow.opacity} onChange={(shadowOpacity) => onUpdate({ shadow: { ...layer.shadow, opacity: shadowOpacity } }, { key: `shadow-opacity:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
+            </div>
+          )}
+        </div>
+        <div className="cover-effect-editor">
+          <label className="cover-toggle-row">
+            <span><strong>Outer glow</strong><small>A soft halo around the layer.</small></span>
+            <input type="checkbox" checked={layer.glow.enabled} onChange={(event) => onUpdate({ glow: { ...layer.glow, enabled: event.target.checked } }, { key: `glow-toggle:${layer.id}` })} />
+          </label>
+          {layer.glow.enabled && (
+            <div className="cover-effect-fields">
+              <ColorField label="Glow colour" value={layer.glow.color} onChange={(glowColor) => onUpdate({ glow: { ...layer.glow, color: glowColor } }, { key: `glow-color:${layer.id}` })} />
+              <SliderField label="Glow blur" value={layer.glow.blur} onChange={(glowBlur) => onUpdate({ glow: { ...layer.glow, blur: glowBlur } }, { key: `glow-blur:${layer.id}` })} min={0} max={1} step={0.01} suffix="in" />
+              <SliderField label="Glow opacity" value={layer.glow.opacity} onChange={(glowOpacity) => onUpdate({ glow: { ...layer.glow, opacity: glowOpacity } }, { key: `glow-opacity:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
+            </div>
+          )}
+        </div>
+      </Section>
     </>
   );
 }
