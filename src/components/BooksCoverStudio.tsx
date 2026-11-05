@@ -195,6 +195,7 @@ import { extractPaletteFromPixels } from "../lib/bookCoverPalette";
 import { deleteCoverImageAsset, listCoverImageAssets, saveCoverImageAsset, type CoverImageAsset } from "../lib/bookImageLibrary";
 import { getCoverLayerClipboard, setCoverLayerClipboard } from "../lib/bookCoverClipboard";
 import { deleteBrandPalette, readBrandPalettes, saveBrandPalette, type CoverBrandPalette } from "../lib/bookCoverBrandPalettes";
+import { loadCoverHistory, saveCoverHistory } from "../lib/bookCoverHistory";
 import {
   applyLayerStyle,
   deleteLayerStylePreset,
@@ -635,6 +636,7 @@ export function CoverScreen({
   const [busyDownload, setBusyDownload] = useState<string | null>(null);
   const [history, setHistory] = useState<CoverHistoryEntry[]>([]);
   const [future, setFuture] = useState<CoverHistoryEntry[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
   const [sideTab, setSideTab] = useState<"layers" | "history">("layers");
   const [focusContent, setFocusContent] = useState(0);
   const layoutRef = useRef(layout);
@@ -649,6 +651,7 @@ export function CoverScreen({
   const lastHistoryTimeRef = useRef(0);
   const historyRef = useRef(history);
   const futureRef = useRef(future);
+  const historyTouchedRef = useRef(false);
   historyRef.current = history;
   futureRef.current = future;
   bookRef.current = book;
@@ -698,6 +701,7 @@ export function CoverScreen({
   };
 
   const pushHistory = useCallback((snapshot: BookCoverDesign, key?: string) => {
+    historyTouchedRef.current = true;
     const now = Date.now();
     if (key && key === lastHistoryKeyRef.current && now - lastHistoryTimeRef.current < 650) {
       lastHistoryTimeRef.current = now;
@@ -751,6 +755,7 @@ export function CoverScreen({
   };
 
   const undo = useCallback(() => {
+    historyTouchedRef.current = true;
     const items = historyRef.current;
     if (items.length === 0) return;
     const previous = items[items.length - 1];
@@ -760,6 +765,7 @@ export function CoverScreen({
   }, []);
 
   const redo = useCallback(() => {
+    historyTouchedRef.current = true;
     const items = futureRef.current;
     if (items.length === 0) return;
     const next = items[0];
@@ -769,6 +775,7 @@ export function CoverScreen({
   }, []);
 
   const jumpToHistory = useCallback((index: number) => {
+    historyTouchedRef.current = true;
     const items = historyRef.current;
     if (index < 0 || index >= items.length) return;
     const target = items[index];
@@ -810,11 +817,38 @@ export function CoverScreen({
     setPanel("wrap");
     setHistory([]);
     setFuture([]);
+    historyTouchedRef.current = false;
+    setHistoryReady(false);
     dirtyRef.current = false;
     setSaveState("saved");
     if (needsSeed) scheduleSave(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book.id]);
+
+  useEffect(() => {
+    let active = true;
+    historyTouchedRef.current = false;
+    setHistoryReady(false);
+    void loadCoverHistory(book.id).then((stored) => {
+      if (!active) return;
+      if (!historyTouchedRef.current && stored) {
+        setHistory(stored.history);
+        setFuture(stored.future);
+      }
+      setHistoryReady(true);
+    }).catch(() => {
+      if (active) setHistoryReady(true);
+    });
+    return () => { active = false; };
+  }, [book.id]);
+
+  useEffect(() => {
+    if (!historyReady) return;
+    const timer = window.setTimeout(() => {
+      void saveCoverHistory(book.id, history, future);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [book.id, history, future, historyReady]);
 
   useEffect(() => () => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
@@ -2676,6 +2710,7 @@ function HistoryPanel({ history, future, onJump }: { history: CoverHistoryEntry[
       </div>
       {future.length > 0 && <div className="cover-history-redo"><Redo2 size={12} /> {future.length} redo {future.length === 1 ? "step" : "steps"} available</div>}
       <div className="cover-layer-hint"><Move size={11} /> Click any state to travel back in time</div>
+      <div className="cover-layer-hint">Saved automatically with this book</div>
     </div>
   );
 }

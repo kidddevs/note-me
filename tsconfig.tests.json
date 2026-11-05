@@ -16,6 +16,7 @@
     "src/lib/bookCoverClipboard.ts",
     "src/lib/bookCoverDoc.ts",
     "src/lib/bookCoverGeometry.ts",
+    "src/lib/bookCoverHistory.ts",
     "src/lib/bookCoverLibrary.ts",
     "src/lib/bookCoverMockup.ts",
     "src/lib/bookImageLibrary.ts",
