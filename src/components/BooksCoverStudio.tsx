@@ -56,6 +56,7 @@ import {
   ImagePlus,
   Info,
   Italic,
+  Keyboard,
   LayoutTemplate,
   Link2,
   Lock,
@@ -629,6 +630,7 @@ export function CoverScreen({
   const [mockupFormat, setMockupFormat] = useState<CoverMockupFormat>("paperback");
   const [layerMenu, setLayerMenu] = useState<LayerMenuState | null>(null);
   const [preflightOpen, setPreflightOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [autoFit, setAutoFit] = useState(true);
   const [dpi, setDpi] = useState(300);
@@ -1753,11 +1755,17 @@ export function CoverScreen({
       else if (mockupOpen) setMockupOpen(false);
       else if (layerMenu) setLayerMenu(null);
       else if (preflightOpen) setPreflightOpen(false);
+      else if (shortcutsOpen) setShortcutsOpen(false);
       else if (selectedIds.length > 1) { setSelectedLayerId(selectedLayerId); setExtraSelectedIds([]); }
       else selectLayer(null);
       return;
     }
     if (editing) return;
+    if (event.key === "?") {
+      event.preventDefault();
+      setShortcutsOpen(true);
+      return;
+    }
     const meta = event.metaKey || event.ctrlKey;
     if (meta && event.key.toLocaleLowerCase() === "z") {
       event.preventDefault();
@@ -1838,7 +1846,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, selectedLayerId, selectedIds, selected?.type, styleClipboard, undo, redo]);
+  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, shortcutsOpen, selectedLayerId, selectedIds, selected?.type, styleClipboard, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -1907,6 +1915,7 @@ export function CoverScreen({
             <button type="button" className={`cover-icon-button ${previewing ? "active" : ""}`} title={previewing ? "Exit preview" : "Preview cover"} aria-label={previewing ? "Exit preview" : "Preview cover"} onClick={() => { setPreviewing((value) => !value); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><ScanLine size={15} /></button>
             <button type="button" className="cover-icon-button" title="3D book mockup" aria-label="3D book mockup" onClick={() => { setMockupOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><Rotate3D size={16} /></button>
             <button type="button" className="cover-icon-button" title="Print preflight" aria-label="Print preflight" onClick={() => { setPreflightOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><ShieldCheck size={16} /></button>
+            <button type="button" className="cover-icon-button" title="Shortcuts & guide" aria-label="Shortcuts & guide" onClick={() => { setShortcutsOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><Keyboard size={16} /></button>
           </div>
           <div className="cover-bar-right">
             <span className="cover-dimension-chip">{formatDimension(metrics.fullWidth)} × {formatDimension(metrics.fullHeight)} in</span>
@@ -2194,6 +2203,7 @@ export function CoverScreen({
         />
       )}
       {mockupOpen && <BookMockup book={book} cover={cover} format={mockupFormat} onFormat={setMockupFormat} onClose={() => setMockupOpen(false)} />}
+      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
       {preflightOpen && (
         <PreflightModal
           book={book}
@@ -4189,6 +4199,81 @@ function DocumentInspector({
 }
 
 /* ========================================================================== */
+
+function ShortcutsModal({ onClose }: { onClose: () => void }) {
+  const groups = [
+    {
+      title: "Tools",
+      rows: [
+        ["V", "Select and move"],
+        ["E", "Eyedropper"],
+        ["T", "Add text"],
+        ["I", "Import image"],
+        ["R / O", "Rectangle / ellipse"],
+        ["L / B", "Rule / barcode"],
+        ["S / A", "Symbols / artwork"],
+        ["H", "Pan photo in frame"],
+        ["?", "This guide"],
+      ],
+    },
+    {
+      title: "Layers",
+      rows: [
+        ["⌘Z / ⇧⌘Z", "Undo / redo"],
+        ["⌘C / ⌘V", "Copy / paste layers"],
+        ["⌥⌘C / ⌥⌘V", "Copy / paste style"],
+        ["⌘D", "Duplicate"],
+        ["⌘G / ⇧⌘G", "Group / ungroup"],
+        ["⌫", "Delete selection"],
+        ["Arrows", "Nudge · Shift for 0.1 in"],
+        ["⌘A", "Select all layers"],
+      ],
+    },
+    {
+      title: "Canvas",
+      rows: [
+        ["⌘ scroll", "Zoom the artboard"],
+        ["Shift-click", "Multi-select"],
+        ["⌥-drag photo", "Reposition inside frame"],
+        ["⌥ while moving", "Disable snapping"],
+        ["Drag ruler", "Create a guide"],
+        ["Double-click text", "Edit copy"],
+      ],
+    },
+    {
+      title: "Production",
+      rows: [
+        ["Clipping mask", "Clip any layer to a shape"],
+        ["Brand palettes", "Save colours in Document settings"],
+        ["Image library", "Reuse uploads from the Image lab"],
+        ["Proof watermark", "Toggle in Download"],
+        ["Hardcover", "Choose in the 3D mockup"],
+        ["Preflight", "Fix issues in one click"],
+      ],
+    },
+  ];
+  return (
+    <div className="cover-modal-overlay" role="dialog" aria-modal="true" aria-label="Shortcuts and studio guide" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="cover-shortcuts-modal">
+        <div className="cover-template-modal-head">
+          <div><span className="books-eyebrow"><Keyboard size={13} /> Studio guide</span><h2>Shortcuts & tools.</h2><p>Everything in the cover studio is reachable from the canvas, the inspector, or a shortcut. Press <strong>?</strong> anytime to reopen this guide.</p></div>
+          <button type="button" onClick={onClose} aria-label="Close guide"><X size={18} /></button>
+        </div>
+        <div className="cover-shortcut-grid">
+          {groups.map((group) => (
+            <section className="cover-shortcut-group" key={group.title}>
+              <h3>{group.title}</h3>
+              {group.rows.map(([keys, label]) => (
+                <div className="cover-shortcut-row" key={`${group.title}-${keys}-${label}`}><kbd>{keys}</kbd><span>{label}</span></div>
+              ))}
+            </section>
+          ))}
+        </div>
+        <div className="cover-template-modal-foot"><span>Tip: most inspector sections start collapsed. Open only the tools you need.</span><button type="button" className="cover-primary-button" onClick={onClose}>Got it</button></div>
+      </div>
+    </div>
+  );
+}
 
 function TemplateModal({ book, cover, savedTemplates, onApply, onApplySaved, onDeleteSaved, onRenameSaved, onSaveCurrent, onImportTemplate, onExportTemplate, onClose }: TemplateModalProps) {
   const imageLayerSource = cover.doc.layers.find((layer): layer is CoverImageLayer => layer.type === "image" && Boolean(layer.src));

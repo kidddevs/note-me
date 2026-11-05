@@ -6520,6 +6520,13 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-template-card-actions .cover-icon-button.danger:hover { background: var(--danger-soft); color: var(--danger); }
 .cover-template-rename { min-width: 0; width: 100%; height: 24px; padding: 0 5px; border: 1px solid var(--book-accent); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; font-size: 10.5px; font-weight: 650; outline: none; }
 .cover-save-template-modal { width: min(760px, 100%); }
+.cover-shortcuts-modal { display: flex; width: min(860px, 100%); max-height: calc(100vh - 52px); flex-direction: column; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface-modal); box-shadow: 0 32px 90px rgba(0, 0, 0, 0.36); }
+.cover-shortcut-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 26px; padding: 18px 24px 22px; overflow-y: auto; }
+.cover-shortcut-group { display: flex; flex-direction: column; gap: 4px; }
+.cover-shortcut-group h3 { margin: 0 0 3px; color: var(--book-accent); font-size: 8px; font-weight: 750; letter-spacing: 0.14em; text-transform: uppercase; }
+.cover-shortcut-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--border-subtle); }
+.cover-shortcut-row kbd { flex-shrink: 0; padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text-2); font-family: var(--mono); font-size: 7.5px; }
+.cover-shortcut-row span { color: var(--text-3); font-size: 8.5px; text-align: right; }
 .cover-save-template-body { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 22px; padding: 20px 24px 24px; overflow-y: auto; }
 .cover-save-template-preview { position: relative; overflow: hidden; align-self: start; border: 1px solid var(--border); border-radius: 8px; background: repeating-conic-gradient(var(--surface-2) 0 25%, var(--surface) 0 50%) 0 0 / 18px 18px; }
 .cover-save-template-preview > div { position: absolute; top: 0; left: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24); }
