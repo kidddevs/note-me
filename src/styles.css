@@ -6635,7 +6635,7 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 
 @media (max-width: 560px) {
   .cover-template-card:not(.blank) { display: flex; flex-direction: column; }
-  .cover-template-card:not(.blank) .cover-template-preview { width: 100%; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+  .cover-template-card:not(.blank) .cover-template-preview { width: 240px; max-width: 100%; margin: 0 auto; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
   .cover-shortcut-grid { grid-template-columns: 1fr; }
 }
 
