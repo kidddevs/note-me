@@ -34,4 +34,8 @@ test("mockup filenames carry size and transparency", () => {
     coverMockupFilename({ title: "The Quiet Hour" }, { width: 1080, height: 1920, background: "transparent" }),
     "the-quiet-hour-cover-mockup-1080x1920-transparent.png",
   );
+  assert.equal(
+    coverMockupFilename({ title: "The Quiet Hour" }, { width: 1600, height: 1600, background: "studio", format: "hardcover" }),
+    "the-quiet-hour-cover-mockup-1600x1600-hardcover.png",
+  );
 });

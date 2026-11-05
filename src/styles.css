@@ -6205,7 +6205,15 @@ kbd {
 .cover-mockup-views button { height: 26px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: rgba(245, 240, 232, 0.68); font: inherit; font-size: 8.5px; font-weight: 600; cursor: pointer; }
 .cover-mockup-views button:hover { background: rgba(255, 255, 255, 0.09); color: #fff; }
 .cover-mockup-views button.active { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.cover-mockup-formats { display: flex; gap: 3px; padding: 3px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
+.cover-mockup-formats button { height: 26px; padding: 0 9px; border: 0; border-radius: 5px; background: transparent; color: rgba(245, 240, 232, 0.68); font: inherit; font-size: 8.5px; font-weight: 600; cursor: pointer; }
+.cover-mockup-formats button:hover { background: rgba(255, 255, 255, 0.09); color: #ffffff; }
+.cover-mockup-formats button.active { background: rgba(255, 255, 255, 0.14); color: #ffffff; }
 .cover-mockup-foot-note { color: rgba(245, 240, 232, 0.4); font-size: 8px; }
+.cover-mockup-book.is-hardcover .cover-mockup-face-front { box-shadow: 0 0 0 4px #2a2723, 0 0 0 5px rgba(255, 255, 255, 0.12), 0 28px 76px rgba(0, 0, 0, 0.6); border-radius: 2px; }
+.cover-mockup-book.is-hardcover .cover-mockup-face-back { box-shadow: 0 0 0 4px #2a2723; border-radius: 2px; }
+.cover-mockup-book.is-hardcover .cover-mockup-face-spine { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.24); border-radius: 2px; }
+.cover-mockup-book.is-hardcover .cover-mockup-face-front::after { position: absolute; inset: 0; border: 1px solid rgba(255, 255, 255, 0.14); content: ""; pointer-events: none; }
 .cover-mockup-export { position: relative; flex-shrink: 0; margin-left: auto; }
 .cover-mockup-export-button { display: flex; height: 32px; align-items: center; gap: 6px; padding: 0 11px; border: 0; border-radius: 7px; background: #f2e9dc; color: #1c1916; font: inherit; font-size: 8.5px; font-weight: 700; cursor: pointer; }
 .cover-mockup-export-button:hover { background: #fff8ed; }

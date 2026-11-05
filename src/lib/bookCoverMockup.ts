@@ -3,11 +3,13 @@ import type { BookCoverDesign } from "./bookLayout";
 import { coverMetrics, renderCoverCanvas, saveCoverBlob } from "./bookCoverDoc";
 
 export type CoverMockupBackground = "studio" | "transparent";
+export type CoverMockupFormat = "paperback" | "hardcover";
 
 export interface CoverMockupOptions {
   width: number;
   height: number;
   background: CoverMockupBackground;
+  format?: CoverMockupFormat;
   caption?: boolean;
   dpi?: number;
 }
@@ -44,13 +46,14 @@ export function coverMockupLayout(metrics: ReturnType<typeof coverMetrics>, widt
   };
 }
 
-export function coverMockupFilename(book: Book, options: Pick<CoverMockupOptions, "width" | "height" | "background">) {
+export function coverMockupFilename(book: Book, options: Pick<CoverMockupOptions, "width" | "height" | "background" | "format">) {
   const title = (book.title || "untitled").toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || "untitled";
+  const format = options.format === "hardcover" ? "-hardcover" : "";
   const suffix = options.background === "transparent" ? "-transparent" : "";
-  return `${title}-cover-mockup-${options.width}x${options.height}${suffix}.png`;
+  return `${title}-cover-mockup-${options.width}x${options.height}${format}${suffix}.png`;
 }
 
-function drawCaption(ctx: CanvasRenderingContext2D, book: Book, width: number, height: number) {
+function drawCaption(ctx: CanvasRenderingContext2D, book: Book, width: number, height: number, format: CoverMockupFormat) {
   const baseY = height - Math.round(height * 0.075);
   const titleSize = Math.min(Math.round(width * 0.036), Math.round(height * 0.055));
   const labelSize = Math.max(10, Math.round(width * 0.0085));
@@ -60,7 +63,7 @@ function drawCaption(ctx: CanvasRenderingContext2D, book: Book, width: number, h
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = "#c7a26e";
   ctx.font = `600 ${labelSize}px 'Helvetica Neue', Arial, sans-serif`;
-  ctx.fillText("COVER MOCKUP", width / 2, baseY - Math.round(titleSize * 1.45));
+  ctx.fillText(format === "hardcover" ? "HARDCOVER MOCKUP" : "COVER MOCKUP", width / 2, baseY - Math.round(titleSize * 1.45));
   ctx.fillStyle = "rgba(199, 162, 110, 0.7)";
   ctx.fillRect(width / 2 - 24, baseY - Math.round(titleSize * 0.95), 48, 1);
   ctx.fillStyle = "#f5efe6";
@@ -79,6 +82,8 @@ export async function renderCoverMockup(book: Book, cover: BookCoverDesign, opti
   const width = Math.max(320, Math.round(options.width));
   const height = Math.max(320, Math.round(options.height));
   const caption = options.caption ?? options.background === "studio";
+  const format = options.format ?? "paperback";
+  const hardcover = format === "hardcover";
   const metrics = coverMetrics(book.trim_size, cover);
   const layout = coverMockupLayout(metrics, width, height, caption);
   const dpi = Math.min(300, Math.max(120, Math.round(options.dpi ?? 220)));
@@ -122,8 +127,27 @@ export async function renderCoverMockup(book: Book, cover: BookCoverDesign, opti
   ctx.fill();
   ctx.restore();
 
-  const pageEdge = Math.max(4, layout.bookHeight * 0.009);
+  const board = hardcover ? Math.max(4, layout.bookHeight * 0.014) : 0;
   const frontX = layout.left + layout.spineWidth;
+  if (hardcover) {
+    const caseX = layout.left - board;
+    const caseY = layout.top - board;
+    const caseWidth = layout.bookWidth + board * 2;
+    const caseHeight = layout.bookHeight + board * 2;
+    ctx.fillStyle = "#2a2723";
+    ctx.fillRect(caseX, caseY, caseWidth, caseHeight);
+    const boardShade = ctx.createLinearGradient(caseX, caseY, caseX, caseY + caseHeight);
+    boardShade.addColorStop(0, "rgba(255, 255, 255, 0.16)");
+    boardShade.addColorStop(0.08, "rgba(255, 255, 255, 0)");
+    boardShade.addColorStop(0.9, "rgba(0, 0, 0, 0)");
+    boardShade.addColorStop(1, "rgba(0, 0, 0, 0.34)");
+    ctx.fillStyle = boardShade;
+    ctx.fillRect(caseX, caseY, caseWidth, caseHeight);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(caseX + 0.5, caseY + 0.5, caseWidth - 1, caseHeight - 1);
+  }
+  const pageEdge = hardcover ? Math.max(3, layout.bookHeight * 0.007) : Math.max(4, layout.bookHeight * 0.009);
   const pages = ctx.createLinearGradient(frontX + layout.frontWidth, 0, frontX + layout.frontWidth + pageEdge, 0);
   pages.addColorStop(0, "#efe6d7");
   pages.addColorStop(0.55, "#d8ccb9");
@@ -169,6 +193,13 @@ export async function renderCoverMockup(book: Book, cover: BookCoverDesign, opti
   ctx.fillStyle = sheen;
   ctx.fillRect(frontX, layout.top, layout.frontWidth, layout.bookHeight);
   ctx.restore();
+  if (hardcover) {
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(frontX + 0.5, layout.top + 0.5, layout.frontWidth - 1, layout.bookHeight - 1);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+    ctx.fillRect(frontX, layout.top + layout.bookHeight - 1.5, layout.frontWidth, 1.5);
+  }
 
   ctx.fillStyle = "rgba(0, 0, 0, 0.26)";
   ctx.fillRect(frontX, layout.top, 1.2, layout.bookHeight);
@@ -178,7 +209,7 @@ export async function renderCoverMockup(book: Book, cover: BookCoverDesign, opti
   ctx.fillRect(frontX, layout.top, layout.frontWidth, 1.2);
   ctx.fillRect(frontX, layout.top + layout.bookHeight - 1.2, layout.frontWidth, 1.2);
 
-  if (caption) drawCaption(ctx, book, width, height);
+  if (caption) drawCaption(ctx, book, width, height, format);
   return canvas;
 }
 

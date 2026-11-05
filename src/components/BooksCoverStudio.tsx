@@ -187,7 +187,7 @@ import {
   type BookLayout,
 } from "../lib/bookLayout";
 import { bookInputFromBook, TRIM_SIZES } from "../lib/bookPublishing";
-import { downloadCoverMockup } from "../lib/bookCoverMockup";
+import { downloadCoverMockup, type CoverMockupFormat } from "../lib/bookCoverMockup";
 import { downloadCoverPackage } from "../lib/bookCoverPackage";
 import { coverPreflight, coverPreflightFix, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
@@ -626,6 +626,7 @@ export function CoverScreen({
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [artworkOpen, setArtworkOpen] = useState(false);
   const [mockupOpen, setMockupOpen] = useState(false);
+  const [mockupFormat, setMockupFormat] = useState<CoverMockupFormat>("paperback");
   const [layerMenu, setLayerMenu] = useState<LayerMenuState | null>(null);
   const [preflightOpen, setPreflightOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -1724,7 +1725,7 @@ export function CoverScreen({
   const handleDownloadPackage = async () => {
     setBusyDownload("package");
     try {
-      const filename = await downloadCoverPackage(book, layoutRef.current.cover, { dpi, pdfx });
+      const filename = await downloadCoverPackage(book, layoutRef.current.cover, { dpi, pdfx, mockupFormat });
       if (filename) notify("success", "Production package ready", filename);
       setDownloadOpen(false);
     } catch (error) {
@@ -2192,7 +2193,7 @@ export function CoverScreen({
           onClose={() => setSaveTemplateOpen(false)}
         />
       )}
-      {mockupOpen && <BookMockup book={book} cover={cover} onClose={() => setMockupOpen(false)} />}
+      {mockupOpen && <BookMockup book={book} cover={cover} format={mockupFormat} onFormat={setMockupFormat} onClose={() => setMockupOpen(false)} />}
       {preflightOpen && (
         <PreflightModal
           book={book}
@@ -2237,7 +2238,7 @@ export function CoverScreen({
 
 /* ========================================================================== */
 
-function BookMockup({ book, cover, onClose }: { book: Book; cover: BookCoverDesign; onClose: () => void }) {
+function BookMockup({ book, cover, format, onFormat, onClose }: { book: Book; cover: BookCoverDesign; format: CoverMockupFormat; onFormat: (format: CoverMockupFormat) => void; onClose: () => void }) {
   const metrics = useMemo(() => coverMetrics(book.trim_size, cover), [book.trim_size, cover.pageCount, cover.paperStock, cover.spineWidthOverride, cover.bleed]);
   const scale = Math.min(86, 600 / metrics.trimHeight);
   const [rotation, setRotation] = useState({ x: -7, y: -30 });
@@ -2287,7 +2288,7 @@ function BookMockup({ book, cover, onClose }: { book: Book; cover: BookCoverDesi
   const exportMockup = async (width: number, height: number, background: "studio" | "transparent") => {
     setBusyMockup(`${width}x${height}-${background}`);
     try {
-      const filename = await downloadCoverMockup(book, cover, { width, height, background });
+      const filename = await downloadCoverMockup(book, cover, { width, height, background, format });
       if (filename) notify("success", "Mockup downloaded", filename);
       setExportOpen(false);
     } catch (error) {
@@ -2304,7 +2305,7 @@ function BookMockup({ book, cover, onClose }: { book: Book; cover: BookCoverDesi
         <div className="cover-mockup-title">
           <span>3D book mockup</span>
           <strong>{book.title || "Untitled manuscript"}</strong>
-          <small>{book.author || "Author"} · {cover.pageCount.toLocaleString()} pages · {formatDimension(metrics.spineWidth)} in spine</small>
+          <small>{book.author || "Author"} · {cover.pageCount.toLocaleString()} pages · {formatDimension(metrics.spineWidth)} in spine · {format === "hardcover" ? "Hardcover" : "Paperback"}</small>
         </div>
         <div className="cover-mockup-header-actions">
           <span className="cover-mockup-live"><i /> Live preview</span>
@@ -2329,7 +2330,7 @@ function BookMockup({ book, cover, onClose }: { book: Book; cover: BookCoverDesi
             ["--mockup-spine" as string]: `${spineWidth}px`,
           }}
         >
-          <div className="cover-mockup-book">
+          <div className={`cover-mockup-book ${format === "hardcover" ? "is-hardcover" : ""}`}>
             <div
               className="cover-mockup-face cover-mockup-face-back"
               style={{ width: trimWidth, height: trimHeight, transform: `translateZ(${-spineWidth / 2}px) rotateY(180deg)` }}
@@ -2369,6 +2370,10 @@ function BookMockup({ book, cover, onClose }: { book: Book; cover: BookCoverDesi
           <button type="button" className={rotation.y === -30 ? "active" : ""} onClick={() => setView(-7, -30)}>Three-quarter</button>
           <button type="button" onClick={() => setView(-4, 90)}>Spine</button>
           <button type="button" onClick={() => setView(-4, 180)}>Back</button>
+        </div>
+        <div className="cover-mockup-formats" role="group" aria-label="Binding format">
+          <button type="button" className={format === "paperback" ? "active" : ""} onClick={() => onFormat("paperback")}>Paperback</button>
+          <button type="button" className={format === "hardcover" ? "active" : ""} onClick={() => onFormat("hardcover")}>Hardcover</button>
         </div>
         <span className="cover-mockup-foot-note">Full wrap preview · spine calculated from {cover.pageCount.toLocaleString()} pages</span>
         <div className="cover-mockup-export">

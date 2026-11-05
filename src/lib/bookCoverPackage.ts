@@ -3,13 +3,14 @@ import type { Book } from "./types";
 import type { BookCoverDesign } from "./bookLayout";
 import { COVER_PAPER_STOCKS, coverExportFilename, coverMetrics, renderCoverCanvas, saveCoverBlob, spineWidthMillimetres } from "./bookCoverDoc";
 import { buildCoverPdfFile } from "./bookCoverPdf";
-import { coverMockupFilename, renderCoverMockup } from "./bookCoverMockup";
+import { coverMockupFilename, renderCoverMockup, type CoverMockupFormat } from "./bookCoverMockup";
 import { coverPreflight, coverPreflightSummary } from "./bookCoverPreflight";
 
 export interface CoverPackageOptions {
   dpi?: number;
   pdfx?: boolean;
   mockup?: boolean;
+  mockupFormat?: CoverMockupFormat;
 }
 
 export interface CoverPackageFile {
@@ -101,8 +102,8 @@ export async function createCoverPackage(book: Book, cover: BookCoverDesign, opt
   }));
   files.push({ name: pdf.filename, bytes: pdf.bytes });
   if (options.mockup !== false) {
-    const canvas = await renderCoverMockup(book, cover, { width: 1600, height: 1600, background: "studio" });
-    files.push({ name: coverMockupFilename(book, { width: 1600, height: 1600, background: "studio" }), bytes: await canvasPng(canvas) });
+    const canvas = await renderCoverMockup(book, cover, { width: 1600, height: 1600, background: "studio", format: options.mockupFormat });
+    files.push({ name: coverMockupFilename(book, { width: 1600, height: 1600, background: "studio", format: options.mockupFormat }), bytes: await canvasPng(canvas) });
   }
   files.push({ name: coverExportFilename(book, "wrap", "txt").replace(/-full-wrap\.txt$/, "-specs.txt"), bytes: new TextEncoder().encode(coverSpecsText(book, cover, options)) });
   files.push({ name: coverExportFilename(book, "wrap", "txt").replace(/-full-wrap\.txt$/, "-preflight.txt"), bytes: new TextEncoder().encode(coverPreflightText(book, cover)) });
