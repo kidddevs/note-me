@@ -268,6 +268,9 @@ interface CoverStageProps {
   onInteractionEnd: () => void;
   onEditText: (id: string) => void;
   onDropImage: (dataUrl: string, x: number, y: number, sourceWidth: number, sourceHeight: number) => void;
+  onAddText: () => void;
+  onAddImage: () => void;
+  onOpenTemplates: () => void;
   onSample: (x: number, y: number) => void;
   onContextMenu: (event: React.MouseEvent<HTMLElement>, layerId: string) => void;
   onGuideAdd: (axis: "x" | "y", spreadPosition: number) => void;
@@ -2084,6 +2087,9 @@ export function CoverScreen({
             onGroupSelection={groupSelection}
             onDuplicateSelection={duplicateSelection}
             onDeleteSelection={deleteSelection}
+            onAddText={() => makeTextLayer()}
+            onAddImage={() => fileInputRef.current?.click()}
+            onOpenTemplates={() => setTemplateOpen(true)}
             onDropImage={(dataUrl, x, y, sourceWidth, sourceHeight) => {
               void rememberCoverImage("Dropped image", { src: dataUrl, width: sourceWidth, height: sourceHeight });
               const target = designPanel;
@@ -2902,7 +2908,7 @@ function LayerContextMenu({
 
 /* ========================================================================== */
 
-function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, imagePanMode, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
+function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, imagePanMode, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onAddText, onAddImage, onOpenTemplates, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [interaction, setInteraction] = useState<{
@@ -3430,6 +3436,18 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           </div>
         </div>
       </div>
+      {cover.doc.layers.length === 0 && !previewing && (
+        <div className="cover-empty-canvas" onPointerDown={(event) => event.stopPropagation()}>
+          <span className="cover-empty-mark"><Feather size={18} /></span>
+          <strong>Blank paper</strong>
+          <small>Add a title, drop in artwork, or start from a complete template.</small>
+          <div>
+            <button type="button" className="cover-primary-button small" onClick={onAddText}><Type size={12} /> Add text</button>
+            <button type="button" className="cover-outline-button small" onClick={onAddImage}><ImagePlus size={12} /> Add image</button>
+            <button type="button" className="cover-outline-button small" onClick={onOpenTemplates}><LayoutTemplate size={12} /> Templates</button>
+          </div>
+        </div>
+      )}
       <div className="cover-stage-footer">
         <div className="cover-zoom-controls">
           <button type="button" onClick={() => onZoom(Math.max(0.08, effectiveZoom - 0.1))} aria-label="Zoom out"><ZoomOut size={14} /></button>
@@ -3888,7 +3906,7 @@ function LayerInspector({
             <div className="cover-image-library">
               <span className="cover-field-heading">Image library</span>
               <div className="cover-image-library-row">
-                {imageLibrary.slice(0, 12).map((asset) => (
+                {imageLibrary.map((asset) => (
                   <div className="cover-image-library-item" key={asset.id}>
                     <button type="button" title={`Use ${asset.name}`} aria-label={`Use ${asset.name}`} onClick={() => onUseLibraryImage(asset)}><img src={asset.src} alt="" /></button>
                     <button type="button" className="cover-image-library-delete" title={`Remove ${asset.name}`} aria-label={`Remove ${asset.name} from library`} onClick={() => onDeleteLibraryImage(asset.id)}><X size={9} /></button>
@@ -4151,7 +4169,7 @@ function DocumentInspector({
         <div className="cover-brand-palettes">
           <div className="cover-brand-palettes-head"><span className="cover-field-heading">Brand palettes</span><button type="button" className="cover-mini-button" disabled={doc.palette.length === 0} onClick={onSaveBrandPalette}><BookmarkPlus size={11} /> Save current</button></div>
           {brandPalettes.length === 0 ? (
-            <p className="cover-inspector-note">Save this palette to reuse the same colours across a series.</p>
+            <p className="cover-inspector-note">{doc.palette.length === 0 ? "Sample or extract a colour first, then save the palette for a series." : "Save this palette to reuse the same colours across a series."}</p>
           ) : (
             <div className="cover-brand-palette-list">
               {brandPalettes.map((palette) => (

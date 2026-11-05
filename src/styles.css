@@ -6075,6 +6075,7 @@ kbd {
 
 /* Stage */
 .cover-stage {
+  position: relative;
   display: flex;
   min-width: 0;
   flex: 1;
@@ -6108,6 +6109,11 @@ kbd {
 .cover-stage-footer { display: flex; min-height: 36px; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px 6px; color: #625d56; font-size: 8.5px; }
 [data-theme="dark"] .cover-stage-footer { color: #9b968f; }
 .cover-stage-hint { display: inline-flex; align-items: center; gap: 5px; color: inherit; opacity: 0.8; }
+.cover-empty-canvas { position: absolute; z-index: 32; top: 50%; left: 50%; display: flex; width: min(370px, calc(100% - 48px)); flex-direction: column; align-items: center; gap: 5px; padding: 18px; border: 1px dashed var(--border-strong); border-radius: 11px; background: color-mix(in srgb, var(--surface) 90%, transparent); box-shadow: var(--shadow-sm); color: var(--text-3); text-align: center; transform: translate(-50%, -50%); backdrop-filter: blur(8px); }
+.cover-empty-canvas > span { display: flex; width: 38px; height: 38px; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%; background: var(--surface-2); color: var(--book-accent); }
+.cover-empty-canvas strong { color: var(--text); font-family: Georgia, serif; font-size: 17px; font-weight: 500; }
+.cover-empty-canvas small { max-width: 270px; color: var(--text-4); font-size: 8px; line-height: 1.45; }
+.cover-empty-canvas > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-top: 4px; }
 .cover-selection-bar { display: flex; align-self: center; align-items: center; gap: 2px; margin: 2px 12px 6px; padding: 4px 6px; border: 1px solid rgba(0, 0, 0, 0.14); border-radius: 8px; background: rgba(255, 253, 249, 0.94); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16); color: #38342f; z-index: 72; }
 [data-theme="dark"] .cover-selection-bar { border-color: rgba(255, 255, 255, 0.16); background: rgba(38, 38, 41, 0.95); color: #f2eee8; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); }
 .cover-selection-bar button { display: flex; width: 24px; height: 24px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
@@ -6309,11 +6315,13 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-segmented button { display: flex; min-width: 24px; height: 21px; flex: 1; align-items: center; justify-content: center; padding: 0 5px; border: 0; border-radius: 3px; background: transparent; color: var(--text-3); font: inherit; font-size: 8px; font-weight: 600; cursor: pointer; }
 .cover-segmented button.active { background: var(--surface); color: var(--book-accent); box-shadow: var(--shadow-xs); }
 .cover-mini-button { display: inline-flex; min-height: 23px; align-items: center; justify-content: center; gap: 3px; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-2); font: inherit; font-size: 8px; font-weight: 600; cursor: pointer; }
-.cover-mini-button:hover { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-mini-button:hover:not(:disabled) { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-mini-button:disabled { opacity: 0.45; cursor: default; pointer-events: none; }
 .cover-mini-button.active { border-color: var(--book-accent); background: var(--book-accent-soft); color: var(--book-accent); }
 .cover-mini-button.danger:hover { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
 .cover-wide-button { display: flex; min-height: 28px; align-items: center; justify-content: center; gap: 4px; padding: 0 8px; border: 1px dashed var(--border-strong); border-radius: 5px; background: var(--surface-2); color: var(--text-2); font: inherit; font-size: 8.5px; font-weight: 600; cursor: pointer; }
-.cover-wide-button:hover { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-wide-button:hover:not(:disabled) { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-wide-button:disabled { opacity: 0.45; cursor: default; pointer-events: none; }
 .cover-wide-button.active { border-style: solid; border-color: var(--book-accent); background: var(--book-accent-soft); color: var(--book-accent); }
 .cover-wide-button.subtle { border-style: solid; }
 .cover-mini-icon { display: flex; width: 25px; height: 25px; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-3); cursor: pointer; }
@@ -6479,7 +6487,7 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-preflight-fix { display: inline-flex; height: 22px; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid color-mix(in srgb, var(--book-accent) 45%, var(--border)); border-radius: 5px; background: var(--book-accent-soft); color: var(--book-accent); font: inherit; font-size: 7.5px; font-weight: 650; white-space: nowrap; cursor: pointer; }
 .cover-preflight-fix:hover { border-color: var(--book-accent); background: color-mix(in srgb, var(--book-accent) 18%, transparent); }
 .cover-preflight-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 24px; border-top: 1px solid var(--border-subtle); background: var(--surface-2); }
-.cover-preflight-foot > span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-4); font-size: 8px; line-height: 1.4; }
+.cover-preflight-foot > span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-3); font-size: 8px; line-height: 1.4; }
 .cover-preflight-foot > div { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
 .cover-template-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 24px 18px; border-bottom: 1px solid var(--border-subtle); }
 .cover-template-modal-head > div { display: flex; max-width: 700px; flex-direction: column; gap: 5px; }
@@ -6623,7 +6631,6 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
   .cover-mockup-foot-note { display: none; }
   .cover-mockup-hint { display: none; }
   .cover-mockup-export { align-self: flex-end; margin-left: 0; }
-  .cover-mockup-export-menu { right: auto; left: 0; }
 }
 
 @media (max-width: 560px) {
