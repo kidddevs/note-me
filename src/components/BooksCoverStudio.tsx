@@ -324,6 +324,7 @@ interface InspectorProps {
 
 interface LayerPanelProps {
   doc: BookCoverDocument;
+  drawer?: boolean;
   cover: BookCoverDesign;
   selectedId: string | null;
   selectedIds: string[];
@@ -614,6 +615,7 @@ export function CoverScreen({
   const [panel, setPanel] = useState<CoverPanel>("wrap");
   const [tool, setTool] = useState<string>("select");
   const [showLayers, setShowLayers] = useState(true);
+  const [layerDrawerOpen, setLayerDrawerOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [imagePanMode, setImagePanMode] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -795,6 +797,13 @@ export function CoverScreen({
     setHistory(items.slice(0, index));
     setFuture(futureEntries.slice(0, 50));
     restoreCover(target.cover);
+  }, []);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 1180px)");
+    const update = (event: MediaQueryListEvent) => { if (!event.matches) setLayerDrawerOpen(false); };
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
@@ -1756,6 +1765,7 @@ export function CoverScreen({
       else if (layerMenu) setLayerMenu(null);
       else if (preflightOpen) setPreflightOpen(false);
       else if (shortcutsOpen) setShortcutsOpen(false);
+      else if (layerDrawerOpen) setLayerDrawerOpen(false);
       else if (selectedIds.length > 1) { setSelectedLayerId(selectedLayerId); setExtraSelectedIds([]); }
       else selectLayer(null);
       return;
@@ -1846,7 +1856,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, shortcutsOpen, selectedLayerId, selectedIds, selected?.type, styleClipboard, undo, redo]);
+  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, shortcutsOpen, layerDrawerOpen, selectedLayerId, selectedIds, selected?.type, styleClipboard, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -1912,6 +1922,7 @@ export function CoverScreen({
             <button type="button" className={`cover-icon-button ${doc.showGuides ? "active" : ""}`} title="Toggle guides" aria-label="Toggle guides" onClick={() => updateDoc({ ...doc, showGuides: !doc.showGuides }, { key: "guides" })}><Frame size={15} /></button>
             <button type="button" className={`cover-icon-button ${doc.showRulers ? "active" : ""}`} title="Toggle rulers" aria-label="Toggle rulers" onClick={() => updateDoc({ ...doc, showRulers: !doc.showRulers }, { key: "rulers" })}><Ruler size={15} /></button>
             <button type="button" className={`cover-icon-button ${doc.showGrid ? "active" : ""}`} title="Toggle grid" aria-label="Toggle grid" onClick={() => updateDoc({ ...doc, showGrid: !doc.showGrid }, { key: "grid" })}><Grid3X3 size={15} /></button>
+            <button type="button" className={`cover-icon-button cover-layer-drawer-toggle ${layerDrawerOpen ? "active" : ""}`} title="Layers and history" aria-label="Layers and history" aria-controls="cover-layer-panel" aria-expanded={layerDrawerOpen} onClick={() => setLayerDrawerOpen((value) => !value)}><LayersIcon /></button>
             <button type="button" className={`cover-icon-button ${previewing ? "active" : ""}`} title={previewing ? "Exit preview" : "Preview cover"} aria-label={previewing ? "Exit preview" : "Preview cover"} onClick={() => { setPreviewing((value) => !value); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><ScanLine size={15} /></button>
             <button type="button" className="cover-icon-button" title="3D book mockup" aria-label="3D book mockup" onClick={() => { setMockupOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><Rotate3D size={16} /></button>
             <button type="button" className="cover-icon-button" title="Print preflight" aria-label="Print preflight" onClick={() => { setPreflightOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><ShieldCheck size={16} /></button>
@@ -1922,8 +1933,8 @@ export function CoverScreen({
             <button type="button" className="cover-icon-button" title="Undo" aria-label="Undo" disabled={history.length === 0} onClick={undo}><Undo2 size={15} /></button>
             <button type="button" className="cover-icon-button" title="Redo" aria-label="Redo" disabled={future.length === 0} onClick={redo}><Redo2 size={15} /></button>
             <button type="button" className="cover-outline-button" onClick={() => { setTemplateOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><LayoutTemplate size={14} /><span>Templates</span></button>
-            <button type="button" className="cover-icon-button" title="Save current design as a template" aria-label="Save current design as a template" onClick={() => { setSaveTemplateOpen(true); setTemplateOpen(false); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><BookmarkPlus size={15} /></button>
-            <button type="button" className="cover-icon-button" title="Print cover" aria-label="Print cover" onClick={printCover}><Printer size={15} /></button>
+            <button type="button" className="cover-icon-button cover-save-template-button" title="Save current design as a template" aria-label="Save current design as a template" onClick={() => { setSaveTemplateOpen(true); setTemplateOpen(false); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><BookmarkPlus size={15} /></button>
+            <button type="button" className="cover-icon-button cover-print-button" title="Print cover" aria-label="Print cover" onClick={printCover}><Printer size={15} /></button>
             <div className="cover-download-wrap">
               <button type="button" className="cover-primary-button" onClick={() => { setDownloadOpen((value) => !value); setSymbolOpen(false); setArtworkOpen(false); }} disabled={Boolean(busyDownload)}>
                 {busyDownload ? <span className="cover-spinner" /> : <Download size={14} />}<span>{busyDownload ? "Rendering…" : "Download"}</span><ChevronDown size={13} />
@@ -1958,7 +1969,7 @@ export function CoverScreen({
                   <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPdf(false)}><FileText size={14} /><span><strong>{pdfx ? "Full wrap PDF/X-4" : "Full wrap PDF"}</strong><small>Trim + bleed without printer marks</small></span></button>
                   <div className="cover-download-sep" />
                   <div className="cover-download-subhead">Studio handoff <small>Everything in one ZIP</small></div>
-                  <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPackage()}><Package size={14} /><span><strong>Production package (.zip)</strong><small>PDF{ pdfx ? "/X-4" : "" } + front/back/spine PNG + mockup + spec sheet</small></span></button>
+                  <button type="button" role="menuitem" disabled={Boolean(busyDownload)} onClick={() => void handleDownloadPackage()}><Package size={14} /><span><strong>Production package (.zip)</strong><small>PDF{ pdfx ? "/X-4" : "" } + panels + {mockupFormat} mockup + specs + preflight</small></span></button>
                   <div className="cover-download-sep" />
                   <button type="button" role="menuitem" onClick={() => { setDownloadOpen(false); printCover(); }}><Printer size={14} /><span><strong>Print / Save via browser</strong><small>Uses the full print wrap</small></span></button>
                 </div>
@@ -1999,8 +2010,10 @@ export function CoverScreen({
           {artworkOpen && !previewing && (
             <ArtworkPicker onAdd={makeArtworkLayer} onClose={() => setArtworkOpen(false)} />
           )}
-          {!previewing && showLayers && (
+          {layerDrawerOpen && <button type="button" className="cover-layer-drawer-backdrop" aria-label="Close layers and history" onClick={() => setLayerDrawerOpen(false)} />}
+          {!previewing && (showLayers || layerDrawerOpen) && (
             <LayerPanel
+              drawer={layerDrawerOpen}
               doc={doc}
               cover={cover}
               selectedId={selectedLayerId}
@@ -2013,7 +2026,7 @@ export function CoverScreen({
               onJumpHistory={jumpToHistory}
               onUndo={undo}
               onRedo={redo}
-              onSelect={selectLayer}
+              onSelect={(id, additive) => { selectLayer(id, additive); if (layerDrawerOpen && !additive && id) setLayerDrawerOpen(false); }}
               onAdd={() => fileInputRef.current?.click()}
               onAddGroup={addGroup}
               onSelectGroup={(id) => setActiveGroupId(id)}
@@ -2032,7 +2045,7 @@ export function CoverScreen({
               onDelete={deleteLayer}
               onReorder={reorderLayer}
               onReorderDrag={reorderDrag}
-              onCollapse={() => setShowLayers(false)}
+              onCollapse={() => { setShowLayers(false); setLayerDrawerOpen(false); }}
             />
           )}
           {!previewing && !showLayers && (
@@ -2250,7 +2263,13 @@ export function CoverScreen({
 
 function BookMockup({ book, cover, format, onFormat, onClose }: { book: Book; cover: BookCoverDesign; format: CoverMockupFormat; onFormat: (format: CoverMockupFormat) => void; onClose: () => void }) {
   const metrics = useMemo(() => coverMetrics(book.trim_size, cover), [book.trim_size, cover.pageCount, cover.paperStock, cover.spineWidthOverride, cover.bleed]);
-  const scale = Math.min(86, 600 / metrics.trimHeight);
+  const [viewportHeight, setViewportHeight] = useState(() => typeof window === "undefined" ? 900 : window.innerHeight);
+  useEffect(() => {
+    const update = () => setViewportHeight(window.innerHeight);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  const scale = Math.max(34, Math.min(560, viewportHeight - 260)) / metrics.trimHeight;
   const [rotation, setRotation] = useState({ x: -7, y: -30 });
   const [dragging, setDragging] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -2498,6 +2517,7 @@ function ArtworkPicker({ onAdd, onClose }: { onAdd: (graphic: BookGraphic) => vo
 
 function LayerPanel({
   doc,
+  drawer = false,
   cover,
   selectedId,
   selectedIds,
@@ -2646,7 +2666,7 @@ function LayerPanel({
   }
 
   return (
-    <aside className="cover-layer-panel" aria-label={tab === "layers" ? "Layers" : "History"}>
+    <aside className={`cover-layer-panel ${drawer ? "is-drawer" : ""}`} id="cover-layer-panel" aria-label={tab === "layers" ? "Layers" : "History"}>
       <div className="cover-panel-heading">
         <div className="cover-panel-tabs" role="tablist" aria-label="Design panel">
           <button type="button" role="tab" aria-selected={tab === "layers"} className={tab === "layers" ? "active" : ""} onClick={() => onTab("layers")}>Layers <small>{doc.layers.length}</small></button>
