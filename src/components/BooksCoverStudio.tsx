@@ -36,6 +36,7 @@ import {
   ClipboardPaste,
   Copy,
   Download,
+  Eraser,
   Eye,
   EyeOff,
   Feather,
@@ -122,6 +123,7 @@ import {
   coverLayerLocked,
   coverShapePath,
   coverImageOverflow,
+  coverGroupLocked,
   coverLayerVisible,
   coverMetrics,
   coverPattern,
@@ -140,6 +142,7 @@ import {
   newCoverLayerId,
   normalizeIsbn13,
   reflowSpineLayers,
+  reorderCoverGroup,
   renderCoverCanvas,
   reverseCoverGradient,
   resolveCoverTokenText,
@@ -246,6 +249,26 @@ interface LayerMenuState {
   layerId: string;
 }
 
+const DEFAULT_ERASER: CoverEraserSettings = {
+  mode: "erase",
+  shape: "round",
+  size: 0.35,
+  hardness: 0.72,
+  roundness: 1,
+  angle: 0,
+  opacity: 1,
+};
+
+interface CoverEraserSettings {
+  mode: "erase" | "restore";
+  shape: "round" | "square";
+  size: number;
+  hardness: number;
+  roundness: number;
+  angle: number;
+  opacity: number;
+}
+
 interface CoverStageProps {
   book: Book;
   cover: BookCoverDesign;
@@ -257,6 +280,9 @@ interface CoverStageProps {
   showBleed: boolean;
   previewing: boolean;
   eyedropper: boolean;
+  eraser: CoverEraserSettings | null;
+  handTool: boolean;
+  zoomTool: boolean;
   imagePanMode: boolean;
   zoom: number;
   autoFit: boolean;
@@ -318,6 +344,11 @@ interface InspectorProps {
   imageLibrary: CoverImageAsset[];
   onUseLibraryImage: (asset: CoverImageAsset) => void;
   onDeleteLibraryImage: (id: string) => void;
+  tool: string;
+  eraser: CoverEraserSettings;
+  onEraser: (settings: CoverEraserSettings) => void;
+  onClearEraseMask: (id?: string) => void;
+  onStartErasing: () => void;
   brandPalettes: CoverBrandPalette[];
   onSaveBrandPalette: () => void;
   onApplyBrandPalette: (palette: CoverBrandPalette) => void;
@@ -356,7 +387,9 @@ interface LayerPanelProps {
   onContextMenu: (event: React.MouseEvent<HTMLElement>, layerId: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  onRenameLayer: (id: string, name: string) => void;
   onReorder: (id: string, direction: "up" | "down") => void;
+  onReorderGroup: (id: string, direction: "up" | "down") => void;
   onReorderDrag: (id: string, targetId: string) => void;
   onCollapse: () => void;
 }
@@ -456,6 +489,96 @@ function normalizeWheelDelta(event: WheelEvent) {
   return event.deltaMode === 1 ? event.deltaY * 18 : event.deltaMode === 2 ? event.deltaY * 300 : event.deltaY;
 }
 
+interface CoverMaskEditor {
+  layerId: string;
+  layerWidth: number;
+  layerHeight: number;
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  width: number;
+  height: number;
+  sourceMask: string;
+  ready: boolean;
+  pending: Array<{ x: number; y: number }>;
+  lastX: number | null;
+  lastY: number | null;
+  changed: boolean;
+  lastEmit: number;
+}
+
+function eraserRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.arcTo(x + width, y, x + width, y + r, r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+  ctx.lineTo(x + r, y + height);
+  ctx.arcTo(x, y + height, x, y + height - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function stampEraserMask(editor: CoverMaskEditor, settings: CoverEraserSettings, x: number, y: number) {
+  const ctx = editor.ctx;
+  const pxPerInch = editor.width / Math.max(0.02, editor.layerWidth);
+  const radius = Math.max(0.75, (settings.size * pxPerInch) / 2);
+  const opacity = Math.max(0.01, Math.min(1, settings.opacity));
+  const hardness = Math.max(0, Math.min(1, settings.hardness));
+  const roundness = Math.max(0.05, Math.min(1, settings.roundness));
+  const paint = `rgba(255,255,255,${opacity})`;
+  const clear = "rgba(255,255,255,0)";
+  ctx.save();
+  ctx.globalCompositeOperation = settings.mode === "erase" ? "destination-out" : "source-over";
+  ctx.translate(x, y);
+  ctx.rotate((settings.angle * Math.PI) / 180);
+  ctx.scale(1, roundness);
+  if (settings.shape === "round") {
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+    gradient.addColorStop(0, paint);
+    gradient.addColorStop(Math.max(0.001, hardness), paint);
+    gradient.addColorStop(1, clear);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    const gradientRadius = radius * 1.45;
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, gradientRadius);
+    gradient.addColorStop(0, paint);
+    gradient.addColorStop(Math.max(0.001, Math.min(0.995, hardness)), paint);
+    gradient.addColorStop(1, clear);
+    ctx.fillStyle = hardness >= 0.999 ? paint : gradient;
+    eraserRoundRect(ctx, -radius, -radius, radius * 2, radius * 2, Math.min(radius * 0.16, 3));
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function strokeEraserMask(editor: CoverMaskEditor, settings: CoverEraserSettings, x: number, y: number) {
+  if (!editor.ready) {
+    editor.pending.push({ x, y });
+    editor.changed = true;
+    return;
+  }
+  if (editor.lastX === null || editor.lastY === null) {
+    stampEraserMask(editor, settings, x, y);
+  } else {
+    const distance = Math.hypot(x - editor.lastX, y - editor.lastY);
+    const pxPerInch = editor.width / Math.max(0.02, editor.layerWidth);
+    const spacing = Math.max(1, ((settings.size * pxPerInch) / 2) * 0.35);
+    const steps = Math.max(1, Math.ceil(distance / spacing));
+    for (let step = 1; step <= steps; step += 1) {
+      stampEraserMask(editor, settings, editor.lastX + ((x - editor.lastX) * step) / steps, editor.lastY + ((y - editor.lastY) * step) / steps);
+    }
+  }
+  editor.lastX = x;
+  editor.lastY = y;
+  editor.changed = true;
+}
+
 function parseNumeric(value: string, fallback: number) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -487,6 +610,9 @@ function historyLabel(key?: string) {
     if (value.endsWith(":name")) return "Renamed group";
     return "Updated group";
   }
+  if (value.startsWith("erase:clear")) return "Cleared erase mask";
+  if (value.startsWith("erase:restore")) return "Restored image pixels";
+  if (value.startsWith("erase:")) return "Erased image pixels";
   if (value.startsWith("pan:")) return "Repositioned image";
   if (value.startsWith("clip:")) return "Changed clipping mask";
   if (value.startsWith("highlight-")) return "Changed text highlight";
@@ -621,6 +747,7 @@ export function CoverScreen({
   const [layerDrawerOpen, setLayerDrawerOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [imagePanMode, setImagePanMode] = useState(false);
+  const [eraser, setEraser] = useState<CoverEraserSettings>(DEFAULT_ERASER);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState<SavedCoverTemplate[]>(() => readSavedCoverTemplates());
@@ -671,6 +798,10 @@ export function CoverScreen({
   useEffect(() => {
     if (imagePanMode && selected?.type !== "image") setImagePanMode(false);
   }, [imagePanMode, selected?.type]);
+
+  useEffect(() => {
+    if (tool === "eraser" || tool === "hand" || tool === "zoom") setImagePanMode(false);
+  }, [tool]);
   const selectedIds = useMemo(
     () => selectedLayerId ? [selectedLayerId, ...extraSelectedIds.filter((id) => id !== selectedLayerId)] : [],
     [selectedLayerId, extraSelectedIds],
@@ -1443,6 +1574,10 @@ export function CoverScreen({
     }
     const current = layoutRef.current.cover;
     const ids = new Set(selectedIds);
+    if (current.doc.layers.some((layer) => ids.has(layer.id) && coverLayerLocked(current.doc, layer))) {
+      notify("info", "Locked layers can't be grouped", "Unlock the selected layers or their group first.");
+      return;
+    }
     const indexes = current.doc.layers.map((layer, index) => ids.has(layer.id) ? index : -1).filter((index) => index >= 0);
     const topIndex = Math.max(...indexes);
     const selectedInOrder = current.doc.layers.filter((layer) => ids.has(layer.id));
@@ -1499,6 +1634,16 @@ export function CoverScreen({
   };
 
   const assignGroup = (layerId: string, groupId: string | null) => {
+    const current = layoutRef.current.cover;
+    const layer = current.doc.layers.find((item) => item.id === layerId);
+    if (!layer || coverLayerLocked(current.doc, layer)) {
+      notify("info", "Layer is locked", "Unlock the layer before moving it between groups.");
+      return;
+    }
+    if (groupId && coverGroupLocked(current.doc, groupId)) {
+      notify("info", "Group is locked", "Unlock the group before adding layers to it.");
+      return;
+    }
     updateLayer(layerId, { groupId }, { key: `group:assign:${layerId}` });
     if (groupId) setActiveGroupId(groupId);
   };
@@ -1553,15 +1698,56 @@ export function CoverScreen({
     updateDoc({ ...current.doc, guides: current.doc.guides.filter((guide) => guide.id !== id) }, { key: `guide-delete:${id}` });
   };
 
+  const renameLayer = (id: string, name: string) => {
+    updateLayer(id, { name }, { key: `rename:${id}` });
+  };
+
+  const clearEraseMask = (id?: string) => {
+    const target = id ?? (selected?.type === "image" ? selected.id : null);
+    if (!target) {
+      notify("info", "Select an image layer", "The eraser works on image layers.");
+      return;
+    }
+    const layer = layoutRef.current.cover.doc.layers.find((item) => item.id === target);
+    if (!layer || layer.type !== "image") return;
+    if (!layer.eraseMask) {
+      notify("info", "Nothing to clear", `${layer.name} has no erase mask.`);
+      return;
+    }
+    updateLayer(target, { eraseMask: "" }, { key: `erase:clear:${target}` });
+    notify("success", "Erase mask cleared", layer.name);
+  };
+
   const reorderLayer = (id: string, direction: "up" | "down") => {
     const current = layoutRef.current.cover;
     const index = current.doc.layers.findIndex((layer) => layer.id === id);
     if (index < 0) return;
     const target = direction === "up" ? index + 1 : index - 1;
     if (target < 0 || target >= current.doc.layers.length) return;
+    const layer = current.doc.layers[index];
+    const neighbor = current.doc.layers[target];
+    if (coverLayerLocked(current.doc, layer) || coverLayerLocked(current.doc, neighbor)) {
+      notify("info", "Layer is locked", "Unlock the layer or its group before moving it.");
+      return;
+    }
     const layers = [...current.doc.layers];
     [layers[index], layers[target]] = [layers[target], layers[index]];
+    if (layer.groupId !== neighbor.groupId) {
+      layers[target] = { ...layer, groupId: neighbor.groupId } as CoverLayer;
+      if (neighbor.groupId) setActiveGroupId(neighbor.groupId);
+    }
     updateDoc({ ...current.doc, layers }, { key: `reorder:${id}` });
+  };
+
+  const reorderGroup = (id: string, direction: "up" | "down") => {
+    const current = layoutRef.current.cover;
+    if (coverGroupLocked(current.doc, id)) {
+      notify("info", "Group is locked", "Unlock the group and its layers before moving it.");
+      return;
+    }
+    const next = reorderCoverGroup(current.doc, id, direction);
+    if (!next) return;
+    updateDoc(next, { key: `group:reorder:${id}` });
   };
 
   const reorderDrag = (id: string, targetId: string) => {
@@ -1570,9 +1756,17 @@ export function CoverScreen({
     const from = current.doc.layers.findIndex((layer) => layer.id === id);
     const to = current.doc.layers.findIndex((layer) => layer.id === targetId);
     if (from < 0 || to < 0) return;
+    const layer = current.doc.layers[from];
+    const target = current.doc.layers[to];
+    if (coverLayerLocked(current.doc, layer) || coverLayerLocked(current.doc, target)) {
+      notify("info", "Layer is locked", "Unlock the layer or its group before moving it.");
+      return;
+    }
     const layers = [...current.doc.layers];
-    const [layer] = layers.splice(from, 1);
-    layers.splice(to, 0, layer);
+    const [moved] = layers.splice(from, 1);
+    const insertAt = layers.findIndex((item) => item.id === targetId);
+    const nextLayer = moved.groupId !== target.groupId ? { ...moved, groupId: target.groupId } : moved;
+    layers.splice(insertAt < 0 ? to : insertAt, 0, nextLayer);
     updateDoc({ ...current.doc, layers }, { key: `reorder-drag:${id}` });
   };
 
@@ -1769,6 +1963,7 @@ export function CoverScreen({
       else if (preflightOpen) setPreflightOpen(false);
       else if (shortcutsOpen) setShortcutsOpen(false);
       else if (layerDrawerOpen) setLayerDrawerOpen(false);
+      else if (tool === "eraser" || tool === "hand" || tool === "zoom") setTool("select");
       else if (selectedIds.length > 1) { setSelectedLayerId(selectedLayerId); setExtraSelectedIds([]); }
       else selectLayer(null);
       return;
@@ -1848,10 +2043,12 @@ export function CoverScreen({
     if (meta || event.altKey) return;
     const key = event.key.toLocaleLowerCase();
     if (key === "v") setTool("select");
+    if (key === "x") setTool("eraser");
+    if (key === "h") setTool("hand");
+    if (key === "z") setTool("zoom");
     if (key === "e") setTool("eyedropper");
     if (key === "t") { setTool("text"); makeTextLayer(); setTool("select"); }
     if (key === "i") { fileInputRef.current?.click(); }
-    if (key === "h" && selected?.type === "image") setImagePanMode((value) => !value);
     if (key === "r") makeShapeLayer("rectangle");
     if (key === "o") makeShapeLayer("ellipse");
     if (key === "l") makeLineLayer();
@@ -1859,7 +2056,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, shortcutsOpen, layerDrawerOpen, selectedLayerId, selectedIds, selected?.type, styleClipboard, undo, redo]);
+  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, shortcutsOpen, layerDrawerOpen, selectedLayerId, selectedIds, selected?.type, tool, styleClipboard, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -2037,7 +2234,7 @@ export function CoverScreen({
               onSelect={(id, additive) => { selectLayer(id, additive); if (layerDrawerOpen && !additive && id) setLayerDrawerOpen(false); }}
               onAdd={() => fileInputRef.current?.click()}
               onAddGroup={addGroup}
-              onSelectGroup={(id) => setActiveGroupId(id)}
+              onSelectGroup={(id) => { setActiveGroupId(id); setSelectedLayerId(null); setExtraSelectedIds([]); }}
               onToggleVisible={toggleVisible}
               onToggleLocked={toggleLocked}
               onToggleGroupVisible={toggleGroupVisible}
@@ -2051,7 +2248,9 @@ export function CoverScreen({
               onContextMenu={openLayerMenu}
               onDuplicate={duplicateLayer}
               onDelete={deleteLayer}
+              onRenameLayer={renameLayer}
               onReorder={reorderLayer}
+              onReorderGroup={reorderGroup}
               onReorderDrag={reorderDrag}
               onCollapse={() => { setShowLayers(false); setLayerDrawerOpen(false); }}
             />
@@ -2072,6 +2271,9 @@ export function CoverScreen({
             showBleed={doc.showBleed}
             previewing={previewing}
             eyedropper={tool === "eyedropper"}
+            eraser={tool === "eraser" ? eraser : null}
+            handTool={tool === "hand"}
+            zoomTool={tool === "zoom"}
             imagePanMode={imagePanMode}
             zoom={zoom}
             autoFit={autoFit}
@@ -2136,6 +2338,11 @@ export function CoverScreen({
               onReplaceImage={() => { if (selected?.type === "image") replaceImageInputRef.current?.click(); }}
               onUploadBarcode={() => barcodeInputRef.current?.click()}
               onClearBarcode={() => updateCover({ barcodeImage: "" }, { key: "barcode-image" })}
+              tool={tool}
+              eraser={eraser}
+              onEraser={setEraser}
+              onClearEraseMask={clearEraseMask}
+              onStartErasing={() => setTool("eraser")}
               imagePanMode={imagePanMode}
               onImagePanMode={setImagePanMode}
               stylePresets={stylePresets}
@@ -2474,6 +2681,9 @@ function ToolRail({
 }) {
   const tools: { id: string; label: string; shortcut: string; icon: ReactNode; action?: () => void }[] = [
     { id: "select", label: "Select & move", shortcut: "V", icon: <Move size={18} /> },
+    { id: "hand", label: "Hand · pan the canvas", shortcut: "H", icon: <Hand size={18} /> },
+    { id: "zoom", label: "Zoom · click to magnify", shortcut: "Z", icon: <ZoomIn size={18} /> },
+    { id: "eraser", label: "Eraser · paint a mask", shortcut: "X", icon: <Eraser size={18} /> },
     { id: "eyedropper", label: "Eyedropper", shortcut: "E", icon: <Pipette size={18} /> },
     { id: "text", label: "Add text", shortcut: "T", icon: <Type size={18} />, action: onAddText },
     { id: "image", label: "Add image", shortcut: "I", icon: <ImagePlus size={18} />, action: onAddImage },
@@ -2557,7 +2767,9 @@ function LayerPanel({
   onContextMenu,
   onDuplicate,
   onDelete,
+  onRenameLayer,
   onReorder,
+  onReorderGroup,
   onReorderDrag,
   onCollapse,
 }: LayerPanelProps) {
@@ -2566,6 +2778,8 @@ function LayerPanel({
   const [overGroupId, setOverGroupId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
+  const [layerRenameValue, setLayerRenameValue] = useState("");
   const [query, setQuery] = useState("");
   const search = query.trim().toLocaleLowerCase();
   const matches = (layer: CoverLayer) => !search
@@ -2574,10 +2788,23 @@ function LayerPanel({
     || layer.panel.includes(search);
   const layers = [...doc.layers].reverse();
   const groupsById = new Map(doc.groups.map((group) => [group.id, group]));
+  const activeGroup = activeGroupId ? groupsById.get(activeGroupId) ?? null : null;
+  const activeGroupLocked = activeGroupId ? coverGroupLocked(doc, activeGroupId) : false;
 
   const commitRename = (groupId: string) => {
     onRenameGroup(groupId, renameValue);
     setRenamingId(null);
+  };
+
+  const commitLayerRename = (layer: CoverLayer) => {
+    const name = layerRenameValue.trim();
+    if (name && name !== layer.name) onRenameLayer(layer.id, name);
+    setRenamingLayerId(null);
+  };
+
+  const beginLayerRename = (layer: CoverLayer) => {
+    setRenamingLayerId(layer.id);
+    setLayerRenameValue(layer.name);
   };
 
   const renderLayerRow = (layer: CoverLayer, inGroup: boolean) => {
@@ -2605,16 +2832,36 @@ function LayerPanel({
       >
         <button type="button" className={`cover-layer-eye ${visible ? "" : "off"}`} onClick={(event) => { event.stopPropagation(); onToggleVisible(layer.id); }} title={layer.visible ? (visible ? "Hide layer" : "Hidden by group") : "Show layer"} aria-label={layer.visible ? "Hide layer" : "Show layer"}>{visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
         <LayerThumb layer={layer} cover={cover} />
-        <span className="cover-layer-name" title={layer.name}>{layer.name || layerLabel(layer.type)}<small>{layer.panel === "wrap" ? "whole wrap" : layer.panel}{layer.clipTo ? " · clipped" : ""}</small></span>
+        <span className="cover-layer-name" title={renamingLayerId === layer.id ? "Press Enter to save" : "Double-click to rename"} onDoubleClick={(event) => { event.stopPropagation(); beginLayerRename(layer); }}>
+          {renamingLayerId === layer.id ? (
+            <input
+              className="cover-layer-name-input"
+              autoFocus
+              value={layerRenameValue}
+              onChange={(event) => setLayerRenameValue(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+              onBlur={() => commitLayerRename(layer)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") { event.preventDefault(); commitLayerRename(layer); }
+                if (event.key === "Escape") setRenamingLayerId(null);
+              }}
+            />
+          ) : (
+            <>{layer.name || layerLabel(layer.type)}<small>{layer.panel === "wrap" ? "whole wrap" : layer.panel}{layer.clipTo ? " · clipped" : ""}</small></>
+          )}
+        </span>
         <button type="button" className={`cover-layer-lock ${locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); onToggleLocked(layer.id); }} title={layer.locked ? "Unlock layer" : locked ? "Locked by group" : "Lock layer"} aria-label={layer.locked ? "Unlock layer" : "Lock layer"}>{locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
       </div>
     );
   };
 
-  const renderGroupRow = (group: CoverLayerGroup, count: number) => (
+  const renderGroupRow = (group: CoverLayerGroup, count: number) => {
+    const lockedChild = doc.layers.some((layer) => layer.groupId === group.id && layer.locked);
+    return (
     <div
       key={`group-${group.id}`}
-      className={`cover-group-row ${activeGroupId === group.id ? "active" : ""} ${group.visible ? "" : "is-hidden"} ${overGroupId === group.id ? "drop-target" : ""}`}
+      className={`cover-group-row ${activeGroupId === group.id ? "active" : ""} ${group.visible ? "" : "is-hidden"} ${lockedChild ? "has-locked-child" : ""} ${overGroupId === group.id ? "drop-target" : ""}`}
+      title={lockedChild ? "Contains locked layers — unlock them to move the group" : undefined}
       onClick={() => onSelectGroup(group.id)}
       onDragOver={(event) => { event.preventDefault(); setOverGroupId(group.id); }}
       onDragLeave={() => setOverGroupId((value) => value === group.id ? null : value)}
@@ -2646,13 +2893,14 @@ function LayerPanel({
               if (event.key === "Escape") { setRenamingId(null); setRenameValue(""); }
             }}
           />
-        ) : <>{group.name}<small>{count} {count === 1 ? "layer" : "layers"}</small></>}
+        ) : <>{group.name}<small>{count} {count === 1 ? "layer" : "layers"}{lockedChild ? " · locked" : ""}</small></>}
       </span>
       <button type="button" className={`cover-layer-eye ${group.visible ? "" : "off"}`} onClick={(event) => { event.stopPropagation(); onToggleGroupVisible(group.id); }} title={group.visible ? "Hide group" : "Show group"} aria-label={group.visible ? "Hide group" : "Show group"}>{group.visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
       <button type="button" className={`cover-layer-lock ${group.locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); onToggleGroupLocked(group.id); }} title={group.locked ? "Unlock group" : "Lock group"} aria-label={group.locked ? "Unlock group" : "Lock group"}>{group.locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
       <button type="button" className="cover-group-ungroup" onClick={(event) => { event.stopPropagation(); onUngroup(group.id); }} title="Ungroup" aria-label="Ungroup"><FolderMinus size={12} /></button>
     </div>
   );
+  };
 
   const rows: ReactNode[] = [];
   const renderedGroups = new Set<string>();
@@ -2714,13 +2962,21 @@ function LayerPanel({
               <span className="cover-background-swatch" style={{ background: coverFillCss(doc.background) }} />
             </button>
           </div>
-          {selectedIds.length > 0 && (
+          {activeGroup && selectedIds.length === 0 ? (
+            <div className="cover-layer-actions cover-group-actions">
+              <span className="cover-group-action-label" title={activeGroup.name}>{activeGroup.name}</span>
+              <button type="button" onClick={() => onReorderGroup(activeGroup.id, "up")} disabled={activeGroupLocked} title={activeGroupLocked ? "Group contains locked layers" : "Move group up"} aria-label="Move group up"><ArrowUp size={13} /></button>
+              <button type="button" onClick={() => onReorderGroup(activeGroup.id, "down")} disabled={activeGroupLocked} title={activeGroupLocked ? "Group contains locked layers" : "Move group down"} aria-label="Move group down"><ArrowDown size={13} /></button>
+              <button type="button" onClick={() => onToggleGroupLocked(activeGroup.id)} title={activeGroup.locked ? "Unlock group" : "Lock group"} aria-label={activeGroup.locked ? "Unlock group" : "Lock group"}>{activeGroup.locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
+              <button type="button" onClick={() => onUngroup(activeGroup.id)} title="Ungroup" aria-label="Ungroup"><FolderMinus size={13} /></button>
+            </div>
+          ) : selectedIds.length > 0 && (
             <div className="cover-layer-actions">
               <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "up")} title="Move layer up" aria-label="Move layer up"><ArrowUp size={13} /></button>
               <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "down")} title="Move layer down" aria-label="Move layer down"><ArrowDown size={13} /></button>
               <button type="button" onClick={onCopySelection} title="Copy selected layers" aria-label="Copy selected layers"><Copy size={13} /></button>
               <button type="button" onClick={onPasteSelection} title="Paste layers" aria-label="Paste layers"><ClipboardPaste size={13} /></button>
-              <button type="button" onClick={() => onDuplicate(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Duplicate selected layers" : "Duplicate layer"} aria-label="Duplicate layer"><Copy size={13} /></button>
+              <button type="button" onClick={() => onDuplicate(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Duplicate selected layers" : "Duplicate layer"} aria-label="Duplicate layer"><Files size={13} /></button>
               <button type="button" className="danger" onClick={() => onDelete(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Delete selected layers" : "Delete layer"} aria-label="Delete layer"><Trash2 size={13} /></button>
             </div>
           )}
@@ -2913,11 +3169,11 @@ function LayerContextMenu({
 
 /* ========================================================================== */
 
-function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, imagePanMode, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onAddText, onAddImage, onOpenTemplates, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
+function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, eraser, handTool, zoomTool, imagePanMode, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onAddText, onAddImage, onOpenTemplates, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [interaction, setInteraction] = useState<{
-    mode: "move" | "resize" | "rotate" | "pan";
+    mode: "move" | "resize" | "rotate" | "pan" | "erase";
     layerId: string;
     handle?: string;
     startClientX: number;
@@ -2954,6 +3210,183 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   const contentHeight = viewRect.height * 96 * effectiveZoom;
   const stageRef = useRef<HTMLDivElement>(null);
   const currentDesignPanel: Exclude<CoverPanel, "wrap"> = panel === "wrap" ? "front" : panel;
+  const eraserActive = Boolean(eraser);
+  const eraserRef = useRef<CoverEraserSettings | null>(eraser);
+  eraserRef.current = eraser;
+  const maskEditorRef = useRef<CoverMaskEditor | null>(null);
+  const eraserCursorRef = useRef<HTMLSpanElement | null>(null);
+  const [handDrag, setHandDrag] = useState<{ x: number; y: number; left: number; top: number } | null>(null);
+
+  const flushMaskEditor = useCallback((editor: CoverMaskEditor, force = false) => {
+    if (!editor.ready || !editor.changed) return;
+    const now = performance.now();
+    if (!force && now - editor.lastEmit < 75) return;
+    editor.lastEmit = now;
+    editor.changed = false;
+    const webp = editor.canvas.toDataURL("image/webp", 0.92);
+    const data = webp.startsWith("data:image/webp") ? webp : editor.canvas.toDataURL("image/png");
+    editor.sourceMask = data;
+    onLayersChange([{ id: editor.layerId, patch: { eraseMask: data } }], { history: false });
+  }, [onLayersChange]);
+
+  const ensureMaskEditor = useCallback((layer: CoverImageLayer): CoverMaskEditor => {
+    const cached = maskEditorRef.current;
+    if (
+      cached
+      && cached.layerId === layer.id
+      && cached.sourceMask === layer.eraseMask
+      && Math.abs(cached.layerWidth - layer.width) < 0.0001
+      && Math.abs(cached.layerHeight - layer.height) < 0.0001
+    ) return cached;
+    const density = 192;
+    const maxSide = 1400;
+    let width = Math.max(40, Math.round(layer.width * density));
+    let height = Math.max(40, Math.round(layer.height * density));
+    const scale = Math.min(1, maxSide / Math.max(width, height));
+    width = Math.max(32, Math.round(width * scale));
+    height = Math.max(32, Math.round(height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("The mask canvas could not be created.");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+    const editor: CoverMaskEditor = {
+      layerId: layer.id,
+      layerWidth: layer.width,
+      layerHeight: layer.height,
+      canvas,
+      ctx,
+      width,
+      height,
+      sourceMask: layer.eraseMask,
+      ready: !layer.eraseMask,
+      pending: [],
+      lastX: null,
+      lastY: null,
+      changed: false,
+      lastEmit: 0,
+    };
+    maskEditorRef.current = editor;
+    const replayPending = () => {
+      const pending = editor.pending.splice(0);
+      if (pending.length === 0) return;
+      editor.lastX = null;
+      editor.lastY = null;
+      const settings = eraserRef.current ?? DEFAULT_ERASER;
+      for (const point of pending) strokeEraserMask(editor, settings, point.x, point.y);
+      flushMaskEditor(editor, true);
+    };
+    if (layer.eraseMask) {
+      const image = new Image();
+      image.onload = () => {
+        if (maskEditorRef.current !== editor) return;
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(image, 0, 0, width, height);
+        editor.ready = true;
+        replayPending();
+      };
+      image.onerror = () => {
+        if (maskEditorRef.current !== editor) return;
+        editor.ready = true;
+        replayPending();
+      };
+      image.src = layer.eraseMask;
+    }
+    return editor;
+  }, [flushMaskEditor]);
+
+  useEffect(() => {
+    if (!eraserActive) {
+      maskEditorRef.current = null;
+      return;
+    }
+    if (!selectedId) return;
+    const layer = cover.doc.layers.find((item): item is CoverImageLayer => item.id === selectedId && item.type === "image");
+    if (layer) ensureMaskEditor(layer);
+  }, [eraserActive, selectedId, cover.doc.layers, ensureMaskEditor]);
+
+  useEffect(() => {
+    if (!handDrag) return;
+    const move = (event: PointerEvent) => {
+      const scroll = stageRef.current;
+      if (!scroll) return;
+      scroll.scrollLeft = handDrag.left - (event.clientX - handDrag.x);
+      scroll.scrollTop = handDrag.top - (event.clientY - handDrag.y);
+    };
+    const up = () => setHandDrag(null);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [handDrag]);
+
+  const eraserPointFor = (layer: CoverLayer, editor: CoverMaskEditor, clientX: number, clientY: number, rect: DOMRect, scale: number) => {
+    const layerRect = coverSpreadRect(metrics, layer);
+    const spreadX = (clientX - rect.left) / scale;
+    const spreadY = (clientY - rect.top) / scale;
+    const centerX = layerRect.x + layerRect.width / 2;
+    const centerY = layerRect.y + layerRect.height / 2;
+    const rotation = (-layer.rotation * Math.PI) / 180;
+    const dx = spreadX - centerX;
+    const dy = spreadY - centerY;
+    const localX = dx * Math.cos(rotation) - dy * Math.sin(rotation) + layerRect.width / 2;
+    const localY = dx * Math.sin(rotation) + dy * Math.cos(rotation) + layerRect.height / 2;
+    return {
+      x: (localX / Math.max(0.0001, layerRect.width)) * editor.width,
+      y: (localY / Math.max(0.0001, layerRect.height)) * editor.height,
+    };
+  };
+
+  const eraserImageAt = (clientX: number, clientY: number): CoverImageLayer | null => {
+    const sheet = sheetRef.current;
+    if (!sheet) return null;
+    const rect = sheet.getBoundingClientRect();
+    const scale = rect.width / metrics.fullWidth;
+    if (scale <= 0) return null;
+    const spreadX = (clientX - rect.left) / scale;
+    const spreadY = (clientY - rect.top) / scale;
+    for (let index = cover.doc.layers.length - 1; index >= 0; index -= 1) {
+      const item = cover.doc.layers[index];
+      if (item.type !== "image" || !coverLayerVisible(cover.doc, item)) continue;
+      const layerRect = coverSpreadRect(metrics, item);
+      const centerX = layerRect.x + layerRect.width / 2;
+      const centerY = layerRect.y + layerRect.height / 2;
+      const rotation = (-item.rotation * Math.PI) / 180;
+      const dx = spreadX - centerX;
+      const dy = spreadY - centerY;
+      const localX = dx * Math.cos(rotation) - dy * Math.sin(rotation) + layerRect.width / 2;
+      const localY = dx * Math.sin(rotation) + dy * Math.cos(rotation) + layerRect.height / 2;
+      if (localX >= 0 && localX <= layerRect.width && localY >= 0 && localY <= layerRect.height) return item;
+    }
+    return null;
+  };
+
+  const moveEraserCursor = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!eraser) return;
+    const cursor = eraserCursorRef.current;
+    const root = viewportRef.current;
+    if (!cursor || !root) return;
+    const rect = root.getBoundingClientRect();
+    const diameter = Math.max(4, eraser.size * 96 * effectiveZoom);
+    cursor.style.width = `${diameter}px`;
+    cursor.style.height = `${diameter * Math.max(0.05, eraser.roundness)}px`;
+    cursor.style.borderRadius = eraser.shape === "round" ? "50%" : "2px";
+    cursor.style.left = `${event.clientX - rect.left}px`;
+    cursor.style.top = `${event.clientY - rect.top}px`;
+    cursor.style.transform = `translate(-50%, -50%) rotate(${eraser.angle}deg)`;
+    cursor.dataset.mode = eraser.mode;
+    cursor.style.display = "block";
+  };
+
+  const hideEraserCursor = () => {
+    if (eraserCursorRef.current) eraserCursorRef.current.style.display = "none";
+  };
 
   useEffect(() => {
     const element = viewportRef.current;
@@ -3016,6 +3449,18 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   useEffect(() => {
     if (!interaction) return;
     const move = (event: PointerEvent) => {
+      if (interaction.mode === "erase") {
+        const editor = maskEditorRef.current;
+        const settings = eraserRef.current;
+        const sheet = sheetRef.current;
+        if (!editor || !settings || !sheet) return;
+        const rect = sheet.getBoundingClientRect();
+        const scale = rect.width / metrics.fullWidth;
+        const point = eraserPointFor(interaction.startLayer, editor, event.clientX, event.clientY, rect, scale);
+        strokeEraserMask(editor, settings, point.x, point.y);
+        flushMaskEditor(editor, false);
+        return;
+      }
       const layer = interaction.startLayer;
       const dx = (event.clientX - interaction.startClientX) / interaction.startScale;
       const dy = (event.clientY - interaction.startClientY) / interaction.startScale;
@@ -3111,6 +3556,10 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
       }
     };
     const up = () => {
+      if (interaction.mode === "erase") {
+        const editor = maskEditorRef.current;
+        if (editor) flushMaskEditor(editor, true);
+      }
       movedRef.current = false;
       setInteraction(null);
       setSnapGuides({ vertical: [], horizontal: [] });
@@ -3124,10 +3573,55 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [interaction, cover.doc.guides, metrics, onLayersChange, onInteractionEnd, onInteractionStart, selectedIds]);
+  }, [interaction, cover.doc.guides, metrics, onLayersChange, onInteractionEnd, onInteractionStart, selectedIds, flushMaskEditor, eraserPointFor]);
+
+  const beginErase = (event: ReactPointerEvent<HTMLDivElement>, layer: CoverImageLayer) => {
+    const settings = eraserRef.current;
+    const sheet = (event.currentTarget.closest("[data-cover-sheet]") as HTMLElement | null) ?? sheetRef.current;
+    if (!settings || !sheet) return;
+    const rect = sheet.getBoundingClientRect();
+    const scale = rect.width / metrics.fullWidth;
+    const editor = ensureMaskEditor(layer);
+    const point = eraserPointFor(layer, editor, event.clientX, event.clientY, rect, scale);
+    onInteractionStart(`erase:${settings.mode}:${layer.id}`);
+    if (!event.shiftKey) {
+      editor.lastX = null;
+      editor.lastY = null;
+    }
+    strokeEraserMask(editor, settings, point.x, point.y);
+    flushMaskEditor(editor, false);
+    movedRef.current = true;
+    setInteraction({
+      mode: "erase",
+      layerId: layer.id,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLayer: layer,
+      startLayers: [layer],
+      startScale: scale,
+    });
+  };
 
   const beginMove = (event: ReactPointerEvent<HTMLDivElement>, layer: CoverLayer) => {
-    if (previewing || coverLayerLocked(cover.doc, layer)) return;
+    if (previewing) return;
+    if (handTool || zoomTool) return;
+    if (eraser) {
+      event.stopPropagation();
+      event.preventDefault();
+      const image = eraserImageAt(event.clientX, event.clientY);
+      if (!image) {
+        onSelect(layer.id);
+        return;
+      }
+      onSelect(image.id);
+      if (coverLayerLocked(cover.doc, image)) {
+        notify("info", "Layer is locked", "Unlock the image or its group before erasing.");
+        return;
+      }
+      beginErase(event, image);
+      return;
+    }
+    if (coverLayerLocked(cover.doc, layer)) return;
     if ((event.target as HTMLElement).closest(".cover-selection-handle, .cover-rotate-handle")) return;
     if (layer.type === "image" && (imagePanMode || event.altKey) && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
       const image = event.currentTarget.querySelector("img.cover-doc-image") as HTMLImageElement | null;
@@ -3270,7 +3764,13 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   };
 
   return (
-    <main className={`cover-stage ${previewing ? "is-previewing" : ""} ${eyedropper ? "is-eyedropper" : ""}`} ref={viewportRef}>
+    <main
+      className={`cover-stage ${previewing ? "is-previewing" : ""} ${eyedropper ? "is-eyedropper" : ""} ${eraserActive ? "is-eraser-tool" : ""} ${handTool ? "is-hand-tool" : ""} ${handDrag ? "is-panning" : ""} ${zoomTool ? "is-zoom-tool" : ""}`}
+      ref={viewportRef}
+      onPointerMove={moveEraserCursor}
+      onPointerLeave={hideEraserCursor}
+    >
+      <span ref={eraserCursorRef} className="cover-eraser-cursor" aria-hidden="true" />
       <div className="cover-stage-meta">
         <span className="cover-stage-context">{panel === "wrap" ? "Full wrap" : panel === "front" ? "Front cover" : panel === "back" ? "Back cover" : "Spine"}</span>
         <span className="cover-stage-sep" />
@@ -3298,14 +3798,30 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           <button type="button" title="Deselect all" aria-label="Deselect all" onClick={() => onSelect(null)}><X size={14} /></button>
         </div>
       )}
-      <div className="cover-stage-scroll" ref={stageRef}>
+      <div
+        className="cover-stage-scroll"
+        ref={stageRef}
+        onPointerDown={(event) => {
+          if (!handTool || event.button !== 0) return;
+          const scroll = stageRef.current;
+          if (!scroll) return;
+          event.preventDefault();
+          setHandDrag({ x: event.clientX, y: event.clientY, left: scroll.scrollLeft, top: scroll.scrollTop });
+        }}
+      >
         <div className="cover-stage-canvas" style={{ width: contentWidth, height: contentHeight }}>
           <div
             ref={sheetRef}
             className="cover-stage-sheet"
             data-cover-sheet
-            onPointerDown={(event) => { if (event.target === event.currentTarget) onSelect(null); }}
+            onPointerDown={(event) => { if (event.target === event.currentTarget && !eraser) onSelect(null); }}
             onPointerDownCapture={(event) => {
+              if (zoomTool) {
+                event.preventDefault();
+                event.stopPropagation();
+                onZoom(Math.min(3, Math.max(0.08, effectiveZoom * (event.altKey ? 0.8 : 1.25))));
+                return;
+              }
               if (!eyedropper) return;
               event.preventDefault();
               event.stopPropagation();
@@ -3348,14 +3864,14 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
                   }}
                   onPointerDown={(event) => beginMove(event, layer)}
                   onContextMenu={(event) => onContextMenu(event, layer.id)}
-                  onDoubleClick={() => { if (!eyedropper && layer.type === "text") onEditText(layer.id); }}
+                  onDoubleClick={() => { if (!eyedropper && !eraser && !handTool && !zoomTool && layer.type === "text") onEditText(layer.id); }}
                   title={locked ? `${layer.name} (locked)` : layer.name}
                 >
                   <div className="cover-canvas-layer-content" style={{ pointerEvents: "none", ...coverLayerFadeCss(layer) }} dangerouslySetInnerHTML={{ __html: coverLayerInnerHtml(book, cover, layer, "editor") }} />
                   {isSelected && (
                     <>
                       <span className="cover-selection-outline" />
-                      {isPrimary && !locked && (
+                      {isPrimary && !locked && !eraser && !handTool && !zoomTool && (
                         <>
                           {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const).map((handle) => (
                             <button key={handle} type="button" className={`cover-selection-handle handle-${handle}`} onPointerDown={(event) => beginResize(event, layer, handle)} aria-label={`Resize ${handle}`} />
@@ -3460,7 +3976,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           <button type="button" onClick={() => onZoom(Math.min(3, effectiveZoom + 0.1))} aria-label="Zoom in"><ZoomIn size={14} /></button>
           <button type="button" className={autoFit ? "active" : ""} onClick={onFit}><Maximize2 size={13} /> Fit</button>
         </div>
-        <span className="cover-stage-hint">{eyedropper ? <><Pipette size={12} /> Click the cover to sample a colour · press Esc or V to exit</> : imagePanMode ? <><Hand size={12} /> Drag the photo to reposition it inside its frame · Esc to finish</> : <><Move size={12} /> Drag to move · Shift-click multi-select · Alt-drag a photo to reposition it · Drag from rulers for guides</>}</span>
+        <span className="cover-stage-hint">{eraser ? <><Eraser size={12} /> Drag on an image to {eraser.mode === "erase" ? "erase" : "restore"} · Shift for a straight stroke · Esc to finish</> : handTool ? <><Hand size={12} /> Drag to pan the canvas · Esc to finish</> : zoomTool ? <><ZoomIn size={12} /> Click to zoom in · Alt-click to zoom out · Esc to finish</> : eyedropper ? <><Pipette size={12} /> Click the cover to sample a colour · press Esc or V to exit</> : imagePanMode ? <><Hand size={12} /> Drag the photo to reposition it inside its frame · Esc to finish</> : <><Move size={12} /> Drag to move · Shift-click multi-select · Alt-drag a photo to reposition it · Drag from rulers for guides</>}</span>
       </div>
     </main>
   );
@@ -3468,14 +3984,30 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, imageLibrary, onUseLibraryImage, onDeleteLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, imageLibrary, onUseLibraryImage, onDeleteLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
+  const eraserActive = tool === "eraser";
+  const eraserTarget = selected?.type === "image" ? selected : null;
+  const imageLayers = cover.doc.layers.filter((layer): layer is CoverImageLayer => layer.type === "image");
   return (
     <aside className="cover-inspector" aria-label={selected ? "Layer properties" : "Cover properties"}>
       <div className="cover-inspector-head">
-        <div><span className="cover-panel-eyebrow">{selected ? layerLabel(selected.type) : "Cover"}{selectedCount > 1 ? ` · ${selectedCount} selected` : ""}</span><strong>{selectedLayerName(selected)}</strong></div>
+        <div>
+          <span className="cover-panel-eyebrow">{eraserActive ? "Eraser tool" : selected ? layerLabel(selected.type) : "Cover"}{selectedCount > 1 ? ` · ${selectedCount} selected` : ""}</span>
+          <strong>{eraserActive ? eraserTarget?.name || "Select an image layer" : selectedLayerName(selected)}</strong>
+        </div>
         {selected ? <button type="button" onClick={() => onSelect(null)} title="Document settings" aria-label="Document settings"><SlidersHorizontal size={15} /></button> : <span className="cover-inspector-badge">Document</span>}
       </div>
       <div className="cover-inspector-scroll">
+        {eraserActive && (
+          <EraserControls
+            settings={eraser}
+            onChange={onEraser}
+            target={eraserTarget}
+            imageLayers={imageLayers}
+            onSelectImage={(id: string) => onSelect(id)}
+            onClearMask={() => onClearEraseMask(eraserTarget?.id)}
+          />
+        )}
         {selected ? (
           <LayerInspector
             book={book}
@@ -3500,6 +4032,8 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             imageLibrary={imageLibrary}
             onUseLibraryImage={onUseLibraryImage}
             onDeleteLibraryImage={onDeleteLibraryImage}
+            onStartErasing={onStartErasing}
+            onClearEraseMask={onClearEraseMask}
             focusContent={focusContent}
           />
         ) : (
@@ -3655,6 +4189,80 @@ function FillEditor({ label, fill, onChange }: { label: string; fill: CoverFill;
   );
 }
 
+function EraserControls({
+  settings,
+  onChange,
+  target,
+  imageLayers,
+  onSelectImage,
+  onClearMask,
+}: {
+  settings: CoverEraserSettings;
+  onChange: (settings: CoverEraserSettings) => void;
+  target: CoverImageLayer | null;
+  imageLayers: CoverImageLayer[];
+  onSelectImage: (id: string) => void;
+  onClearMask: () => void;
+}) {
+  const set = (patch: Partial<CoverEraserSettings>) => onChange({ ...settings, ...patch });
+  return (
+    <div className="cover-eraser-controls">
+      <div className="cover-eraser-title">
+        <span className="cover-eraser-mark"><Eraser size={15} /></span>
+        <span><strong>Mask eraser</strong><small>Non-destructive · paints the layer mask</small></span>
+        <kbd>X</kbd>
+      </div>
+      <div className="cover-eraser-mode">
+        <Segmented
+          value={settings.mode}
+          options={[
+            { value: "erase", label: "Erase", title: "Remove pixels from the layer" },
+            { value: "restore", label: "Restore", title: "Paint erased pixels back" },
+          ]}
+          onChange={(mode) => set({ mode })}
+        />
+        <Segmented
+          value={settings.shape}
+          options={[
+            { value: "round", label: "Round", title: "Round brush" },
+            { value: "square", label: "Square", title: "Square brush" },
+          ]}
+          onChange={(shape) => set({ shape })}
+        />
+      </div>
+      <SliderField label="Size" value={settings.size} onChange={(size) => set({ size })} min={0.05} max={2.4} step={0.01} suffix="in" />
+      <SliderField label="Hardness" value={settings.hardness * 100} onChange={(hardness) => set({ hardness: hardness / 100 })} min={0} max={100} step={1} suffix="%" />
+      <SliderField label="Roundness" value={settings.roundness * 100} onChange={(roundness) => set({ roundness: roundness / 100 })} min={5} max={100} step={1} suffix="%" />
+      <SliderField label="Angle" value={settings.angle} onChange={(angle) => set({ angle })} min={-90} max={90} step={1} suffix="°" />
+      <SliderField label="Flow" value={settings.opacity * 100} onChange={(opacity) => set({ opacity: opacity / 100 })} min={5} max={100} step={1} suffix="%" />
+      <div className="cover-eraser-actions">
+        <button type="button" onClick={onClearMask} disabled={!target?.eraseMask}><RotateCcw size={12} /> Clear mask</button>
+        <button type="button" onClick={() => onChange(DEFAULT_ERASER)}><Settings2 size={12} /> Reset brush</button>
+      </div>
+      {target ? (
+        <p className="cover-field-hint">Painting <strong>{target.name}</strong>. Erase cuts transparent holes; Restore paints the original pixels back. The image file is never changed.</p>
+      ) : (
+        <div className="cover-eraser-targets">
+          <span className="cover-field-heading">Choose an image layer</span>
+          {imageLayers.length === 0 ? (
+            <p className="cover-inspector-note">Add an image to the canvas first, then switch back to the eraser.</p>
+          ) : (
+            <div className="cover-eraser-target-row">
+              {imageLayers.slice(0, 6).map((layer) => (
+                <button key={layer.id} type="button" onClick={() => onSelectImage(layer.id)} title={`Erase on ${layer.name}`}>
+                  {layer.src ? <img src={layer.src} alt="" /> : <FileImage size={13} />}
+                  <span>{layer.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <small className="cover-field-hint">Shortcut X. Shift-drag a straight stroke. The brush preview follows the canvas.</small>
+    </div>
+  );
+}
+
 function LayerInspector({
   book,
   cover,
@@ -3678,6 +4286,8 @@ function LayerInspector({
   imageLibrary,
   onUseLibraryImage,
   onDeleteLibraryImage,
+  onStartErasing,
+  onClearEraseMask,
   focusContent,
 }: {
   book: Book;
@@ -3702,6 +4312,8 @@ function LayerInspector({
   imageLibrary: CoverImageAsset[];
   onUseLibraryImage: (asset: CoverImageAsset) => void;
   onDeleteLibraryImage: (id: string) => void;
+  onStartErasing: () => void;
+  onClearEraseMask: (id?: string) => void;
   focusContent: number;
 }) {
   const contentRef = useRef<HTMLTextAreaElement>(null);
@@ -3906,6 +4518,13 @@ function LayerInspector({
       {layer.type === "image" && (
         <Section title="Image lab" hint="Crop, tone & frame">
           <button type="button" className="cover-wide-button" onClick={onReplaceImage}><Upload size={13} /> Replace image</button>
+          <div className="cover-eraser-mask-row">
+            <span><strong>{layer.eraseMask ? "Erase mask active" : "No erase mask"}</strong><small>{layer.eraseMask ? "Brush away pixels with the mask eraser." : "Paint transparent cut-outs without touching the file."}</small></span>
+            <div>
+              <button type="button" className="cover-mini-button" onClick={onStartErasing}><Eraser size={12} /> {layer.eraseMask ? "Edit mask" : "Erase"}</button>
+              {layer.eraseMask && <button type="button" className="cover-mini-button" onClick={() => onClearEraseMask(layer.id)}><RotateCcw size={12} /> Clear</button>}
+            </div>
+          </div>
           <button type="button" className="cover-wide-button subtle" onClick={() => onExtractPalette(layer)}><Palette size={13} /> Extract image palette</button>
           {imageLibrary.length > 0 && (
             <div className="cover-image-library">
@@ -3956,7 +4575,7 @@ function LayerInspector({
             <div className="cover-image-flip-row">
               <button type="button" className={layer.flipX ? "active" : ""} onClick={() => onUpdate({ flipX: !layer.flipX }, { key: `flip-x:${layer.id}` })}><FlipHorizontal2 size={13} /> Flip H</button>
               <button type="button" className={layer.flipY ? "active" : ""} onClick={() => onUpdate({ flipY: !layer.flipY }, { key: `flip-y:${layer.id}` })}><FlipVertical2 size={13} /> Flip V</button>
-              <button type="button" onClick={() => onUpdate({ brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0, grayscale: false, sepia: false, tint: "#ffffff", tintStrength: 0, mask: "none", focusX: 0.5, focusY: 0.5, flipX: false, flipY: false }, { key: `image-reset:${layer.id}` })}><RotateCcw size={12} /> Reset</button>
+              <button type="button" onClick={() => onUpdate({ brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0, grayscale: false, sepia: false, tint: "#ffffff", tintStrength: 0, mask: "none", focusX: 0.5, focusY: 0.5, flipX: false, flipY: false, eraseMask: "" }, { key: `image-reset:${layer.id}` })}><RotateCcw size={12} /> Reset</button>
             </div>
           </div>
         </Section>
@@ -4249,13 +4868,14 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
       title: "Tools",
       rows: [
         ["V", "Select and move"],
+        ["H / Z", "Hand · zoom"],
+        ["X", "Eraser · mask brush"],
         ["E", "Eyedropper"],
         ["T", "Add text"],
         ["I", "Import image"],
         ["R / O", "Rectangle / ellipse"],
         ["L / B", "Rule / barcode"],
         ["S / A", "Symbols / artwork"],
-        ["H", "Pan photo in frame"],
         ["?", "This guide"],
       ],
     },
@@ -4421,7 +5041,7 @@ function TemplateModal({ book, cover, savedTemplates, onApply, onApplySaved, onD
           })}
 
           <div className="cover-template-section-head">
-            <div><span className="books-eyebrow"><LayoutTemplate size={12} /> Studio templates</span><strong>Six complete starting points</strong></div>
+            <div><span className="books-eyebrow"><LayoutTemplate size={12} /> Studio templates</span><strong>{COVER_TEMPLATE_PRESETS.length} complete starting points</strong></div>
           </div>
           {templates.map(({ preset, doc }) => {
             const scale = 240 / (metrics.fullWidth * 96);

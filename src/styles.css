@@ -5904,7 +5904,10 @@ kbd {
   border-right: 1px solid var(--border);
   background: var(--surface);
   z-index: 10;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
+.cover-tool-rail::-webkit-scrollbar { display: none; }
 .cover-tool-rail button {
   position: relative;
   display: flex;
@@ -6089,13 +6092,18 @@ kbd {
 .cover-layer-row.active .cover-layer-type-icon { color: var(--book-accent); }
 .cover-layer-name { display: flex; min-width: 0; flex-direction: column; gap: 1px; overflow: hidden; color: inherit; font-size: 9.5px; font-weight: 560; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .cover-layer-name small { color: var(--text-4); font-size: 7.5px; font-weight: 400; text-transform: capitalize; }
+.cover-layer-name-input { width: 100%; height: 21px; padding: 0 4px; border: 1px solid var(--book-accent); border-radius: 3px; background: var(--surface); color: var(--text); font: inherit; font-size: 9px; outline: none; }
 .cover-background-row { display: grid; min-height: 35px; grid-template-columns: 20px minmax(0, 1fr) 22px; align-items: center; gap: 6px; margin-top: auto; padding: 3px 4px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-2); color: var(--text-2); text-align: left; font: inherit; cursor: pointer; }
 .cover-background-row:hover { border-color: var(--book-accent); background: var(--book-accent-soft); }
 .cover-background-swatch { display: block; width: 20px; height: 20px; border: 1px solid var(--border-strong); border-radius: 4px; }
 .cover-layer-actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; padding: 6px; border-top: 1px solid var(--border-subtle); }
 .cover-layer-actions button { display: flex; height: 26px; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-3); cursor: pointer; }
-.cover-layer-actions button:hover { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-layer-actions button:hover:not(:disabled) { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-layer-actions button:disabled { opacity: 0.4; cursor: default; }
 .cover-layer-actions button.danger:hover { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.cover-group-actions { display: flex; align-items: center; }
+.cover-group-actions .cover-group-action-label { min-width: 0; flex: 1; overflow: hidden; padding: 0 3px; color: var(--text-3); font-size: 8px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.cover-group-actions button { width: 26px; flex: 0 0 26px; padding: 0; }
 .cover-layer-hint { display: flex; align-items: center; gap: 4px; padding: 7px 10px; border-top: 1px solid var(--border-subtle); color: var(--text-4); font-size: 7.5px; line-height: 1.3; }
 .cover-layers-collapsed { display: flex; width: 38px; flex-shrink: 0; justify-content: center; padding-top: 10px; border-right: 1px solid var(--border); background: var(--surface); }
 .cover-layers-collapsed button { display: flex; width: 28px; height: 52px; align-items: center; justify-content: center; gap: 3px; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-3); font: inherit; font-size: 8px; cursor: pointer; }
@@ -6279,6 +6287,42 @@ kbd {
 .cover-inspector-head > button:hover { background: var(--surface-hover); color: var(--text); }
 .cover-inspector-badge { padding: 2px 6px; border-radius: 4px; background: var(--book-accent-soft); color: var(--book-accent); font-size: 7.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .cover-inspector-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+
+/* Mask eraser */
+.cover-eraser-controls { display: flex; flex-direction: column; gap: 9px; padding: 11px 12px 13px; border-bottom: 1px solid var(--border-subtle); background: linear-gradient(180deg, color-mix(in srgb, var(--book-accent) 6%, transparent), transparent 72%); }
+.cover-eraser-title { display: flex; align-items: center; gap: 8px; }
+.cover-eraser-mark { display: flex; width: 27px; height: 27px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 7px; background: var(--book-accent); color: #fff; box-shadow: 0 3px 8px color-mix(in srgb, var(--book-accent) 32%, transparent); }
+.cover-eraser-title > span:not(.cover-eraser-mark) { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; }
+.cover-eraser-title strong { color: var(--text); font-size: 10.5px; font-weight: 650; }
+.cover-eraser-title small { color: var(--text-3); font-size: 7.5px; }
+.cover-eraser-title kbd { padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text-4); font-family: var(--mono); font-size: 7px; }
+.cover-eraser-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cover-eraser-mode .cover-segmented { min-width: 0; }
+.cover-eraser-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.cover-eraser-actions button { display: flex; height: 27px; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-2); font: inherit; font-size: 8px; font-weight: 600; cursor: pointer; }
+.cover-eraser-actions button:hover:not(:disabled) { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-eraser-actions button:disabled { opacity: 0.4; cursor: default; }
+.cover-eraser-mask-row { display: flex; flex-direction: column; gap: 6px; padding: 7px 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-2); }
+.cover-eraser-mask-row > span { display: flex; flex-direction: column; gap: 1px; }
+.cover-eraser-mask-row strong { color: var(--text); font-size: 8.5px; font-weight: 650; }
+.cover-eraser-mask-row small { color: var(--text-4); font-size: 7.4px; line-height: 1.35; }
+.cover-eraser-mask-row > div { display: flex; gap: 4px; }
+.cover-eraser-mask-row .cover-mini-button { flex: 1; }
+.cover-eraser-targets { display: flex; flex-direction: column; gap: 6px; }
+.cover-eraser-target-row { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.cover-eraser-target-row button { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 4px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-2); text-align: left; font: inherit; font-size: 8px; cursor: pointer; }
+.cover-eraser-target-row button:hover { border-color: var(--book-accent); color: var(--book-accent); }
+.cover-eraser-target-row img { width: 25px; height: 31px; flex-shrink: 0; border-radius: 3px; object-fit: cover; }
+.cover-eraser-target-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cover-eraser-cursor { position: absolute; z-index: 80; display: none; border: 1.5px solid rgba(0, 0, 0, 0.72); border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.8); pointer-events: none; transform-origin: 50% 50%; }
+.cover-eraser-cursor[data-mode="restore"] { border-color: var(--book-accent); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.95), 0 0 0 1px color-mix(in srgb, var(--book-accent) 65%, transparent); }
+.cover-stage.is-hand-tool .cover-stage-scroll,
+.cover-stage.is-hand-tool .cover-stage-sheet { cursor: grab; }
+.cover-stage.is-hand-tool.is-panning .cover-stage-scroll,
+.cover-stage.is-hand-tool.is-panning .cover-stage-sheet { cursor: grabbing; }
+.cover-stage.is-zoom-tool .cover-stage-sheet { cursor: zoom-in; }
+.cover-stage.is-eraser-tool .cover-stage-sheet,
+.cover-stage.is-eraser-tool .cover-canvas-layer { cursor: crosshair; }
 .cover-inspector-section { border-bottom: 1px solid var(--border-subtle); }
 .cover-inspector-section-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 12px; border: 0; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
 .cover-inspector-section-head > span { display: flex; flex-direction: column; gap: 1px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.01em; }
