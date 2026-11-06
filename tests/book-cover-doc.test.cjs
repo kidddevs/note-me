@@ -4,11 +4,13 @@ const {
   barcodeSvgMarkup,
   COVER_FONTS,
   COVER_IMAGE_PRESETS,
+  COVER_TEMPLATE_PRESETS,
   coverDocMarkup,
   coverFillCss,
   coverFontCss,
   coverImageFilterCss,
   COVER_GRADIENT_PRESETS,
+  coverGroupLocked,
   coverLayerClipCss,
   coverLayerClipMatrix,
   coverLayerFadeCss,
@@ -31,6 +33,7 @@ const {
   normalizeIsbn13,
   parseCoverDocument,
   reflowSpineLayers,
+  reorderCoverGroup,
   reverseCoverGradient,
   shapeLayer,
   spineWidthForPages,
@@ -638,4 +641,89 @@ test("clipping matrix maps shape coordinates into the clipped layer local space"
   assert.notDeepEqual(rotated, [1.92, 0, 0, 1.92, 0, 0]);
   const doc = parseCoverDocument({ layers: [shapeLayer({ id: "mask", name: "Mask", panel: "front", x: 1, y: 1, width: 2, height: 2, shape: "star" }), textLayer({ id: "clipped", name: "Clipped", panel: "front", x: 1, y: 1, width: 4, height: 4, text: "Inside", clipTo: "mask" })] });
   assert.match(coverLayerClipCss(book(), { ...cover(), doc }, doc.layers[1]).clipPath, /^path\('M/);
+});
+
+
+test("group reordering moves whole blocks only while unlocked", () => {
+  const layers = [
+    textLayer({ id: "bottom", name: "Bottom", panel: "front", x: 0, y: 0, width: 1, height: 1, text: "Bottom" }),
+    textLayer({ id: "g1-a", name: "G1 A", panel: "front", x: 0, y: 0, width: 1, height: 1, text: "A", groupId: "g1" }),
+    textLayer({ id: "g1-b", name: "G1 B", panel: "front", x: 0, y: 0, width: 1, height: 1, text: "B", groupId: "g1" }),
+    textLayer({ id: "middle", name: "Middle", panel: "front", x: 0, y: 0, width: 1, height: 1, text: "Middle" }),
+    textLayer({ id: "g2", name: "G2", panel: "front", x: 0, y: 0, width: 1, height: 1, text: "G2", groupId: "g2" }),
+  ];
+  const doc = parseCoverDocument({
+    groups: [
+      { id: "g1", name: "Group one", visible: true, locked: false, collapsed: false },
+      { id: "g2", name: "Group two", visible: true, locked: true, collapsed: false },
+    ],
+    layers,
+  });
+  const movedUp = reorderCoverGroup(doc, "g1", "up");
+  assert.ok(movedUp);
+  assert.deepEqual(movedUp.layers.map((layer) => layer.id), ["bottom", "middle", "g1-a", "g1-b", "g2"]);
+  const movedDown = reorderCoverGroup(doc, "g1", "down");
+  assert.ok(movedDown);
+  assert.deepEqual(movedDown.layers.map((layer) => layer.id), ["g1-a", "g1-b", "bottom", "middle", "g2"]);
+  assert.equal(coverGroupLocked(doc, "g1"), false);
+  assert.equal(coverGroupLocked(doc, "g2"), true);
+  assert.equal(reorderCoverGroup(doc, "g2", "down"), null);
+  const childLocked = parseCoverDocument({ ...doc, layers: doc.layers.map((layer) => layer.id === "g1-b" ? { ...layer, locked: true } : layer) });
+  assert.equal(coverGroupLocked(childLocked, "g1"), true);
+  assert.equal(reorderCoverGroup(childLocked, "g1", "down"), null);
+});
+
+
+test("image erase masks normalize and render as layer masks", () => {
+  const layer = imageLayer({
+    id: "masked-photo",
+    name: "Masked photo",
+    panel: "front",
+    x: 0,
+    y: 0,
+    width: 3,
+    height: 4,
+    src: "data:image/png;base64,AAA",
+    eraseMask: "data:image/webp;base64,BBBB",
+  });
+  const doc = parseCoverDocument({ layers: [layer] });
+  const image = doc.layers[0];
+  assert.equal(image.type, "image");
+  assert.equal(image.eraseMask, "data:image/webp;base64,BBBB");
+  const markup = coverDocMarkup(book(), { ...cover(), doc }, "front");
+  assert.match(markup, /-webkit-mask-image:url\('data:image\/webp;base64,BBBB'\)/);
+  assert.match(markup, /mask-image:url\('data:image\/webp;base64,BBBB'\)/);
+  assert.match(markup, /mask-size:100% 100%/);
+  const legacy = parseCoverDocument({
+    layers: [{ id: "legacy", type: "image", panel: "front", x: 0, y: 0, width: 2, height: 3, src: "data:," }],
+  });
+  assert.equal(legacy.layers[0].eraseMask, "");
+  const malformed = parseCoverDocument({
+    layers: [{ id: "bad", type: "image", panel: "front", x: 0, y: 0, width: 2, height: 3, src: "data:,", eraseMask: 42 }],
+  });
+  assert.equal(malformed.layers[0].eraseMask, "");
+});
+
+test("photo-led templates ship stock imagery, groups, and full wrap matter", () => {
+  const ids = ["tidewater", "dunes", "highland", "wildflower", "meridian", "afterhours"];
+  assert.ok(COVER_TEMPLATE_PRESETS.length >= 12);
+  for (const id of ids) {
+    assert.ok(COVER_TEMPLATE_PRESETS.some((preset) => preset.id === id), id);
+    const doc = createCoverDocument(id, book(), cover());
+    assert.equal(doc.templateId, id);
+    assert.ok(doc.layers.some((layer) => layer.type === "image" && layer.panel === "front" && layer.src.startsWith("/cover-templates/")), `${id} photo`);
+    assert.ok(doc.layers.some((layer) => layer.type === "text" && layer.panel === "spine"), `${id} spine`);
+    assert.ok(doc.layers.some((layer) => layer.type === "barcode" && layer.panel === "back"), `${id} barcode`);
+    assert.ok(doc.groups.length >= 2, `${id} groups`);
+    for (const group of doc.groups) {
+      assert.ok(doc.layers.some((layer) => layer.groupId === group.id), `${id} ${group.id} has layers`);
+    }
+    const markup = coverDocMarkup(book(), { ...cover(), doc }, "wrap");
+    assert.match(markup, /The Quiet Hour/);
+    assert.match(markup, /\/cover-templates\//);
+    const parsed = parseCoverDocument(JSON.parse(JSON.stringify(doc)));
+    assert.equal(parsed.layers.length, doc.layers.length);
+    assert.equal(parsed.groups.length, doc.groups.length);
+    assert.equal(parsed.groups[0].id, doc.groups[0].id);
+  }
 });

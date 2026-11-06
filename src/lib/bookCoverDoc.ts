@@ -127,6 +127,7 @@ export interface CoverImageLayer extends CoverLayerBase {
   src: string;
   sourceWidth: number;
   sourceHeight: number;
+  eraseMask: string;
   fit: "cover" | "contain";
   radius: number;
   grayscale: boolean;
@@ -359,7 +360,22 @@ export const COVER_TEMPLATE_PRESETS: CoverTemplatePreset[] = [
   { id: "minimal", label: "Modern Minimal", description: "Quiet white space and confident typographic hierarchy.", mood: "Contemporary", palette: ["#fbfaf7", "#111111", "#d64b32"] },
   { id: "heritage", label: "Heritage Classic", description: "Deep green, gold rules and a timeless centred composition.", mood: "Classic", palette: ["#1f3a2d", "#f0e6d1", "#c6a15b"] },
   { id: "bold", label: "Bold Colour", description: "A punchy colour block with oversized type and a bold spine.", mood: "Commercial", palette: ["#e4583a", "#fff7ec", "#1a1613"] },
+  { id: "tidewater", label: "Tidewater", description: "Sun-washed coast photography with a bold literary title and a calm back cover.", mood: "Literary", palette: ["#f2e5d2", "#123b46", "#df7c5a"] },
+  { id: "dunes", label: "Desert Light", description: "Monument Valley photography, warm sand and a modern editorial frame.", mood: "Adventure", palette: ["#ecdbc3", "#3d2116", "#b45735"] },
+  { id: "highland", label: "Highland Mist", description: "Moody mountain photography with gold type and a deep green back.", mood: "Literary", palette: ["#1e3328", "#ece3d0", "#c6a15b"] },
+  { id: "wildflower", label: "Wildflower", description: "Sunlit botanicals, a cream title card and a bright modern palette.", mood: "Lifestyle", palette: ["#f7eedf", "#0f4f58", "#e3a01c"] },
+  { id: "meridian", label: "Meridian", description: "Architectural photography with oversized modern type and a navy back.", mood: "Design", palette: ["#e6edf0", "#10293a", "#4c8cab"] },
+  { id: "afterhours", label: "After Hours", description: "Cinematic city night, neon accents and a sleek thriller finish.", mood: "Thriller", palette: ["#101722", "#f2e8db", "#d97757"] },
 ];
+
+const COVER_STOCK_PHOTOS = {
+  coast: "/cover-templates/coast.jpg",
+  dunes: "/cover-templates/dunes.jpg",
+  forest: "/cover-templates/forest.jpg",
+  bloom: "/cover-templates/bloom.jpg",
+  stone: "/cover-templates/stone.jpg",
+  night: "/cover-templates/night.jpg",
+};
 
 export interface CoverDocSeedOptions {
   pageCount?: number;
@@ -724,6 +740,7 @@ export function imageLayer(input: Partial<CoverImageLayer> & Pick<CoverImageLaye
     src: input.src,
     sourceWidth: input.sourceWidth ?? 0,
     sourceHeight: input.sourceHeight ?? 0,
+    eraseMask: input.eraseMask ?? "",
     fit: input.fit ?? "cover",
     radius: input.radius ?? 0,
     grayscale: input.grayscale ?? false,
@@ -899,6 +916,7 @@ function normalizeLayer(value: unknown, index: number): CoverLayer | null {
       src: text(value.src, "", 24_000_000),
       sourceWidth: integer(value.sourceWidth, 0, 0, 100_000),
       sourceHeight: integer(value.sourceHeight, 0, 0, 100_000),
+      eraseMask: text(value.eraseMask, "", 24_000_000),
       fit: value.fit === "contain" ? "contain" : "cover",
       radius: decimal(value.radius, 0, 0, 12),
       grayscale: boolean(value.grayscale, false),
@@ -1096,6 +1114,39 @@ export function layerForPanel(layer: CoverLayer, panel: CoverPanel) {
 
 export function coverLayerGroup(doc: BookCoverDocument, layer: CoverLayer) {
   return layer.groupId ? doc.groups.find((group) => group.id === layer.groupId) ?? null : null;
+}
+
+export function coverGroupLocked(doc: BookCoverDocument, groupId: string) {
+  const group = doc.groups.find((item) => item.id === groupId);
+  if (!group) return false;
+  return group.locked || doc.layers.some((layer) => layer.groupId === groupId && layer.locked);
+}
+
+/** Moves a whole group block one step through the layer stack. */
+export function reorderCoverGroup(doc: BookCoverDocument, groupId: string, direction: "up" | "down"): BookCoverDocument | null {
+  if (!doc.groups.some((group) => group.id === groupId) || coverGroupLocked(doc, groupId)) return null;
+  const groupsById = new Map(doc.groups.map((group) => [group.id, group]));
+  const blocks: { groupId: string | null; layers: CoverLayer[] }[] = [];
+  const blockByGroup = new Map<string, number>();
+  for (const layer of doc.layers) {
+    if (layer.groupId && groupsById.has(layer.groupId)) {
+      const existing = blockByGroup.get(layer.groupId);
+      if (existing === undefined) {
+        blockByGroup.set(layer.groupId, blocks.length);
+        blocks.push({ groupId: layer.groupId, layers: [layer] });
+      } else {
+        blocks[existing].layers.push(layer);
+      }
+    } else {
+      blocks.push({ groupId: null, layers: [layer] });
+    }
+  }
+  const from = blocks.findIndex((block) => block.groupId === groupId);
+  if (from < 0) return null;
+  const to = direction === "up" ? from + 1 : from - 1;
+  if (to < 0 || to >= blocks.length) return null;
+  [blocks[from], blocks[to]] = [blocks[to], blocks[from]];
+  return { ...doc, layers: blocks.flatMap((block) => block.layers) };
 }
 
 export function coverLayerVisible(doc: BookCoverDocument, layer: CoverLayer) {
@@ -2406,6 +2457,955 @@ function boldTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics
   };
 }
 
+interface CoverTemplateGroupSpec {
+  id: string;
+  name: string;
+  layerIds: string[];
+}
+
+function applyTemplateGroups(layers: CoverLayer[], specs: CoverTemplateGroupSpec[]) {
+  const membership = new Map<string, string>();
+  for (const spec of specs) for (const layerId of spec.layerIds) membership.set(layerId, spec.id);
+  return {
+    groups: specs.map((spec): CoverLayerGroup => ({ id: spec.id, name: spec.name, visible: true, locked: false, collapsed: false })),
+    layers: layers.map((layer) => {
+      const groupId = membership.get(layer.id);
+      return groupId ? { ...layer, groupId } : layer;
+    }),
+  };
+}
+
+function addPhotoBackMatter(
+  layers: CoverLayer[],
+  metrics: CoverMetrics,
+  ink: string,
+  muted: string,
+  accent: string,
+  prefix: string,
+  options: { eyebrow?: string; bodyFamily?: "serif" | "sans"; author?: string } = {},
+) {
+  const w = metrics.trimWidth;
+  const h = metrics.trimHeight;
+  const m = safeMargin(w);
+  layers.push(
+    textLayer({
+      id: `${prefix}-back-eyebrow`,
+      name: "Back eyebrow",
+      panel: "back",
+      x: m,
+      y: round(m + 0.1),
+      width: round(w - m * 2),
+      height: 0.28,
+      text: options.eyebrow ?? "ABOUT THE BOOK",
+      fontFamily: "sans",
+      fontSize: 7.5,
+      fontWeight: 700,
+      letterSpacing: 0.26,
+      uppercase: true,
+      color: accent,
+    }),
+    textLayer({
+      id: `${prefix}-back-copy`,
+      name: "Back cover copy",
+      panel: "back",
+      x: m,
+      y: round(m + 0.68),
+      width: round(w - m * 2),
+      height: round(h - m * 2 - 1.85),
+      text: "{{backCopy}}",
+      fontFamily: options.bodyFamily ?? "serif",
+      fontSize: backBodySize(w),
+      lineHeight: 1.56,
+      color: ink,
+    }),
+    textLayer({
+      id: `${prefix}-back-author`,
+      name: "Back author",
+      panel: "back",
+      x: m,
+      y: round(h - m - 0.52),
+      width: round(w - m * 2 - Math.min(2.05, w * 0.42) - 0.22),
+      height: 0.72,
+      text: options.author ?? "{{author}}\n{{authorBio}}",
+      fontFamily: "sans",
+      fontSize: 7.4,
+      lineHeight: 1.45,
+      color: muted,
+    }),
+  );
+}
+
+function addPhotoSpine(
+  layers: CoverLayer[],
+  book: Book,
+  metrics: CoverMetrics,
+  ink: string,
+  accent: string,
+  panelColor: string | null,
+  prefix: string,
+  options: { rule?: boolean; ornament?: string } = {},
+) {
+  if (panelColor) {
+    layers.push(shapeLayer({
+      id: `${prefix}-spine-panel`,
+      name: "Spine colour",
+      panel: "spine",
+      x: 0,
+      y: 0,
+      width: Math.max(0.02, metrics.spineWidth),
+      height: metrics.trimHeight,
+      shape: "rectangle",
+      fill: coverFill(panelColor),
+    }));
+  }
+  addSpineBasics(layers, book, metrics, ink, accent, { author: true, ...options });
+}
+
+function tidewaterTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics, _accent: string): BookCoverDocument {
+  const w = metrics.trimWidth;
+  const h = metrics.trimHeight;
+  const m = safeMargin(w);
+  const ink = "#fffaf2";
+  const deep = "#123b46";
+  const coral = "#df7c5a";
+  const paper = "#f2e5d2";
+  const title = book.title.trim() || "Untitled";
+  const size = Math.min(titleSize(w, title) + 4, 84);
+  const layers: CoverLayer[] = [
+    imageLayer({
+      id: "tidewater-photo",
+      name: "Coast photograph",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      src: COVER_STOCK_PHOTOS.coast,
+      sourceWidth: 1200,
+      sourceHeight: 1600,
+      fit: "cover",
+      focusY: 0.42,
+    }),
+    shapeLayer({
+      id: "tidewater-shade",
+      name: "Tide shade",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      shape: "rectangle",
+      fill: { type: "gradient", color: "#082830", gradient: { type: "linear", angle: 180, stops: [{ color: "#08283000", position: 0.18 }, { color: "#08283099", position: 0.55 }, { color: "#082830f2", position: 1 }] } },
+    }),
+    textLayer({
+      id: "tidewater-kicker",
+      name: "Kicker",
+      panel: "front",
+      x: m,
+      y: round(h * 0.075),
+      width: round(w - m * 2),
+      height: 0.3,
+      text: "{{genre}} · A NOVEL",
+      fontFamily: "sans",
+      fontSize: 7.5,
+      fontWeight: 700,
+      letterSpacing: 0.3,
+      uppercase: true,
+      color: coral,
+      effect: "soft",
+      effectColor: "#062029",
+    }),
+    textLayer({
+      id: "tidewater-title",
+      name: "Title",
+      panel: "front",
+      x: m,
+      y: round(h * 0.55),
+      width: round(w - m * 2),
+      height: round(h * 0.31),
+      text: "{{title}}",
+      fontFamily: "display",
+      fontSize: size,
+      fontWeight: 500,
+      lineHeight: 0.9,
+      letterSpacing: -0.035,
+      color: ink,
+      effect: "soft",
+      effectColor: "#03151a",
+    }),
+    textLayer({
+      id: "tidewater-tagline",
+      name: "Tagline",
+      panel: "front",
+      x: m,
+      y: round(h - m - 1.38),
+      width: round(w - m * 2),
+      height: 0.48,
+      text: "{{tagline}}",
+      fontFamily: "sans",
+      fontSize: 8.4,
+      fontWeight: 500,
+      letterSpacing: 0.18,
+      uppercase: true,
+      lineHeight: 1.4,
+      color: "#f0dcc4",
+    }),
+    lineLayer({ id: "tidewater-author-rule", name: "Author rule", panel: "front", x: m, y: round(h - m - 0.6), width: round(w - m * 2), height: 0.01, color: coral, opacity: 0.85 }),
+    textLayer({
+      id: "tidewater-author",
+      name: "Author",
+      panel: "front",
+      x: m,
+      y: round(h - m - 0.46),
+      width: round(w - m * 2),
+      height: 0.34,
+      text: "{{author}}",
+      fontFamily: "sans",
+      fontSize: 10.5,
+      fontWeight: 650,
+      letterSpacing: 0.2,
+      uppercase: true,
+      color: ink,
+    }),
+  ];
+  addPhotoBackMatter(layers, metrics, deep, shadeColor(deep, 0.12), coral, "tidewater", { eyebrow: "THE COAST IS LISTENING" });
+  layers.push(lineLayer({ id: "tidewater-back-rule", name: "Back rule", panel: "back", x: m, y: round(metrics.trimHeight - m - 1.72), width: round(w - m * 2), height: 0.01, color: coral, opacity: 0.5 }));
+  addBarcode(layers, metrics, m);
+  addPhotoSpine(layers, book, metrics, "#f7ead7", coral, deep, "tidewater", { rule: true, ornament: "✦" });
+  const grouped = applyTemplateGroups(layers, [
+    { id: "tidewater-front-art", name: "Front photograph", layerIds: ["tidewater-photo", "tidewater-shade"] },
+    { id: "tidewater-front-type", name: "Front typography", layerIds: ["tidewater-kicker", "tidewater-title", "tidewater-tagline", "tidewater-author-rule", "tidewater-author"] },
+    { id: "tidewater-back", name: "Back matter", layerIds: ["tidewater-back-rule", "tidewater-back-eyebrow", "tidewater-back-copy", "tidewater-back-author", "back-barcode"] },
+  ]);
+  return {
+    version: 1,
+    groups: grouped.groups,
+    palette: [paper, deep, coral],
+    templateId: "tidewater",
+    guides: [],
+    background: { type: "solid", color: paper, gradient: coverFill(paper).gradient },
+    layers: grouped.layers,
+    showGuides: true,
+    showGrid: false,
+    showBleed: true,
+    showRulers: false,
+  };
+}
+
+function dunesTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics, _accent: string): BookCoverDocument {
+  const w = metrics.trimWidth;
+  const h = metrics.trimHeight;
+  const m = safeMargin(w);
+  const paper = "#ecdbc3";
+  const ink = "#3d2116";
+  const rust = "#b45735";
+  const cream = "#fff7e9";
+  const title = book.title.trim() || "Untitled";
+  const size = Math.min(titleSize(w, title) + 2, 80);
+  const imageTop = round(h * 0.37);
+  const layers: CoverLayer[] = [
+    imageLayer({
+      id: "dunes-photo",
+      name: "Desert photograph",
+      panel: "front",
+      x: 0,
+      y: imageTop,
+      width: w,
+      height: round(h - imageTop),
+      src: COVER_STOCK_PHOTOS.dunes,
+      sourceWidth: 1200,
+      sourceHeight: 1600,
+      fit: "cover",
+      focusY: 0.55,
+    }),
+    shapeLayer({
+      id: "dunes-shade",
+      name: "Desert shade",
+      panel: "front",
+      x: 0,
+      y: imageTop,
+      width: w,
+      height: round(h - imageTop),
+      shape: "rectangle",
+      fill: { type: "gradient", color: "#3d2116", gradient: { type: "linear", angle: 180, stops: [{ color: "#3d211600", position: 0.35 }, { color: "#3d2116c9", position: 1 }] } },
+    }),
+    textLayer({
+      id: "dunes-kicker",
+      name: "Kicker",
+      panel: "front",
+      x: m,
+      y: round(m * 0.92),
+      width: round(w - m * 2),
+      height: 0.28,
+      text: "A JOURNEY THROUGH {{genre}}",
+      fontFamily: "sans",
+      fontSize: 7.3,
+      fontWeight: 700,
+      letterSpacing: 0.28,
+      uppercase: true,
+      color: rust,
+    }),
+    textLayer({
+      id: "dunes-title",
+      name: "Title",
+      panel: "front",
+      x: m,
+      y: round(m + 0.48),
+      width: round(w - m * 2),
+      height: round(imageTop - m - 1.18),
+      text: "{{title}}",
+      fontFamily: "display",
+      fontSize: size,
+      fontWeight: 600,
+      lineHeight: 0.92,
+      letterSpacing: -0.03,
+      color: ink,
+    }),
+    textLayer({
+      id: "dunes-tagline",
+      name: "Tagline",
+      panel: "front",
+      x: m,
+      y: round(imageTop - 0.58),
+      width: round(w - m * 2),
+      height: 0.32,
+      text: "{{tagline}}",
+      fontFamily: "sans",
+      fontSize: 8,
+      fontWeight: 550,
+      letterSpacing: 0.14,
+      uppercase: true,
+      color: ink,
+      opacity: 0.78,
+    }),
+    lineLayer({ id: "dunes-horizon-rule", name: "Horizon rule", panel: "front", x: 0, y: imageTop, width: w, height: 0.016, color: rust }),
+    lineLayer({ id: "dunes-author-rule", name: "Author rule", panel: "front", x: m, y: round(h - m - 0.6), width: round(w - m * 2), height: 0.01, color: cream, opacity: 0.75 }),
+    textLayer({
+      id: "dunes-author",
+      name: "Author",
+      panel: "front",
+      x: m,
+      y: round(h - m - 0.46),
+      width: round(w - m * 2),
+      height: 0.34,
+      text: "{{author}}",
+      fontFamily: "sans",
+      fontSize: 10.5,
+      fontWeight: 650,
+      letterSpacing: 0.2,
+      uppercase: true,
+      color: cream,
+    }),
+  ];
+  addPhotoBackMatter(layers, metrics, ink, shadeColor(ink, 0.14), rust, "dunes", { eyebrow: "FIELD NOTES FROM THE DESERT" });
+  layers.push(lineLayer({ id: "dunes-back-rule", name: "Back rule", panel: "back", x: m, y: round(h - m - 1.72), width: round(w - m * 2), height: 0.01, color: rust, opacity: 0.55 }));
+  addBarcode(layers, metrics, m);
+  addPhotoSpine(layers, book, metrics, cream, cream, rust, "dunes", { rule: true, ornament: "✦" });
+  const grouped = applyTemplateGroups(layers, [
+    { id: "dunes-front-art", name: "Desert photograph", layerIds: ["dunes-photo", "dunes-shade"] },
+    { id: "dunes-front-type", name: "Front typography", layerIds: ["dunes-kicker", "dunes-title", "dunes-tagline", "dunes-horizon-rule", "dunes-author-rule", "dunes-author"] },
+    { id: "dunes-back", name: "Back matter", layerIds: ["dunes-back-rule", "dunes-back-eyebrow", "dunes-back-copy", "dunes-back-author", "back-barcode"] },
+  ]);
+  return {
+    version: 1,
+    groups: grouped.groups,
+    palette: [paper, ink, rust],
+    templateId: "dunes",
+    guides: [],
+    background: { type: "solid", color: paper, gradient: coverFill(paper).gradient },
+    layers: grouped.layers,
+    showGuides: true,
+    showGrid: false,
+    showBleed: true,
+    showRulers: false,
+  };
+}
+
+function highlandTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics, _accent: string): BookCoverDocument {
+  const w = metrics.trimWidth;
+  const h = metrics.trimHeight;
+  const m = safeMargin(w);
+  const forest = "#1e3328";
+  const cream = "#ece3d0";
+  const gold = "#c6a15b";
+  const title = book.title.trim() || "Untitled";
+  const size = Math.min(titleSize(w, title) + 6, 88);
+  const layers: CoverLayer[] = [
+    imageLayer({
+      id: "highland-photo",
+      name: "Highland photograph",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      src: COVER_STOCK_PHOTOS.forest,
+      sourceWidth: 1200,
+      sourceHeight: 1600,
+      fit: "cover",
+      focusY: 0.46,
+    }),
+    shapeLayer({
+      id: "highland-veil",
+      name: "Forest veil",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      shape: "rectangle",
+      fill: coverFill("#0d1e16"),
+      opacity: 0.24,
+    }),
+    shapeLayer({
+      id: "highland-shade",
+      name: "Highland shade",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      shape: "rectangle",
+      fill: { type: "gradient", color: "#0d1e16", gradient: { type: "linear", angle: 180, stops: [{ color: "#0d1e1680", position: 0 }, { color: "#0d1e1600", position: 0.38 }, { color: "#0d1e16e6", position: 1 }] } },
+    }),
+    textLayer({
+      id: "highland-kicker",
+      name: "Kicker",
+      panel: "front",
+      x: m,
+      y: round(h * 0.1),
+      width: round(w - m * 2),
+      height: 0.3,
+      text: "A NOVEL",
+      fontFamily: "sans",
+      fontSize: 7.5,
+      fontWeight: 700,
+      letterSpacing: 0.34,
+      uppercase: true,
+      color: gold,
+      effect: "soft",
+      effectColor: "#0b1912",
+    }),
+    textLayer({
+      id: "highland-title",
+      name: "Title",
+      panel: "front",
+      x: m,
+      y: round(h * 0.16),
+      width: round(w - m * 2),
+      height: round(h * 0.3),
+      text: "{{title}}",
+      fontFamily: "display",
+      fontSize: size,
+      fontWeight: 500,
+      lineHeight: 0.9,
+      letterSpacing: -0.035,
+      color: cream,
+      effect: "soft",
+      effectColor: "#07130d",
+    }),
+    textLayer({
+      id: "highland-tagline",
+      name: "Tagline",
+      panel: "front",
+      x: m,
+      y: round(h * 0.16 + h * 0.3 + 0.12),
+      width: round(w - m * 2),
+      height: 0.52,
+      text: "{{tagline}}",
+      fontFamily: "sans",
+      fontSize: 8.4,
+      fontWeight: 500,
+      letterSpacing: 0.18,
+      uppercase: true,
+      lineHeight: 1.45,
+      color: gold,
+      effect: "soft",
+      effectColor: "#07130d",
+    }),
+    lineLayer({ id: "highland-author-rule", name: "Author rule", panel: "front", x: m, y: round(h - m - 0.6), width: round(w - m * 2), height: 0.01, color: gold, opacity: 0.8 }),
+    textLayer({
+      id: "highland-author",
+      name: "Author",
+      panel: "front",
+      x: m,
+      y: round(h - m - 0.46),
+      width: round(w - m * 2),
+      height: 0.34,
+      text: "{{author}}",
+      fontFamily: "sans",
+      fontSize: 10.5,
+      fontWeight: 650,
+      letterSpacing: 0.2,
+      uppercase: true,
+      color: cream,
+    }),
+  ];
+  addPhotoBackMatter(layers, metrics, cream, shadeColor(cream, -0.14), gold, "highland", { eyebrow: "PRAISE FOR THE HIGHLANDS" });
+  layers.push(lineLayer({ id: "highland-back-rule", name: "Back rule", panel: "back", x: m, y: round(h - m - 1.72), width: round(w - m * 2), height: 0.01, color: gold, opacity: 0.55 }));
+  addBarcode(layers, metrics, m);
+  addPhotoSpine(layers, book, metrics, cream, gold, null, "highland", { rule: true, ornament: "✦" });
+  const grouped = applyTemplateGroups(layers, [
+    { id: "highland-front-art", name: "Highland photograph", layerIds: ["highland-photo", "highland-veil", "highland-shade"] },
+    { id: "highland-front-type", name: "Front typography", layerIds: ["highland-kicker", "highland-title", "highland-tagline", "highland-author-rule", "highland-author"] },
+    { id: "highland-back", name: "Back matter", layerIds: ["highland-back-rule", "highland-back-eyebrow", "highland-back-copy", "highland-back-author", "back-barcode"] },
+  ]);
+  return {
+    version: 1,
+    groups: grouped.groups,
+    palette: [forest, cream, gold],
+    templateId: "highland",
+    guides: [],
+    background: { type: "gradient", color: forest, gradient: { type: "linear", angle: 160, stops: [{ color: "#17291f", position: 0 }, { color: "#1e3328", position: 0.6 }, { color: "#102018", position: 1 }] } },
+    layers: grouped.layers,
+    showGuides: true,
+    showGrid: false,
+    showBleed: true,
+    showRulers: false,
+  };
+}
+
+function wildflowerTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics, _accent: string): BookCoverDocument {
+  const w = metrics.trimWidth;
+  const h = metrics.trimHeight;
+  const m = safeMargin(w);
+  const paper = "#f7eedf";
+  const teal = "#0f4f58";
+  const marigold = "#e3a01c";
+  const title = book.title.trim() || "Untitled";
+  const size = Math.min(titleSize(w, title) + 1, 76);
+  const cardY = round(h * 0.16);
+  const cardH = round(Math.min(3.45, h * 0.42));
+  const layers: CoverLayer[] = [
+    imageLayer({
+      id: "wildflower-photo",
+      name: "Wildflower photograph",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      src: COVER_STOCK_PHOTOS.bloom,
+      sourceWidth: 1200,
+      sourceHeight: 1600,
+      fit: "cover",
+      focusY: 0.55,
+    }),
+    shapeLayer({
+      id: "wildflower-card",
+      name: "Cream title card",
+      panel: "front",
+      x: m,
+      y: cardY,
+      width: round(w - m * 2),
+      height: cardH,
+      shape: "rectangle",
+      fill: coverFill(paper),
+      radius: 0.02,
+      opacity: 0.94,
+    }),
+    shapeLayer({
+      id: "wildflower-card-rule",
+      name: "Card rule",
+      panel: "front",
+      x: round(m + 0.22),
+      y: round(cardY + 0.2),
+      width: round(w - m * 2 - 0.44),
+      height: 0.012,
+      shape: "rectangle",
+      fill: coverFill(marigold),
+      opacity: 0.9,
+    }),
+    textLayer({
+      id: "wildflower-kicker",
+      name: "Kicker",
+      panel: "front",
+      x: round(m + 0.22),
+      y: round(cardY + 0.36),
+      width: round(w - m * 2 - 0.44),
+      height: 0.26,
+      text: "A GROWER'S COMPANION",
+      fontFamily: "sans",
+      fontSize: 6.9,
+      fontWeight: 700,
+      letterSpacing: 0.26,
+      uppercase: true,
+      color: marigold,
+    }),
+    textLayer({
+      id: "wildflower-title",
+      name: "Title",
+      panel: "front",
+      x: round(m + 0.22),
+      y: round(cardY + 0.66),
+      width: round(w - m * 2 - 0.44),
+      height: round(cardH - 1.32),
+      text: "{{title}}",
+      fontFamily: "display",
+      fontSize: size,
+      fontWeight: 500,
+      lineHeight: 0.94,
+      letterSpacing: -0.03,
+      color: teal,
+    }),
+    textLayer({
+      id: "wildflower-tagline",
+      name: "Tagline",
+      panel: "front",
+      x: round(m + 0.22),
+      y: round(cardY + cardH - 0.58),
+      width: round(w - m * 2 - 0.44),
+      height: 0.28,
+      text: "{{tagline}}",
+      fontFamily: "sans",
+      fontSize: 7.7,
+      fontWeight: 600,
+      letterSpacing: 0.14,
+      uppercase: true,
+      color: shadeColor(teal, 0.15),
+    }),
+    shapeLayer({
+      id: "wildflower-author-plate",
+      name: "Author plate",
+      panel: "front",
+      x: m,
+      y: round(h - m - 0.62),
+      width: round(w - m * 2),
+      height: 0.47,
+      shape: "rectangle",
+      fill: coverFill(teal),
+      radius: 0.015,
+      opacity: 0.9,
+    }),
+    textLayer({
+      id: "wildflower-author",
+      name: "Author",
+      panel: "front",
+      x: round(m + 0.12),
+      y: round(h - m - 0.56),
+      width: round(w - m * 2 - 0.24),
+      height: 0.34,
+      text: "{{author}}",
+      fontFamily: "sans",
+      fontSize: 9.8,
+      fontWeight: 650,
+      align: "center",
+      letterSpacing: 0.2,
+      uppercase: true,
+      color: paper,
+    }),
+  ];
+  addPhotoBackMatter(layers, metrics, teal, shadeColor(teal, 0.12), marigold, "wildflower", { eyebrow: "FROM THE GARDEN", bodyFamily: "serif" });
+  layers.push(lineLayer({ id: "wildflower-back-rule", name: "Back rule", panel: "back", x: m, y: round(h - m - 1.72), width: round(w - m * 2), height: 0.01, color: marigold, opacity: 0.55 }));
+  addBarcode(layers, metrics, m);
+  addPhotoSpine(layers, book, metrics, teal, teal, marigold, "wildflower", { rule: false, ornament: "✿" });
+  const grouped = applyTemplateGroups(layers, [
+    { id: "wildflower-front-art", name: "Wildflower photograph", layerIds: ["wildflower-photo"] },
+    { id: "wildflower-front-card", name: "Title card", layerIds: ["wildflower-card", "wildflower-card-rule", "wildflower-kicker", "wildflower-title", "wildflower-tagline"] },
+    { id: "wildflower-front-author", name: "Author plate", layerIds: ["wildflower-author-plate", "wildflower-author"] },
+    { id: "wildflower-back", name: "Back matter", layerIds: ["wildflower-back-rule", "wildflower-back-eyebrow", "wildflower-back-copy", "wildflower-back-author", "back-barcode"] },
+  ]);
+  return {
+    version: 1,
+    groups: grouped.groups,
+    palette: [paper, teal, marigold],
+    templateId: "wildflower",
+    guides: [],
+    background: { type: "solid", color: paper, gradient: coverFill(paper).gradient },
+    layers: grouped.layers,
+    showGuides: true,
+    showGrid: false,
+    showBleed: true,
+    showRulers: false,
+  };
+}
+
+function meridianTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics, _accent: string): BookCoverDocument {
+  const w = metrics.trimWidth;
+  const h = metrics.trimHeight;
+  const m = safeMargin(w);
+  const ice = "#e6edf0";
+  const navy = "#10293a";
+  const cyan = "#4c8cab";
+  const white = "#f7fbfc";
+  const title = book.title.trim() || "Untitled";
+  const size = Math.min(titleSize(w, title) + 10, 92);
+  const layers: CoverLayer[] = [
+    imageLayer({
+      id: "meridian-photo",
+      name: "Architecture photograph",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      src: COVER_STOCK_PHOTOS.stone,
+      sourceWidth: 1200,
+      sourceHeight: 1600,
+      fit: "cover",
+      focusY: 0.42,
+    }),
+    shapeLayer({
+      id: "meridian-shade",
+      name: "Meridian shade",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      shape: "rectangle",
+      fill: { type: "gradient", color: navy, gradient: { type: "linear", angle: 180, stops: [{ color: "#10293a00", position: 0.52 }, { color: "#10293ad9", position: 1 }] } },
+    }),
+    textLayer({
+      id: "meridian-kicker",
+      name: "Kicker",
+      panel: "front",
+      x: m,
+      y: round(h * 0.075),
+      width: round(w - m * 2),
+      height: 0.3,
+      text: "FORM · LIGHT · STRUCTURE",
+      fontFamily: "sans",
+      fontSize: 7.5,
+      fontWeight: 700,
+      letterSpacing: 0.3,
+      uppercase: true,
+      color: navy,
+    }),
+    textLayer({
+      id: "meridian-title",
+      name: "Title",
+      panel: "front",
+      x: m,
+      y: round(h * 0.12),
+      width: round(w - m * 2),
+      height: round(h * 0.36),
+      text: "{{title}}",
+      fontFamily: "sans",
+      fontSize: size,
+      fontWeight: 700,
+      lineHeight: 0.86,
+      letterSpacing: -0.045,
+      uppercase: true,
+      color: navy,
+    }),
+    textLayer({
+      id: "meridian-tagline",
+      name: "Tagline",
+      panel: "front",
+      x: m,
+      y: round(h * 0.12 + h * 0.36 + 0.12),
+      width: round(w - m * 2),
+      height: 0.5,
+      text: "{{tagline}}",
+      fontFamily: "sans",
+      fontSize: 8.2,
+      fontWeight: 550,
+      letterSpacing: 0.16,
+      uppercase: true,
+      lineHeight: 1.4,
+      color: navy,
+      opacity: 0.82,
+    }),
+    lineLayer({ id: "meridian-author-rule", name: "Author rule", panel: "front", x: m, y: round(h - m - 0.6), width: round(w - m * 2), height: 0.014, color: white, opacity: 0.85 }),
+    textLayer({
+      id: "meridian-author",
+      name: "Author",
+      panel: "front",
+      x: m,
+      y: round(h - m - 0.46),
+      width: round(w - m * 2),
+      height: 0.34,
+      text: "{{author}}",
+      fontFamily: "sans",
+      fontSize: 10.5,
+      fontWeight: 650,
+      letterSpacing: 0.2,
+      uppercase: true,
+      color: white,
+    }),
+    shapeLayer({
+      id: "meridian-back-panel",
+      name: "Back navy panel",
+      panel: "back",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      shape: "rectangle",
+      fill: coverFill(navy),
+    }),
+    lineLayer({ id: "meridian-back-top-rule", name: "Back top rule", panel: "back", x: m, y: round(m), width: round(w - m * 2), height: 0.014, color: cyan }),
+  ];
+  addPhotoBackMatter(layers, metrics, white, shadeColor(white, -0.16), cyan, "meridian", { eyebrow: "BUILT TO BE READ" });
+  layers.push(lineLayer({ id: "meridian-back-rule", name: "Back rule", panel: "back", x: m, y: round(h - m - 1.72), width: round(w - m * 2), height: 0.01, color: cyan, opacity: 0.55 }));
+  addBarcode(layers, metrics, m);
+  addPhotoSpine(layers, book, metrics, white, cyan, navy, "meridian", { rule: true, ornament: "✦" });
+  const grouped = applyTemplateGroups(layers, [
+    { id: "meridian-front-art", name: "Architecture photograph", layerIds: ["meridian-photo", "meridian-shade"] },
+    { id: "meridian-front-type", name: "Front typography", layerIds: ["meridian-kicker", "meridian-title", "meridian-tagline", "meridian-author-rule", "meridian-author"] },
+    { id: "meridian-back", name: "Back matter", layerIds: ["meridian-back-panel", "meridian-back-top-rule", "meridian-back-rule", "meridian-back-eyebrow", "meridian-back-copy", "meridian-back-author", "back-barcode"] },
+  ]);
+  return {
+    version: 1,
+    groups: grouped.groups,
+    palette: [ice, navy, cyan],
+    templateId: "meridian",
+    guides: [],
+    background: { type: "solid", color: ice, gradient: coverFill(ice).gradient },
+    layers: grouped.layers,
+    showGuides: true,
+    showGrid: false,
+    showBleed: true,
+    showRulers: false,
+  };
+}
+
+function afterhoursTemplate(book: Book, _cover: BookCoverDesign, metrics: CoverMetrics, _accent: string): BookCoverDocument {
+  const w = metrics.trimWidth;
+  const h = metrics.trimHeight;
+  const m = safeMargin(w);
+  const midnight = "#0b1119";
+  const cream = "#f2e8db";
+  const neon = "#d97757";
+  const cyan = "#63b7c6";
+  const title = book.title.trim() || "Untitled";
+  const size = Math.min(titleSize(w, title) + 7, 90);
+  const layers: CoverLayer[] = [
+    imageLayer({
+      id: "afterhours-photo",
+      name: "City at night",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      src: COVER_STOCK_PHOTOS.night,
+      sourceWidth: 1200,
+      sourceHeight: 1600,
+      fit: "cover",
+      focusY: 0.5,
+    }),
+    shapeLayer({
+      id: "afterhours-veil",
+      name: "Night veil",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      shape: "rectangle",
+      fill: coverFill("#060a10"),
+      opacity: 0.3,
+    }),
+    shapeLayer({
+      id: "afterhours-shade",
+      name: "Night shade",
+      panel: "front",
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      shape: "rectangle",
+      fill: { type: "gradient", color: "#060a10", gradient: { type: "linear", angle: 180, stops: [{ color: "#060a1080", position: 0 }, { color: "#060a1000", position: 0.38 }, { color: "#060a10f2", position: 1 }] } },
+    }),
+    textLayer({
+      id: "afterhours-kicker",
+      name: "Kicker",
+      panel: "front",
+      x: m,
+      y: round(h * 0.1),
+      width: round(w - m * 2),
+      height: 0.3,
+      text: "A NOVEL OF THE NIGHT",
+      fontFamily: "sans",
+      fontSize: 7.4,
+      fontWeight: 700,
+      letterSpacing: 0.32,
+      uppercase: true,
+      color: cyan,
+      effect: "soft",
+      effectColor: "#02060a",
+    }),
+    textLayer({
+      id: "afterhours-title",
+      name: "Title",
+      panel: "front",
+      x: m,
+      y: round(h * 0.16),
+      width: round(w - m * 2),
+      height: round(h * 0.3),
+      text: "{{title}}",
+      fontFamily: "display",
+      fontSize: size,
+      fontWeight: 600,
+      lineHeight: 0.88,
+      letterSpacing: -0.035,
+      color: cream,
+      effect: "soft",
+      effectColor: "#02060a",
+    }),
+    textLayer({
+      id: "afterhours-tagline",
+      name: "Tagline",
+      panel: "front",
+      x: m,
+      y: round(h * 0.16 + h * 0.3 + 0.14),
+      width: round(w - m * 2),
+      height: 0.52,
+      text: "{{tagline}}",
+      fontFamily: "sans",
+      fontSize: 8.4,
+      fontWeight: 550,
+      letterSpacing: 0.18,
+      uppercase: true,
+      lineHeight: 1.42,
+      color: neon,
+      effect: "soft",
+      effectColor: "#02060a",
+    }),
+    lineLayer({ id: "afterhours-author-rule", name: "Author rule", panel: "front", x: m, y: round(h - m - 0.6), width: round(w - m * 2), height: 0.012, color: neon, opacity: 0.85 }),
+    textLayer({
+      id: "afterhours-author",
+      name: "Author",
+      panel: "front",
+      x: m,
+      y: round(h - m - 0.46),
+      width: round(w - m * 2),
+      height: 0.34,
+      text: "{{author}}",
+      fontFamily: "sans",
+      fontSize: 10.5,
+      fontWeight: 650,
+      letterSpacing: 0.2,
+      uppercase: true,
+      color: cream,
+    }),
+  ];
+  addPhotoBackMatter(layers, metrics, cream, shadeColor(cream, -0.15), cyan, "afterhours", { eyebrow: "THE CITY REMEMBERS" });
+  layers.push(lineLayer({ id: "afterhours-back-rule", name: "Back rule", panel: "back", x: m, y: round(h - m - 1.72), width: round(w - m * 2), height: 0.01, color: neon, opacity: 0.55 }));
+  addBarcode(layers, metrics, m);
+  addPhotoSpine(layers, book, metrics, cream, neon, midnight, "afterhours", { rule: true, ornament: "✦" });
+  const grouped = applyTemplateGroups(layers, [
+    { id: "afterhours-front-art", name: "Night photograph", layerIds: ["afterhours-photo", "afterhours-veil", "afterhours-shade"] },
+    { id: "afterhours-front-type", name: "Front typography", layerIds: ["afterhours-kicker", "afterhours-title", "afterhours-tagline", "afterhours-author-rule", "afterhours-author"] },
+    { id: "afterhours-back", name: "Back matter", layerIds: ["afterhours-back-rule", "afterhours-back-eyebrow", "afterhours-back-copy", "afterhours-back-author", "back-barcode"] },
+  ]);
+  return {
+    version: 1,
+    groups: grouped.groups,
+    palette: [midnight, cream, neon],
+    templateId: "afterhours",
+    guides: [],
+    background: { type: "gradient", color: midnight, gradient: { type: "linear", angle: 160, stops: [{ color: "#070b11", position: 0 }, { color: "#101722", position: 0.6 }, { color: "#070b11", position: 1 }] } },
+    layers: grouped.layers,
+    showGuides: true,
+    showGrid: false,
+    showBleed: true,
+    showRulers: false,
+  };
+}
+
 export function createCoverDocument(templateId: string, book: Book, cover: BookCoverDesign, options: CoverDocSeedOptions = {}): BookCoverDocument {
   const effectiveCover = options.pageCount ? { ...cover, pageCount: options.pageCount } : cover;
   const metrics = coverMetrics(book.trim_size, effectiveCover);
@@ -2415,6 +3415,12 @@ export function createCoverDocument(templateId: string, book: Book, cover: BookC
   if (templateId === "minimal") return minimalTemplate(book, effectiveCover, metrics, accent);
   if (templateId === "heritage") return heritageTemplate(book, effectiveCover, metrics, accent);
   if (templateId === "bold") return boldTemplate(book, effectiveCover, metrics, accent);
+  if (templateId === "tidewater") return tidewaterTemplate(book, effectiveCover, metrics, accent);
+  if (templateId === "dunes") return dunesTemplate(book, effectiveCover, metrics, accent);
+  if (templateId === "highland") return highlandTemplate(book, effectiveCover, metrics, accent);
+  if (templateId === "wildflower") return wildflowerTemplate(book, effectiveCover, metrics, accent);
+  if (templateId === "meridian") return meridianTemplate(book, effectiveCover, metrics, accent);
+  if (templateId === "afterhours") return afterhoursTemplate(book, effectiveCover, metrics, accent);
   return atelierTemplate(book, effectiveCover, metrics, accent);
 }
 
@@ -2584,7 +3590,10 @@ function coverLayerContentHtml(book: Book, cover: BookCoverDesign, layer: CoverL
     const tint = layer.tintStrength > 0
       ? `<span class="cover-doc-image-tint" style="position:absolute;inset:0;background:${escapeHtml(layer.tint)};opacity:${layer.tintStrength};mix-blend-mode:color;pointer-events:none"></span>`
       : "";
-    return `<div class="cover-doc-image-frame" style="position:relative;width:100%;height:100%;overflow:hidden;isolation:isolate;border-radius:${layer.radius}in;${coverImageMaskCss(layer.mask)}"><img class="cover-doc-image" src="${escapeHtml(layer.src)}" alt="" draggable="false" style="width:100%;height:100%;object-fit:${layer.fit};object-position:${Math.round(layer.focusX * 100)}% ${Math.round(layer.focusY * 100)}%;${filter ? `filter:${filter};` : ""}transform:scale(${layer.flipX ? -1 : 1},${layer.flipY ? -1 : 1})" />${tint}</div>`;
+    const eraseMask = layer.eraseMask
+      ? `-webkit-mask-image:url('${layer.eraseMask}');-webkit-mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-image:url('${layer.eraseMask}');mask-size:100% 100%;mask-repeat:no-repeat;`
+      : "";
+    return `<div class="cover-doc-image-frame" style="position:relative;width:100%;height:100%;overflow:hidden;isolation:isolate;border-radius:${layer.radius}in;${coverImageMaskCss(layer.mask)}${eraseMask}"><img class="cover-doc-image" src="${escapeHtml(layer.src)}" alt="" draggable="false" style="width:100%;height:100%;object-fit:${layer.fit};object-position:${Math.round(layer.focusX * 100)}% ${Math.round(layer.focusY * 100)}%;${filter ? `filter:${filter};` : ""}transform:scale(${layer.flipX ? -1 : 1},${layer.flipY ? -1 : 1})" />${tint}</div>`;
   }
   if (layer.type === "shape") {
     return shapeSvgMarkup(layer, `${idPrefix}-${layer.id}`);
@@ -3247,7 +4256,9 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   addPatternSource(cover.doc.background);
   for (const layer of cover.doc.layers) if (layer.type === "shape") addPatternSource(layer.fill);
   const imageSources = cover.doc.layers
-    .flatMap((layer) => layer.type === "image" && layer.src ? [layer.src] : layer.type === "artwork" ? [coverArtworkDataUrl(layer)] : []);
+    .flatMap((layer) => layer.type === "image"
+      ? [layer.src, layer.eraseMask].filter(Boolean)
+      : layer.type === "artwork" ? [coverArtworkDataUrl(layer)] : []);
   const patternList = [...patternSources];
   const [images, patternImages] = await Promise.all([
     Promise.all(imageSources.map(loadImage)),
@@ -3325,16 +4336,18 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
     const effectFilter = coverLayerEffectCanvas(layer, dpi);
     const imageGrade = layer.type === "image" ? coverImageFilterCanvas(layer, dpi) : "";
     const masked = coverLayerFadeActive(layer);
+    const eraseMask = layer.type === "image" && layer.eraseMask ? imageBySource.get(layer.eraseMask) : null;
+    const isolated = masked || Boolean(eraseMask);
     ctx.save();
     ctx.globalAlpha = layer.opacity;
     ctx.globalCompositeOperation = layer.blendMode === "normal" ? "source-over" : layer.blendMode as GlobalCompositeOperation;
-    if (!masked && effectFilter) ctx.filter = effectFilter;
+    if (!isolated && effectFilter) ctx.filter = effectFilter;
     const centerX = spread.x + spread.width / 2;
     const centerY = spread.y + spread.height / 2;
     ctx.translate(centerX, centerY);
     ctx.rotate((layer.rotation * Math.PI) / 180);
     ctx.translate(-spread.width / 2, -spread.height / 2);
-    if (masked) {
+    if (isolated) {
       const pixelWidth = Math.max(1, Math.round(spread.width * dpi));
       const pixelHeight = Math.max(1, Math.round(spread.height * dpi));
       const layerCanvas = document.createElement("canvas");
@@ -3344,6 +4357,12 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
       if (layerCtx) {
         layerCtx.scale(pixelWidth / spread.width, pixelHeight / spread.height);
         drawLayerContent(layerCtx, layer, spread, imageGrade);
+        if (eraseMask) {
+          layerCtx.save();
+          layerCtx.globalCompositeOperation = "destination-in";
+          layerCtx.drawImage(eraseMask, 0, 0, spread.width, spread.height);
+          layerCtx.restore();
+        }
         applyLayerFadeCanvas(layerCtx, layer.fade, spread.width, spread.height);
         if (effectFilter) ctx.filter = effectFilter;
         ctx.drawImage(layerCanvas, 0, 0, spread.width, spread.height);
