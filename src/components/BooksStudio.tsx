@@ -546,7 +546,8 @@ export function BooksStudio() {
   const selectBook = useBooks((state) => state.selectBook);
   const selectChapter = useBooks((state) => state.selectChapter);
   const sidebarCollapsed = useWorkspace((state) => state.booksSidebarCollapsed);
-  const toggleBooksSidebar = useWorkspace((state) => state.toggleBooksSidebar);
+  const sidebarAutoCollapsed = useWorkspace((state) => state.booksSidebarAutoCollapsed);
+  const setSidebarAutoCollapsed = useWorkspace((state) => state.setBooksSidebarAutoCollapsed);
   const bookTabs = useBookTabs((state) => state.tabs);
   const activeBookTabId = useBookTabs((state) => state.activeId);
   const [screen, setScreen] = useState<StudioScreen>("library");
@@ -570,11 +571,14 @@ export function BooksStudio() {
   useEffect(() => { void init(); }, [init]);
 
   useEffect(() => {
-    if (screen !== "cover" || sidebarCollapsed) return;
+    if (screen !== "cover") {
+      setSidebarAutoCollapsed(false);
+      return;
+    }
     const available = window.screen?.availWidth ?? window.innerWidth;
     const fullWidthThreshold = Math.min(1440, Math.max(1024, available - 80));
-    if (window.innerWidth < fullWidthThreshold) toggleBooksSidebar();
-    // Only react to entering the cover editor, not manual sidebar changes while editing.
+    setSidebarAutoCollapsed(!sidebarCollapsed && window.innerWidth < fullWidthThreshold);
+    // Only react to entering or leaving the cover editor, not manual sidebar changes while editing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
 
@@ -720,7 +724,7 @@ export function BooksStudio() {
   if (!loaded) return <div className="books-loading" role="status"><div className="spinner" /><strong>Opening Books Studio</strong><span>Preparing your local manuscript library…</span></div>;
   if (loadError) return <div className="books-loading books-load-error" role="alert"><BookOpen size={26} /><strong>Books Studio could not open</strong><span>{loadError}</span><button className="books-primary-action" onClick={() => void init()}>Try again</button></div>;
   return (
-    <div className={`books-studio ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${editorFocusMode ? "editor-focus-mode" : ""}`}>
+    <div className={`books-studio ${sidebarCollapsed || sidebarAutoCollapsed ? "sidebar-collapsed" : ""} ${editorFocusMode ? "editor-focus-mode" : ""}`}>
       <aside className="books-sidebar">
         <div className="books-sidebar-workspace"><WorkspaceSwitcher /></div>
         <button className="books-new-button" onClick={() => void newBook()} disabled={creatingBook}><Plus size={15} /> {creatingBook ? "Creating…" : "New manuscript"}</button>

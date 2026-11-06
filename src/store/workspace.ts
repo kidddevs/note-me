@@ -7,10 +7,12 @@ interface WorkspaceState {
   mode: WorkspaceMode;
   ready: boolean;
   booksSidebarCollapsed: boolean;
+  booksSidebarAutoCollapsed: boolean;
   init: () => Promise<void>;
   setMode: (mode: WorkspaceMode) => void;
   toggle: () => void;
   toggleBooksSidebar: () => void;
+  setBooksSidebarAutoCollapsed: (collapsed: boolean) => void;
 }
 
 const WORKSPACE_KEY = "ui.workspace";
@@ -20,6 +22,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   mode: "notes",
   ready: false,
   booksSidebarCollapsed: false,
+  booksSidebarAutoCollapsed: false,
   init: async () => {
     const [savedWorkspace, savedBooksSidebar] = await Promise.all([
       api.getSetting(WORKSPACE_KEY).catch(() => null),
@@ -39,6 +42,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   toggleBooksSidebar: () => set((state) => {
     const booksSidebarCollapsed = !state.booksSidebarCollapsed;
     api.setSetting(BOOKS_SIDEBAR_KEY, booksSidebarCollapsed ? "1" : "0").catch(() => {});
-    return { booksSidebarCollapsed };
+    return { booksSidebarCollapsed, booksSidebarAutoCollapsed: false };
   }),
+  setBooksSidebarAutoCollapsed: (booksSidebarAutoCollapsed) => set({ booksSidebarAutoCollapsed }),
 }));

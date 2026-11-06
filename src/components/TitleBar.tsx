@@ -237,8 +237,11 @@ export function TitleBar() {
   const workspace = useWorkspace((s) => s.mode);
   const toggleWorkspace = useWorkspace((s) => s.toggle);
   const booksSidebarCollapsed = useWorkspace((s) => s.booksSidebarCollapsed);
+  const booksSidebarAutoCollapsed = useWorkspace((s) => s.booksSidebarAutoCollapsed);
   const toggleBooksSidebar = useWorkspace((s) => s.toggleBooksSidebar);
-  const sidebarIsCollapsed = workspace === "notes" ? sidebarCollapsed : booksSidebarCollapsed;
+  const setBooksSidebarAutoCollapsed = useWorkspace((s) => s.setBooksSidebarAutoCollapsed);
+  const booksSidebarIsCollapsed = booksSidebarCollapsed || booksSidebarAutoCollapsed;
+  const sidebarIsCollapsed = workspace === "notes" ? sidebarCollapsed : booksSidebarIsCollapsed;
   const [maximized, setMaximized] = useState(false);
   const [creatingBook, setCreatingBook] = useState(false);
   const first = useRef(true);
@@ -472,7 +475,10 @@ export function TitleBar() {
                 : "Hide Books sidebar"
           }
           aria-pressed={sidebarIsCollapsed}
-          onClick={workspace === "notes" ? toggleSidebar : toggleBooksSidebar}
+          onClick={workspace === "notes" ? toggleSidebar : () => {
+            if (booksSidebarAutoCollapsed) setBooksSidebarAutoCollapsed(false);
+            else toggleBooksSidebar();
+          }}
         >
           <PanelLeft size={14} />
         </button>
