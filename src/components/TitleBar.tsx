@@ -235,7 +235,6 @@ export function TitleBar() {
   const createNote = useNotes((s) => s.createNote);
   const notes = useNotes((s) => s.notes);
   const workspace = useWorkspace((s) => s.mode);
-  const toggleWorkspace = useWorkspace((s) => s.toggle);
   const booksSidebarCollapsed = useWorkspace((s) => s.booksSidebarCollapsed);
   const booksSidebarAutoCollapsed = useWorkspace((s) => s.booksSidebarAutoCollapsed);
   const toggleBooksSidebar = useWorkspace((s) => s.toggleBooksSidebar);
@@ -356,14 +355,6 @@ export function TitleBar() {
       }}
     >
       <div className="titlebar-left" data-tauri-drag-region>
-        <button
-          className="icon-btn workspace-switcher"
-          title={workspace === "notes" ? "Switch to Books Studio" : "Switch to Notes"}
-          aria-label={workspace === "notes" ? "Switch to Books Studio" : "Switch to Notes"}
-          onClick={toggleWorkspace}
-        >
-          {workspace === "notes" ? <BookOpen size={15} /> : <StickyNote size={15} />}
-        </button>
         {workspace === "notes" ? (
           <button
             className="icon-btn"
@@ -402,17 +393,16 @@ export function TitleBar() {
         ) : (
           bookTabs.map((t) => <BookTabComponent key={t.id} tab={t} />)
         )}
-        <button
-          className="tab-new"
-          title="New Tab (⌘T)"
-          aria-label="New tab"
-          onClick={() => {
-            if (workspace === "notes") openHome();
-            else useBookTabs.getState().openLibrary();
-          }}
-        >
-          <Plus size={14} />
-        </button>
+        {workspace === "books" && (
+          <button
+            className="tab-new"
+            title="New Tab (⌘T)"
+            aria-label="New tab"
+            onClick={() => useBookTabs.getState().openLibrary()}
+          >
+            <Plus size={14} />
+          </button>
+        )}
       </div>
 
       <div className="win-controls" data-tauri-drag-region>
