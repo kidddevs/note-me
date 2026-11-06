@@ -280,7 +280,7 @@ export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter
                   >
                     <GripVertical className="books-section-grip" size={13} aria-hidden="true" />
                     <span className="books-section-index">{String(index + 1).padStart(2, "0")}</span>
-                    <span className="books-section-name"><strong>{chapter.title || "Untitled section"}</strong><small>{chapterKindLabel(chapter.chapter_kind)} · {wordCount(chapter.content).toLocaleString()} words</small>{hasSectionLayoutOverride(chapter.layout_json) && <span className="books-section-page-badge" title="This section uses a custom page master"><LayoutTemplate size={9} /> Page</span>}</span>
+                    <span className="books-section-name"><span className="books-section-title-line"><strong>{chapter.title || "Untitled section"}</strong>{hasSectionLayoutOverride(chapter.layout_json) && <span className="books-section-page-indicator" title="This section uses a custom page master"><LayoutTemplate size={11} /></span>}</span><small>{chapterKindLabel(chapter.chapter_kind)} · {wordCount(chapter.content).toLocaleString()} words</small></span>
                   </button>
                   <button className={`books-section-toc-toggle ${chapter.toc_include ? "included" : "excluded"}`} onClick={() => void toggleContents(chapter)} title={chapter.toc_include ? "Included in contents" : "Excluded from contents"} aria-label={chapter.toc_include ? "Exclude section from contents" : "Include section in contents"}>
                     {chapter.toc_include ? <Eye size={13} /> : <EyeOff size={13} />}

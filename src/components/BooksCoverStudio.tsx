@@ -1906,9 +1906,9 @@ export function CoverScreen({
         <header className="cover-designer-bar">
           <div className="cover-bar-left">
             <button type="button" className="cover-icon-button" onClick={() => onNavigate?.("library")} title="Back to library" aria-label="Back to library"><ChevronLeft size={16} /></button>
-            <span className="cover-brand-mark"><CameraMark /></span>
+            <span className="cover-brand-mark"><CoverDesignerMark /></span>
             <div className="cover-bar-title">
-              <span>Cover studio</span>
+              <span>Cover designer</span>
               <strong>{book.title || "Untitled manuscript"}</strong>
             </div>
             <span className={`books-save-state cover-save-state ${saveState}`} aria-live="polite">{saveState === "saving" ? "Saving…" : saveState === "dirty" ? "Unsaved" : "Saved"}</span>
@@ -1933,11 +1933,16 @@ export function CoverScreen({
           </div>
           <div className="cover-bar-right">
             <span className="cover-dimension-chip">{formatDimension(metrics.fullWidth)} × {formatDimension(metrics.fullHeight)} in</span>
-            <button type="button" className="cover-icon-button" title="Undo" aria-label="Undo" disabled={history.length === 0} onClick={undo}><Undo2 size={15} /></button>
-            <button type="button" className="cover-icon-button" title="Redo" aria-label="Redo" disabled={future.length === 0} onClick={redo}><Redo2 size={15} /></button>
-            <button type="button" className="cover-outline-button" onClick={() => { setTemplateOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><LayoutTemplate size={14} /><span>Templates</span></button>
-            <button type="button" className="cover-icon-button cover-save-template-button" title="Save current design as a template" aria-label="Save current design as a template" onClick={() => { setSaveTemplateOpen(true); setTemplateOpen(false); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><BookmarkPlus size={15} /></button>
-            <button type="button" className="cover-icon-button cover-print-button" title="Print cover" aria-label="Print cover" onClick={printCover}><Printer size={15} /></button>
+            <div className="cover-bar-history">
+              <button type="button" className="cover-icon-button" title="Undo" aria-label="Undo" disabled={history.length === 0} onClick={undo}><Undo2 size={15} /></button>
+              <button type="button" className="cover-icon-button" title="Redo" aria-label="Redo" disabled={future.length === 0} onClick={redo}><Redo2 size={15} /></button>
+            </div>
+            <span className="cover-bar-divider cover-bar-action-divider" />
+            <div className="cover-header-actions" role="group" aria-label="Cover actions">
+              <button type="button" className="cover-outline-button" onClick={() => { setTemplateOpen(true); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><LayoutTemplate size={14} /><span>Templates</span></button>
+              <button type="button" className="cover-icon-button cover-save-template-button" title="Save current design as a template" aria-label="Save current design as a template" onClick={() => { setSaveTemplateOpen(true); setTemplateOpen(false); setDownloadOpen(false); setSymbolOpen(false); setArtworkOpen(false); }}><BookmarkPlus size={15} /></button>
+              <button type="button" className="cover-icon-button cover-print-button" title="Print cover" aria-label="Print cover" onClick={printCover}><Printer size={15} /></button>
+            </div>
             <div className="cover-download-wrap">
               <button type="button" className="cover-primary-button" onClick={() => { setDownloadOpen((value) => !value); setSymbolOpen(false); setArtworkOpen(false); }} disabled={Boolean(busyDownload)}>
                 {busyDownload ? <span className="cover-spinner" /> : <Download size={14} />}<span>{busyDownload ? "Rendering…" : "Download"}</span><ChevronDown size={13} />
@@ -2434,8 +2439,8 @@ function BookMockup({ book, cover, format, onFormat, onClose }: { book: Book; co
 
 /* ========================================================================== */
 
-function CameraMark() {
-  return <span className="cover-camera-mark"><span /><span /><i /></span>;
+function CoverDesignerMark() {
+  return <span className="cover-designer-mark"><i /></span>;
 }
 
 function LayersIcon() {

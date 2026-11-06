@@ -50,6 +50,7 @@ import { CoverScreen } from "./BooksCoverStudio";
 import { OutlineScreen, SectionsRail } from "./BooksStudioOutline";
 import { ExportScreen, PrintBook } from "./BooksStudioExport";
 import { SettingsScreen } from "./BooksStudioSettings";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 export type StudioScreen = "library" | "manuscript" | "cover" | "outline" | "settings" | "export";
 export type ExportFormat = BookExportFormat;
@@ -281,7 +282,7 @@ function ScreenNav({ screen, hasBook, onChange }: { screen: StudioScreen; hasBoo
   const items: { id: StudioScreen; label: string; icon: typeof Library; shortcut: string }[] = [
     { id: "library", label: "Library", icon: Library, shortcut: `${modifier}1` },
     { id: "manuscript", label: "Manuscript", icon: NotebookPen, shortcut: `${modifier}2` },
-    { id: "cover", label: "Cover studio", icon: Camera, shortcut: `${modifier}6` },
+    { id: "cover", label: "Cover designer", icon: Camera, shortcut: `${modifier}6` },
     { id: "outline", label: "Outline", icon: LayoutList, shortcut: `${modifier}3` },
     { id: "settings", label: "Book settings", icon: Settings2, shortcut: `${modifier}4` },
     { id: "export", label: "Export studio", icon: Download, shortcut: `${modifier}5` },
@@ -545,6 +546,7 @@ export function BooksStudio() {
   const selectBook = useBooks((state) => state.selectBook);
   const selectChapter = useBooks((state) => state.selectChapter);
   const sidebarCollapsed = useWorkspace((state) => state.booksSidebarCollapsed);
+  const toggleBooksSidebar = useWorkspace((state) => state.toggleBooksSidebar);
   const bookTabs = useBookTabs((state) => state.tabs);
   const activeBookTabId = useBookTabs((state) => state.activeId);
   const [screen, setScreen] = useState<StudioScreen>("library");
@@ -566,6 +568,15 @@ export function BooksStudio() {
   );
 
   useEffect(() => { void init(); }, [init]);
+
+  useEffect(() => {
+    if (screen !== "cover" || sidebarCollapsed) return;
+    const available = window.screen?.availWidth ?? window.innerWidth;
+    const fullWidthThreshold = Math.min(1440, Math.max(1024, available - 80));
+    if (window.innerWidth < fullWidthThreshold) toggleBooksSidebar();
+    // Only react to entering the cover editor, not manual sidebar changes while editing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -711,7 +722,7 @@ export function BooksStudio() {
   return (
     <div className={`books-studio ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${editorFocusMode ? "editor-focus-mode" : ""}`}>
       <aside className="books-sidebar">
-        <div className="books-sidebar-brand"><div className="books-brand-mark"><BookOpen size={17} /></div><div><strong>Books Studio</strong><span>Long-form writing</span></div></div>
+        <div className="books-sidebar-workspace"><WorkspaceSwitcher /></div>
         <button className="books-new-button" onClick={() => void newBook()} disabled={creatingBook}><Plus size={15} /> {creatingBook ? "Creating…" : "New manuscript"}</button>
         <ScreenNav screen={screen} hasBook={Boolean(selectedBook)} onChange={switchScreen} />
         <div className="books-sidebar-divider" />

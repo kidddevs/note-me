@@ -230,6 +230,7 @@ export function TitleBar() {
   const theme = useTheme((s) => s.theme);
   const cycleTheme = useTheme((s) => s.cycleTheme);
   const toggleSidebar = useTheme((s) => s.toggleSidebar);
+  const sidebarCollapsed = useTheme((s) => s.sidebarCollapsed);
   const toggleClipboardPanel = useNotes((s) => s.toggleClipboardPanel);
   const createNote = useNotes((s) => s.createNote);
   const notes = useNotes((s) => s.notes);
@@ -237,6 +238,7 @@ export function TitleBar() {
   const toggleWorkspace = useWorkspace((s) => s.toggle);
   const booksSidebarCollapsed = useWorkspace((s) => s.booksSidebarCollapsed);
   const toggleBooksSidebar = useWorkspace((s) => s.toggleBooksSidebar);
+  const sidebarIsCollapsed = workspace === "notes" ? sidebarCollapsed : booksSidebarCollapsed;
   const [maximized, setMaximized] = useState(false);
   const [creatingBook, setCreatingBook] = useState(false);
   const first = useRef(true);
@@ -454,21 +456,22 @@ export function TitleBar() {
           <Clipboard size={14} />
         </button>
         <button
-          className="icon-btn"
+          className={`icon-btn sidebar-toggle-indicator ${sidebarIsCollapsed ? "is-collapsed" : ""}`}
           title={
             workspace === "notes"
-              ? "Toggle Sidebar (⌘⌃S)"
-              : booksSidebarCollapsed
+              ? sidebarIsCollapsed ? "Show Sidebar (⌘⌃S)" : "Hide Sidebar (⌘⌃S)"
+              : sidebarIsCollapsed
                 ? "Show Books sidebar"
                 : "Hide Books sidebar"
           }
           aria-label={
             workspace === "notes"
-              ? "Toggle sidebar"
-              : booksSidebarCollapsed
+              ? sidebarIsCollapsed ? "Show sidebar" : "Hide sidebar"
+              : sidebarIsCollapsed
                 ? "Show Books sidebar"
                 : "Hide Books sidebar"
           }
+          aria-pressed={sidebarIsCollapsed}
           onClick={workspace === "notes" ? toggleSidebar : toggleBooksSidebar}
         >
           <PanelLeft size={14} />

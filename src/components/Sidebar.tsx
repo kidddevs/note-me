@@ -7,24 +7,21 @@ import {
   Inbox,
   ListChecks,
   Plus,
-  Search,
   Settings,
   Star,
   Trash2,
-  X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useNotes } from "../store/notes";
 import { useTabs } from "../store/tabs";
 import type { SidebarSelection } from "../lib/types";
 import { CategoryModal } from "./Modals";
 import { notify } from "../store/toast";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const selection = useNotes((s) => s.selection);
   const setSelection = useNotes((s) => s.setSelection);
-  const searchQuery = useNotes((s) => s.searchQuery);
-  const setSearchQuery = useNotes((s) => s.setSearchQuery);
   const categories = useNotes((s) => s.categories);
   const tags = useNotes((s) => s.tags);
   const stats = useNotes((s) => s.stats);
@@ -36,21 +33,10 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const tasks = useNotes((s) => s.tasks);
   const [catModal, setCatModal] = useState(false);
   const [editCat, setEditCat] = useState<{ id: number; name: string; color: string; icon: string } | null>(null);
-  const searchTimer = useRef<number | null>(null);
   const [openSections, setOpenSections] = useState({ categories: true, tags: true });
   const toggleSection = (key: "categories" | "tags") =>
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   const openTaskCount = tasks.filter((t) => !t.done).length;
-
-  const onSearchInput = (q: string) => {
-    setSearchQuery(q);
-    if (searchTimer.current) window.clearTimeout(searchTimer.current);
-    searchTimer.current = window.setTimeout(() => {
-      if (q.trim()) {
-        openView({ kind: "search", query: q.trim() }, `Search: ${q.trim()}`);
-      }
-    }, 350);
-  };
 
   const select = (sel: SidebarSelection, title: string) => {
     setSelection(sel);
@@ -78,29 +64,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
 
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
-      <div className="sidebar-search">
-        <div className="search-box">
-          <Search size={13} style={{ flexShrink: 0 }} />
-          <input
-            placeholder="Search notes…"
-            value={searchQuery}
-            onChange={(e) => onSearchInput(e.target.value)}
-            spellCheck={false}
-          />
-          {searchQuery && (
-            <button
-              className="icon-btn"
-              style={{ width: 18, height: 18 }}
-              title="Clear search"
-              onClick={() => setSearchQuery("")}
-            >
-              <X size={11} />
-            </button>
-          )}
-          <kbd>⌘K</kbd>
-        </div>
-      </div>
-
+      <div className="sidebar-workspace"><WorkspaceSwitcher /></div>
       <div className="sidebar-scroll">
         <div className="nav-section">Library</div>
         <button
