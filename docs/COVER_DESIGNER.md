@@ -4,6 +4,10 @@ The cover editor lives in Books Studio. A book's `layout_json` contains
 `cover.doc`; the normal book update API persists it in SQLite. Keep all editor,
 template, print, and digital-export paths on this shared document.
 
+The image tool now opens the shared searchable [studio image library](STUDIO_IMAGES.md),
+which also serves manuscript artwork. That guide covers source metadata, favorites,
+capacity without eviction, save-source controls and production image credits.
+
 ## Source map
 
 | File | Responsibility |
@@ -178,9 +182,11 @@ for QA; importing the page bootstrap again would mount another React root.
 History and image-library utilities also use browser IndexedDB. Use a disposable
 browser profile for QA; do not clear another user's library or storage.
 
-The fixture intentionally supplies only cover interactions. It does not prove
-native navigation, SQLite persistence, or native save dialogs. Test those through
-the Tauri app when changing their contracts.
+The fixture includes real cover and manuscript editors with a development
+navigation strip. Chapter `-702` is stored alongside book `-701` in the isolated
+preview store; `?screen=manuscript` opens the page canvas. It does not prove native
+navigation, SQLite persistence, checkpoint behavior or native save dialogs. Test
+those through the Tauri app when changing their contracts.
 
 ## Validation checklist
 

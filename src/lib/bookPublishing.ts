@@ -1,4 +1,5 @@
 import type { Book, BookInput, Chapter, ChapterKind } from "./types";
+import type { CoverImageAsset, CoverImageInput } from "./bookImageLibrary";
 import { chapterGroup, chapterIsOpeningPage, chapterKindLabel } from "./chapterKinds";
 import {
   DEFAULT_BOOK_TYPOGRAPHY,
@@ -296,6 +297,12 @@ export interface ImagePresentation {
   shadow?: "none" | "soft" | "medium" | "strong";
   opacity?: number;
   rotation?: number;
+  focusX?: number;
+  focusY?: number;
+  sourceWidth?: number;
+  sourceHeight?: number;
+  credit?: string;
+  license?: string;
 }
 
 export interface RichPresentation {
@@ -411,6 +418,10 @@ function parseImageAttributes(value?: string): ImagePresentation {
       if (/^#[0-9a-f]{3,8}$/i.test(decoded)) result.backgroundColor = decoded;
     }
     if (key === "caption" && raw) result.caption = decodeAttribute(raw).slice(0, 240);
+    if ((key === "fx" || key === "fy") && raw && Number.isFinite(Number(raw))) result[key === "fx" ? "focusX" : "focusY"] = Math.max(0, Math.min(1, Number(raw)));
+    if ((key === "sw" || key === "sh") && raw && Number.isFinite(Number(raw))) result[key === "sw" ? "sourceWidth" : "sourceHeight"] = Math.max(0, Math.min(100_000, Math.round(Number(raw))));
+    if (key === "credit" && raw) result.credit = decodeAttribute(raw).slice(0, 240);
+    if (key === "license" && raw) result.license = decodeAttribute(raw).slice(0, 500);
     if (key === "corner" && raw) result.cornerRadius = Math.min(120, Math.max(0, Number(raw) || 0));
     if (key === "bw" && raw) result.borderWidth = Math.min(20, Math.max(0, Number(raw) || 0));
     if (key === "bc" && raw) result.borderColor = raw === "accent" || raw.startsWith("#") ? raw : undefined;
@@ -441,6 +452,12 @@ function imageAttributesText(presentation: ImagePresentation) {
     presentation.bleed ? "bleed=1" : "",
     presentation.backgroundColor ? `bg=${encodeURIComponent(presentation.backgroundColor)}` : "",
     presentation.caption ? `caption=${encodeURIComponent(presentation.caption)}` : "",
+    presentation.focusX !== undefined && Number.isFinite(presentation.focusX) ? `fx=${Math.max(0, Math.min(1, presentation.focusX))}` : "",
+    presentation.focusY !== undefined && Number.isFinite(presentation.focusY) ? `fy=${Math.max(0, Math.min(1, presentation.focusY))}` : "",
+    presentation.sourceWidth ? `sw=${Math.round(presentation.sourceWidth)}` : "",
+    presentation.sourceHeight ? `sh=${Math.round(presentation.sourceHeight)}` : "",
+    presentation.credit ? `credit=${encodeURIComponent(presentation.credit.slice(0, 240))}` : "",
+    presentation.license ? `license=${encodeURIComponent(presentation.license.slice(0, 500))}` : "",
     presentation.cornerRadius !== undefined ? `corner=${presentation.cornerRadius}` : "",
     presentation.borderWidth !== undefined ? `bw=${presentation.borderWidth}` : "",
     presentation.borderColor ? `bc=${presentation.borderColor}` : "",
@@ -456,13 +473,53 @@ export function imageMarkdown(alt: string, source: string, presentation: ImagePr
   return `![${alt.replace(/[\[\]\r\n]/g, " ")}](${source})${imageAttributesText(presentation)}`;
 }
 
+/** Library details are copied into portable Markdown, independent of library lifetime. */
+export function imageMarkdownFromAsset(asset: CoverImageInput | CoverImageAsset, presentation?: ImagePresentation) {
+  return imageMarkdown(asset.alt ?? asset.name, asset.src, {
+    ...DEFAULT_IMAGE_PRESENTATION, ...presentation,
+    sourceWidth: asset.width, sourceHeight: asset.height,
+    credit: asset.credit ?? "", license: asset.license ?? "",
+  });
+}
+
+/** Height uses the page content width, matching the manuscript canvas. */
+export function imageFrameAspectRatio(presentation: ImagePresentation): number | undefined {
+  if (presentation.height && presentation.height > 0) return presentation.width / presentation.height;
+  const ratios = { square: 1, portrait: 3 / 4, landscape: 4 / 3, wide: 16 / 9 };
+  if (presentation.aspect !== "auto") return ratios[presentation.aspect];
+  return presentation.sourceWidth && presentation.sourceHeight ? presentation.sourceWidth / presentation.sourceHeight : undefined;
+}
+
+function imageFrameCss(presentation: ImagePresentation) {
+  const styles: string[] = [];
+  if (presentation.height) styles.push(`aspect-ratio:${presentation.width}/${presentation.height}`);
+  if (presentation.backgroundColor) styles.push(`background-color:${presentation.backgroundColor}`);
+  if (presentation.cornerRadius !== undefined) styles.push(`border-radius:${presentation.cornerRadius}px`);
+  if (presentation.borderWidth) styles.push(`border:${presentation.borderWidth}px ${presentation.borderStyle ?? "solid"} ${/^#[0-9a-f]{3,8}$/i.test(presentation.borderColor ?? "") ? presentation.borderColor : "var(--book-accent,#a56b3e)"}`);
+  if (presentation.opacity !== undefined) styles.push(`opacity:${presentation.opacity}`);
+  if (presentation.rotation) styles.push(`transform:rotate(${presentation.rotation}deg)`);
+  if (presentation.shadow && presentation.shadow !== "none") styles.push(`box-shadow:${presentation.shadow === "soft" ? "0 6px 18px rgba(0,0,0,.12)" : presentation.shadow === "medium" ? "0 12px 30px rgba(0,0,0,.18)" : "0 18px 46px rgba(0,0,0,.26)"}`);
+  return styles.length ? ` style="${styles.join(";")}"` : "";
+}
+
 function parseImageLine(line: string) {
   const match = /^(\s*)!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}]*)\})?\s*$/.exec(line);
   if (!match) return null;
   return { indent: match[1], alt: match[2], source: match[3], presentation: parseImageAttributes(match[4]) };
 }
 
-function inlineHtml(value: string) {
+/** Replacing a photo preserves its frame and caption, while replacing source details. */
+export function replaceImageMarkdown(original: string, replacement: string): string | null {
+  const previous = parseImageLine(original);
+  const next = parseImageLine(replacement);
+  if (!previous || !next) return null;
+  return `${previous.indent}${imageMarkdown(next.alt, next.source, {
+    ...previous.presentation, sourceWidth: next.presentation.sourceWidth, sourceHeight: next.presentation.sourceHeight,
+    credit: next.presentation.credit ?? "", license: next.presentation.license ?? "",
+  })}`;
+}
+
+function inlineTextHtml(value: string) {
   return escapeHtml(value)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -471,16 +528,30 @@ function inlineHtml(value: string) {
     .replace(/_([^_]+)_/g, "<em>$1</em>")
     .replace(/~~([^~]+)~~/g, "<s>$1</s>")
     .replace(/\+\+([^+]+)\+\+/g, "<u>$1</u>")
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}]*)\})?/g, (_match, alt: string, source: string, attributes: string | undefined) => {
-      if (!/^(?:https?:\/\/|data:image\/)/i.test(source)) return "";
-      const presentation = parseImageAttributes(attributes);
-      const frameClass = presentation.frame === "none" ? "" : ` frame-${presentation.frame}`;
-      const flowClass = `${presentation.wrap ? ` wrap-${presentation.wrap}` : ""}${presentation.bleed ? " bleed" : ""}`;
-      const wrapStyle = presentation.wrap ? `;margin-${presentation.wrap === "left" ? "right" : "left"}:${presentation.wrapGap ?? 1.4}em` : "";
-      const backgroundStyle = presentation.backgroundColor ? ` style="background-color:${presentation.backgroundColor}"` : "";
-      return `<figure class="book-figure align-${presentation.align}${flowClass}" style="width:${presentation.width}%${wrapStyle}"><span class="book-image-frame radius-${presentation.radius} aspect-${presentation.aspect} fit-${presentation.fit}${frameClass}"${backgroundStyle}><img class="book-image" src="${source}" alt="${escapeHtml(alt)}" loading="lazy" /></span>${presentation.caption ? `<figcaption>${escapeHtml(presentation.caption)}</figcaption>` : ""}</figure>`;
-    })
-     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, source: string) => /^(?:https?:\/\/|mailto:|#)/i.test(source) ? `<a href="${source}">${label}</a>` : label);
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, source: string) => /^(?:https?:\/\/|mailto:|#)/i.test(source) ? `<a href="${source}">${label}</a>` : label);
+}
+
+function inlineHtml(value: string) {
+  // Parse image sources/details before inline emphasis can alter their attributes.
+  let cursor = 0;
+  let html = "";
+  const pieces = /(`[^`]+`)|!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}]*)\})?/g;
+  for (const match of value.matchAll(pieces)) {
+    const start = match.index ?? 0;
+    html += inlineTextHtml(value.slice(cursor, start));
+    cursor = start + match[0].length;
+    if (match[1]) { html += inlineTextHtml(match[1]); continue; }
+    const [, , alt, source, attributes] = match;
+    if (!/^(?:https?:\/\/|data:image\/)/i.test(source)) continue;
+    const presentation = parseImageAttributes(attributes);
+    const frameClass = presentation.frame === "none" ? "" : ` frame-${presentation.frame}`;
+    const flowClass = `${presentation.wrap ? ` wrap-${presentation.wrap}` : ""}${presentation.bleed ? " bleed" : ""}`;
+    const wrapStyle = presentation.wrap ? `;margin-${presentation.wrap === "left" ? "right" : "left"}:${presentation.wrapGap ?? 1.4}em` : "";
+    const position = `${(presentation.focusX ?? 0.5) * 100}% ${(presentation.focusY ?? 0.5) * 100}%`;
+    const caption = [presentation.caption ? escapeHtml(presentation.caption) : "", presentation.credit ? `<span class="book-image-credit">${escapeHtml(presentation.credit)}</span>` : ""].filter(Boolean).join("");
+    html += `<figure class="book-figure align-${presentation.align}${flowClass}" style="width:${presentation.width}%${wrapStyle}"><span class="book-image-frame radius-${presentation.radius} aspect-${presentation.aspect} fit-${presentation.fit}${frameClass}"${imageFrameCss(presentation)}><img class="book-image" src="${escapeHtml(source)}" alt="${escapeHtml(alt)}" loading="lazy" style="object-position:${position}" /></span>${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>`;
+  }
+  return html + inlineTextHtml(value.slice(cursor));
 }
 
 function paragraphInlineHtml(value: string, style: BookTextStyle) {
@@ -1569,7 +1640,8 @@ function docxImageParagraph(line: string, assets: DocxAssetState) {
   const match = /^!\[([^\]]*)\]\(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+)\)(?:\{([^}]*)\})?$/.exec(line.trim());
   if (!match) return null;
   const captionXml = (() => {
-    const caption = parseImageAttributes(match[4]).caption;
+    const presentation = parseImageAttributes(match[4]);
+    const caption = [presentation.caption, presentation.credit].filter(Boolean).join(" — ");
     return caption ? `<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>${docxXml(caption)}</w:t></w:r></w:p>` : "";
   })();
   if (match[2] === "image/webp") return `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>${docxXml(match[1] || "Embedded image")}</w:t></w:r></w:p>${captionXml}`;
@@ -1905,7 +1977,7 @@ export function paragraphStylesCss(layout: BookLayout, scope = "") {
 }
 
 export function imagePresentationCss() {
-  return ".book-figure{margin:1.4em auto;max-width:100%}.book-figure.align-left{margin-left:0;margin-right:auto}.book-figure.align-center{margin-left:auto;margin-right:auto}.book-figure.align-right{margin-left:auto;margin-right:0}.book-figure.wrap-left{float:left;margin:.4em 1.4em 1em 0}.book-figure.wrap-right{float:right;margin:.4em 0 1em 1.4em}.book-figure.bleed{width:100%;max-width:none;margin-right:0;margin-left:0}.book-image-frame{display:block;width:100%;max-width:100%;overflow:hidden}.book-image-frame img{display:block;width:100%;height:auto;margin:0}.book-image-frame.radius-soft{border-radius:7px}.book-image-frame.radius-round{border-radius:18px}.book-image-frame.aspect-square{aspect-ratio:1/1}.book-image-frame.aspect-portrait{aspect-ratio:3/4}.book-image-frame.aspect-landscape{aspect-ratio:4/3}.book-image-frame.aspect-wide{aspect-ratio:16/9}.book-image-frame.fit-cover img{height:100%;object-fit:cover}.book-image-frame.fit-contain img{height:100%;object-fit:contain}.book-image-frame.frame-hairline{padding:5px;border:1px solid #c9c0b4}.book-image-frame.frame-mat{padding:11px;border:1px solid #d8cfc2;background:#f7f2ea}.book-figure figcaption{margin-top:.55em;color:#6f6259;font-size:.72em;font-style:italic;line-height:1.4;text-align:center}";
+  return ".book-figure{margin:1.4em auto;max-width:100%}.book-figure.align-left{margin-left:0;margin-right:auto}.book-figure.align-center{margin-left:auto;margin-right:auto}.book-figure.align-right{margin-left:auto;margin-right:0}.book-figure.wrap-left{float:left;margin:.4em 1.4em 1em 0}.book-figure.wrap-right{float:right;margin:.4em 0 1em 1.4em}.book-figure.bleed{width:100%;max-width:none;margin-right:0;margin-left:0}.book-image-frame{display:block;width:100%;max-width:100%;overflow:hidden;box-sizing:border-box}.book-image-frame img{display:block;width:100%;height:auto;margin:0}.book-image-frame.radius-soft{border-radius:7px}.book-image-frame.radius-round{border-radius:18px}.book-image-frame.aspect-square{aspect-ratio:1/1}.book-image-frame.aspect-portrait{aspect-ratio:3/4}.book-image-frame.aspect-landscape{aspect-ratio:4/3}.book-image-frame.aspect-wide{aspect-ratio:16/9}.book-image-frame.fit-cover img{height:100%;object-fit:cover}.book-image-frame.fit-contain img{height:100%;object-fit:contain}.book-image-frame.frame-hairline{padding:5px;border:1px solid #c9c0b4}.book-image-frame.frame-mat{padding:11px;border:1px solid #d8cfc2;background:#f7f2ea}.book-image-credit{display:block;margin-top:.25em;text-align:right;font-size:.9em;font-style:normal}.book-figure figcaption{margin-top:.55em;color:#6f6259;font-size:.72em;font-style:italic;line-height:1.4;text-align:center}";
 }
 
 export function bookChromeValues(book: Book, layout: BookLayout, key: string, section: string, band: PageBand, ordinal: number) {

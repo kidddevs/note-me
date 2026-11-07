@@ -59,6 +59,7 @@ import {
   FONT_OPTIONS,
   fontCss,
   imageMarkdown,
+  imageFrameAspectRatio,
   PAGE_NUMBER_STYLE_OPTIONS,
   objectValue,
   richJsonLine,
@@ -82,6 +83,8 @@ import {
 import { cloneParagraphStyle, styleColor, styleFromRole, uniqueStyleId } from "../lib/bookStyles";
 import { measurementRange, measurementText, measurementToInches, measurementUnitShort, measurementValue } from "../lib/measurements";
 import { useTheme } from "../store/theme";
+import { CoverImageFocus } from "./CoverImageFocus";
+import { SaveStudioImageButton } from "./BookImageLibrary";
 import { PagePatternPicker } from "./PagePatternPicker";
 
 function InspectorSection({ icon, title, summary, children, defaultOpen = false }: { icon: ReactNode; title: string; summary?: string; children: ReactNode; defaultOpen?: boolean }) {
@@ -392,10 +395,14 @@ function ImageInspector({ context, freeLayout, freeMargins, onReplaceRange, onRe
   return <div className="design-editor">
     <InspectorSection icon={<ImagePlus size={14} />} title="Artwork" summary="Crop, fit, wrap, effects" defaultOpen>
       <div className="design-inline-actions"><button onClick={onReplaceImage}><ImagePlus size={13} /> Replace file</button>{onReplaceArtwork && <button onClick={onReplaceArtwork}><Palette size={13} /> Replace artwork</button>}<span className="design-mini-label">{presentation.width}% × {presentation.height ?? "auto"}</span></div>
+      <SaveStudioImageButton image={{ name: image.alt || "Manuscript artwork", src: image.source, alt: image.alt, credit: presentation.credit, license: presentation.license }} />
+      <div className="design-image-focus"><CoverImageFocus src={image.source} fit={presentation.fit} focusX={presentation.focusX ?? 0.5} focusY={presentation.focusY ?? 0.5} aspectRatio={imageFrameAspectRatio(presentation) ?? 1.6} label="Page image crop focus" onChange={(focusX, focusY) => update({ focusX, focusY })} /></div>
       <div className="design-grid">
+        <Field label="Horizontal focus"><NumberField value={Math.round((presentation.focusX ?? 0.5) * 100)} min={0} max={100} onChange={(value) => update({ focusX: value / 100 })} suffix="%" /></Field>
+        <Field label="Vertical focus"><NumberField value={Math.round((presentation.focusY ?? 0.5) * 100)} min={0} max={100} onChange={(value) => update({ focusY: value / 100 })} suffix="%" /></Field>
         <Field label="Shape"><select value={presentation.aspect} onChange={(event) => update({ aspect: event.target.value as ImagePresentation["aspect"], ...(event.target.value === "auto" ? {} : { fit: "cover" as const }) })}><option value="auto">Original</option><option value="square">Square</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option><option value="wide">Wide</option></select></Field>
         <Field label="Crop fit"><select value={presentation.fit} onChange={(event) => update({ fit: event.target.value as ImagePresentation["fit"] })}><option value="contain">Fit inside</option><option value="cover">Fill frame</option></select></Field>
-        <Field label="Width"><NumberField value={presentation.width} min={10} max={100} step={0.5} onChange={(width) => update({ width, x: Math.min(left, 100 - width) })} suffix="%" /></Field>
+        <Field label="Width"><NumberField value={presentation.width} min={20} max={100} step={0.5} onChange={(width) => update({ width, ...(presentation.x !== undefined ? { x: Math.min(left, 100 - width) } : {}) })} suffix="%" /></Field>
         <Field label="Height"><NumberField value={presentation.height ?? 0} min={0} max={240} step={0.5} onChange={(height) => update({ height: height || undefined })} suffix="%" /></Field>
         <Field label="X position"><NumberField value={left} min={0} max={Math.max(0, 100 - presentation.width)} step={0.5} onChange={(x) => update({ x })} suffix="%" /></Field>
         <Field label="Y position"><NumberField value={presentation.y ?? 0} min={0} max={400} step={0.5} onChange={(y) => update({ y })} suffix="%" /></Field>
@@ -413,6 +420,8 @@ function ImageInspector({ context, freeLayout, freeMargins, onReplaceRange, onRe
       {presentation.caption && <Field label="Caption" wide><input value={presentation.caption} onChange={(event) => update({ caption: event.target.value })} /></Field>}
       {presentation.backgroundColor && <Field label="Artwork background" wide><ColorField value={presentation.backgroundColor} onChange={(backgroundColor) => update({ backgroundColor })} /></Field>}
       <Field label="Alt text" wide><input value={image.alt} onChange={(event) => updateAlt(event.target.value)} /></Field>
+      <Field label="Photo credit" wide><input value={presentation.credit ?? ""} maxLength={240} onChange={(event) => update({ credit: event.target.value })} placeholder="Printed below the image" /></Field>
+      <Field label="License / source notes" wide><input value={presentation.license ?? ""} maxLength={500} onChange={(event) => update({ license: event.target.value })} placeholder="Kept with the editable image" /></Field>
       <div className="design-grid"><Field label="Placement"><PlacementButtons value={presentation.align} onChange={(align) => update({ align, x: undefined })} /></Field><Field label="Frame"><select value={presentation.frame} onChange={(event) => update({ frame: event.target.value as ImagePresentation["frame"] })}><option value="none">No frame</option><option value="hairline">Hairline</option><option value="mat">Gallery mat</option></select></Field></div>
       {!freeLayout && <div className="design-subgroup">
         <div className="design-subgroup-head"><strong>Page flow</strong>{freeMargins ? <Toggle checked={Boolean(presentation.bleed)} onChange={(bleed) => update({ bleed })} label="Full bleed" /> : <span className="design-help">Enable Free margins to bleed</span>}</div>

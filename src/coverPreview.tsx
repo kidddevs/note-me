@@ -1,10 +1,13 @@
-import React from "react";
+import React, { useState } from "react";
+import { BookOpen, FlaskConical, Paintbrush } from "lucide-react";
 import ReactDOM from "react-dom/client";
 import "./styles.css";
+import { Toasts } from "./components/Toasts";
+import { ManuscriptScreen } from "./components/BooksStudioEditor";
 import { CoverScreen } from "./components/BooksCoverStudio";
 import { layoutForBook, serializeBookLayout } from "./lib/bookLayout";
 import { createCoverDocument } from "./lib/bookCoverDoc";
-import { loadCoverPreviewBook, saveCoverPreviewBook } from "./lib/bookCoverPreview";
+import { loadCoverPreviewBook, saveCoverPreviewBook, loadCoverPreviewChapter, saveCoverPreviewChapter } from "./lib/bookCoverPreview";
 import { useBooks } from "./store/books";
 import type { Book, Chapter } from "./lib/types";
 
@@ -24,23 +27,28 @@ const baseBook: Book = {
 const baseLayout = layoutForBook(baseBook);
 const doc = createCoverDocument("tidewater", baseBook, baseLayout.cover);
 const initialBook: Book = { ...baseBook, layout_json: serializeBookLayout({ ...baseLayout, cover: { ...baseLayout.cover, doc } }) };
-const chapters: Chapter[] = [
-  { id: -702, book_id: PREVIEW_BOOK_ID, chapter_kind: "feature", title: "North light", content: "word ".repeat(2400), position: 0, toc_include: true, toc_heading_exclusions: [], layout_json: "", created_at: "", updated_at: "" },
+const initialChapters: Chapter[] = [
+  { id: -702, book_id: PREVIEW_BOOK_ID, chapter_kind: "feature", title: "North light", content: "## The coast remembers\n\nAn archive of places and photographs. Add artwork from the studio image library to explore focal crops and captions.", position: 0, toc_include: true, toc_heading_exclusions: [], layout_json: "", created_at: "", updated_at: "" },
 ];
 function Preview() {
   const currentBook = useBooks((state) => state.books[0]);
+  const chapters = useBooks((state) => state.chapters);
+  const [screen, setScreen] = useState(new URLSearchParams(window.location.search).get("screen") === "manuscript" ? "manuscript" : "cover");
+  const [focusMode, setFocusMode] = useState(false);
   return (
     <div className="app" style={{ height: "100%" }}>
-      <div style={{ height: 54, flexShrink: 0 }} />
+      <nav className="studio-preview-nav" aria-label="Studio development preview"><span><FlaskConical size={14} /> Development preview</span><button type="button" aria-pressed={screen === "manuscript"} onClick={() => setScreen("manuscript")}><BookOpen size={14} /> Manuscript</button><button type="button" aria-pressed={screen === "cover"} onClick={() => setScreen("cover")}><Paintbrush size={14} /> Cover designer</button></nav>
       <div className="app-body books-studio">
-        <CoverScreen book={currentBook} chapters={chapters} onOpenChapter={() => undefined} onNavigate={() => undefined} />
+        {screen === "manuscript" ? <ManuscriptScreen book={currentBook} chapters={chapters} activeChapter={chapters[0]} focusMode={focusMode} onFocusModeChange={setFocusMode} onOpenOutline={() => undefined} onOpenSettings={() => undefined} onNewChapter={() => undefined} onNavigateSection={() => undefined} /> : <CoverScreen book={currentBook} chapters={chapters} onOpenChapter={() => setScreen("manuscript")} onNavigate={(next) => { if (next === "manuscript") setScreen(next); }} />}
       </div>
+      <Toasts />
     </div>
   );
 }
 
 async function startPreview() {
-  const stored = await loadCoverPreviewBook();
+  const [stored, storedChapter] = await Promise.all([loadCoverPreviewBook(), loadCoverPreviewChapter()]);
+  let chapters = storedChapter ? [storedChapter] : initialChapters;
   let initialBooks = [stored ?? initialBook];
   useBooks.setState({
     books: initialBooks,
@@ -49,6 +57,20 @@ async function startPreview() {
     activeChapterId: -702,
     loaded: true,
     error: null,
+    updateChapter: async (id, title, content, chapterKind, tocInclude, tocHeadingExclusions) => {
+      const previous = chapters.find((chapter) => chapter.id === id);
+      if (!previous) throw new Error("Unknown preview chapter.");
+      const next: Chapter = { ...previous, title, content, chapter_kind: chapterKind ?? previous.chapter_kind, toc_include: tocInclude ?? previous.toc_include, toc_heading_exclusions: tocHeadingExclusions ?? previous.toc_heading_exclusions, updated_at: new Date().toISOString() };
+      await saveCoverPreviewChapter(next);
+      chapters = [next]; useBooks.setState({ chapters });
+    },
+    updateChapterLayout: async (id, layoutJson) => {
+      const previous = chapters.find((chapter) => chapter.id === id);
+      if (!previous) throw new Error("Unknown preview chapter.");
+      const next = { ...previous, layout_json: layoutJson };
+      await saveCoverPreviewChapter(next);
+      chapters = [next]; useBooks.setState({ chapters });
+    },
     updateBook: async (id, input) => {
       const next: Book = {
         ...initialBooks[0], id, title: input.title, subtitle: input.subtitle, author: input.author,

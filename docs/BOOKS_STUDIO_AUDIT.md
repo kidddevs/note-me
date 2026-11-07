@@ -18,6 +18,17 @@ Undo/redo snapshots and background-only template handling are repaired.
 See [Cover designer implementation and QA](COVER_DESIGNER.md) for the contracts,
 regressions, development fixture, and validation limits.
 
+## Shared photo workflow — November 7, 2026
+
+The manuscript artwork drawer and cover image/background tools now share a searchable
+photo shelf, favorites, orientation filters, editable alt text, credits, source notes
+and tags. Identical sources reuse their library entry; capacity no longer evicts
+older images. Both studios can save existing artwork back to the shelf, and placed
+images survive library removal. Page images gain the cover's focal-point preview,
+with matching HTML/EPUB/print crops and visible credits. Replacing artwork preserves
+frame geometry and clears old source attribution. Cover production packages include
+an image-credits report. See [Studio images](STUDIO_IMAGES.md).
+
 ## What is already strong
 
 - **Content model**: books and sections are first-class SQLite records, not serialized notes. Section kinds carry semantic meaning and reorder within front/story/back bands.
@@ -35,7 +46,7 @@ regressions, development fixture, and validation limits.
 
 ### P1 — production polish
 
-2. **Image craft.** Crop/reposition inside frames, focal-point control, image fit presets, caption placement, and bleed-aware export.
+2. **Image craft.** Shared source reuse, focal crop control, photo credits and library source notes are implemented for pages and covers. Caption placement, richer page-image grading and bleed-aware pagination remain.
 3. **Print packaging.** Bleed settings, crop/registration marks, PDF preflight, embedded-font checks, and page-count parity between the canvas and print output.
 4. **Free-layout export fidelity.** Widths and alignment now travel, but free X/Y placement and full-bleed pages still flatten in some exported formats.
 5. **More page masters.** Photo essay, recipe, advertisement, and opening-spread masters on top of the current feature, department, contents, cover, full-bleed, and colophon set.
@@ -44,7 +55,7 @@ regressions, development fixture, and validation limits.
 
 6. **Issue planning.** Story status, assignee, due date, word budget, and a flat-plan view across pages.
 7. **Editorial review.** Comments, tracked changes, and compare-two-checkpoints views.
-8. **Asset library.** Shared photo library with usage tracking, alt text, credits, and licensing notes.
+8. **Asset library.** Shared photo storage, search, favorites, alt text, credits and source notes are implemented. Cross-document usage tracking and larger archival collections remain.
 
 ## Landed in this pass
 

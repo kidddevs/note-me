@@ -1,4 +1,4 @@
-import type { Book } from "./types";
+import type { Book, Chapter } from "./types";
 
 // This store belongs only to the development preview; it never opens native data.
 const DATABASE = "noteme-cover-preview";
@@ -44,3 +44,31 @@ async function writePreview(book: Book | null) {
 
 export const saveCoverPreviewBook = (book: Book) => writePreview(book);
 export const clearCoverPreviewBook = () => writePreview(null);
+
+
+/** The manuscript companion uses a negative fixture id in the same isolated store. */
+export async function loadCoverPreviewChapter(): Promise<Chapter | null> {
+  const database = await openDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const request = database.transaction(STORE, "readonly").objectStore(STORE).get(-702);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(request.error);
+    });
+  } finally { database.close(); }
+}
+
+export async function saveCoverPreviewChapter(chapter: Chapter | null) {
+  if (chapter && (chapter.id !== -702 || chapter.book_id !== BOOK_ID)) throw new Error("Only the studio preview chapter can be saved here.");
+  const database = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(STORE, "readwrite");
+      const store = transaction.objectStore(STORE);
+      if (chapter) store.put(chapter);
+      else store.delete(-702);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error("Preview chapter save was cancelled."));
+    });
+  } finally { database.close(); }
+}

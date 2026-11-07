@@ -1,7 +1,7 @@
 import { zipSync } from "fflate";
 import type { Book } from "./types";
 import type { BookCoverDesign } from "./bookLayout";
-import { COVER_PAPER_STOCKS, coverExportFilename, coverMetrics, renderCoverCanvas, saveCoverBlob, spineWidthMillimetres } from "./bookCoverDoc";
+import { coverLayerVisible, COVER_PAPER_STOCKS, coverExportFilename, coverMetrics, renderCoverCanvas, saveCoverBlob, spineWidthMillimetres } from "./bookCoverDoc";
 import { buildCoverPdfFile } from "./bookCoverPdf";
 import { coverMockupFilename, renderCoverMockup, type CoverMockupFormat } from "./bookCoverMockup";
 import { coverPreflight, coverPreflightSummary } from "./bookCoverPreflight";
@@ -50,12 +50,28 @@ export function coverSpecsText(book: Book, cover: BookCoverDesign, options: Pick
     "  cover/*-spine.png            Spine at trim size",
     "  cover/*-mockup-*.png         Presentation mockup",
     "  cover/*-preflight.txt        Print preflight findings",
+    "  cover/*-image-credits.txt    Image credits and source notes",
     "",
     "NOTES",
     "  Open the PDF in a print-shop preflight tool before production.",
     "  The wrap already includes bleed. Crop marks sit outside the trim box.",
     `  Generated ${new Date().toISOString().slice(0, 10)} by NoteMe Cover Studio.`,
   ].join("\n");
+}
+
+/** Editable source notes accompany the production handoff without painting over artwork. */
+export function coverImageCreditsText(book: Book, cover: BookCoverDesign) {
+  const lines = [`${book.title || "Untitled"} — image credits`, ""];
+  const background = cover.doc?.backgroundImage;
+  if (background?.src) {
+    lines.push("Wrap background", `  Credit: ${background.credit || "Not supplied"}`, `  License / source: ${background.license || "Not supplied"}`, "");
+  }
+  for (const layer of cover.doc?.layers ?? []) {
+    if (layer.type !== "image" || !coverLayerVisible(cover.doc, layer)) continue;
+    lines.push(`${layer.name} (${layer.panel})`, `  Credit: ${layer.credit || "Not supplied"}`, `  License / source: ${layer.license || "Not supplied"}`, "");
+  }
+  if (lines.length === 2) lines.push("No image sources in this cover.");
+  return lines.join("\n");
 }
 
 export function coverPreflightText(book: Book, cover: BookCoverDesign) {
@@ -107,6 +123,7 @@ export async function createCoverPackage(book: Book, cover: BookCoverDesign, opt
   }
   files.push({ name: coverExportFilename(book, "wrap", "txt").replace(/-full-wrap\.txt$/, "-specs.txt"), bytes: new TextEncoder().encode(coverSpecsText(book, cover, options)) });
   files.push({ name: coverExportFilename(book, "wrap", "txt").replace(/-full-wrap\.txt$/, "-preflight.txt"), bytes: new TextEncoder().encode(coverPreflightText(book, cover)) });
+  files.push({ name: coverExportFilename(book, "wrap", "txt").replace(/-full-wrap\.txt$/, "-image-credits.txt"), bytes: new TextEncoder().encode(coverImageCreditsText(book, cover)) });
   const filename = coverExportFilename(book, "wrap", "zip").replace(/-full-wrap\.zip$/, "-production-package.zip");
   return { filename, bytes: buildCoverPackageZip(files), files: files.map((file) => file.name) };
 }

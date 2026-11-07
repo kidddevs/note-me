@@ -56,6 +56,7 @@ import {
   GripVertical,
   Hand,
   ImagePlus,
+  Images,
   Info,
   Italic,
   Keyboard,
@@ -205,7 +206,7 @@ import { downloadCoverPackage } from "../lib/bookCoverPackage";
 import { coverPreflight, coverPreflightFix, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
 import { extractPaletteFromPixels } from "../lib/bookCoverPalette";
-import { deleteCoverImageAsset, listCoverImageAssets, saveCoverImageAsset, type CoverImageAsset } from "../lib/bookImageLibrary";
+import { IMAGE_LIBRARY_CHANGED, listCoverImageAssets, saveCoverImageAsset, type CoverImageAsset } from "../lib/bookImageLibrary";
 import { getCoverLayerClipboard, setCoverLayerClipboard } from "../lib/bookCoverClipboard";
 import { deleteBrandPalette, readBrandPalettes, saveBrandPalette, type CoverBrandPalette } from "../lib/bookCoverBrandPalettes";
 import { loadCoverHistory, saveCoverHistory } from "../lib/bookCoverHistory";
@@ -234,6 +235,7 @@ import {
 } from "../lib/bookCoverLibrary";
 import { useBooks } from "../store/books";
 import { CoverImageFocus } from "./CoverImageFocus";
+import { BookImageLibrary, SaveStudioImageButton } from "./BookImageLibrary";
 import { liftCoverBackground, matchCoverImageRatio, renderCoverSelectionCanvas, resetCoverImageCrop, resetCoverImageTone } from "../lib/bookCoverImages";
 import { CoverColorField, CoverColorSwatch, CoverColorProvider } from "./CoverColorPicker";
 import { moveCoverLayers, stepCoverLayers, type CoverLayerPlacement } from "../lib/bookCoverLayers";
@@ -359,9 +361,9 @@ interface InspectorProps {
   onSaveStyle: () => void;
   onDeleteStylePreset: (id: string) => void;
   onExtractPalette: (layer: CoverImageLayer) => void;
+  onOpenImageLibrary: (target: "add" | "replace" | "background") => void;
   imageLibrary: CoverImageAsset[];
   onUseLibraryImage: (asset: CoverImageAsset) => void;
-  onDeleteLibraryImage: (id: string) => void;
   tool: string;
   eraser: CoverEraserSettings;
   onEraser: (settings: CoverEraserSettings) => void;
@@ -431,6 +433,9 @@ interface ReadCoverImage {
   src: string;
   width: number;
   height: number;
+  alt?: string;
+  credit?: string;
+  license?: string;
 }
 
 function readImageFile(file: File | null, maxMb = 16): Promise<ReadCoverImage> {
@@ -769,6 +774,7 @@ export function CoverScreen({
   const [stylePresets, setStylePresets] = useState<CoverLayerStylePreset[]>(() => readLayerStylePresets());
   const [styleClipboard, setStyleClipboard] = useState<CoverLayerStyleValues | null>(null);
   const [imageLibrary, setImageLibrary] = useState<CoverImageAsset[]>([]);
+  const [imageLibraryTarget, setImageLibraryTarget] = useState<"add" | "replace" | "background" | null>(null);
   const [brandPalettes, setBrandPalettes] = useState<CoverBrandPalette[]>(() => readBrandPalettes());
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [symbolOpen, setSymbolOpen] = useState(false);
@@ -796,7 +802,6 @@ export function CoverScreen({
   const timerRef = useRef<number | null>(null);
   const colorSampleRef = useRef<((color: string) => void) | null>(null);
   const colorRef = useRef(book.cover_color || FALLBACK_ACCENT);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const replaceImageInputRef = useRef<HTMLInputElement | null>(null);
   const backgroundImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -965,8 +970,10 @@ export function CoverScreen({
 
   useEffect(() => {
     let active = true;
-    void listCoverImageAssets().then((assets) => { if (active) setImageLibrary(assets); });
-    return () => { active = false; };
+    const refresh = () => void listCoverImageAssets().then((assets) => { if (active) setImageLibrary(assets); });
+    refresh();
+    window.addEventListener(IMAGE_LIBRARY_CHANGED, refresh);
+    return () => { active = false; window.removeEventListener(IMAGE_LIBRARY_CHANGED, refresh); };
   }, []);
 
   useEffect(() => {
@@ -985,6 +992,7 @@ export function CoverScreen({
     setExtraSelectedIds([]);
     setPanel("wrap");
     setActiveGroupId(null);
+    setImageLibraryTarget(null);
     setTool("select");
     colorSampleRef.current = null;
     setHistory([]);
@@ -1197,40 +1205,20 @@ export function CoverScreen({
     if (!image.src) return;
     const asset = await saveCoverImageAsset({ name, src: image.src, width: image.width, height: image.height });
     if (asset) await refreshImageLibrary();
-  };
-
-  const addImage = async (file: File | null) => {
-    try {
-      const image = await readImageFile(file);
-      const target = designPanel;
-      const width = target === "spine" ? Math.max(0.3, metrics.spineWidth) : panelWidth * 0.7;
-      const height = target === "spine" ? metrics.trimHeight * 0.5 : metrics.trimHeight * 0.55;
-      const layer = imageLayer({
-        id: newCoverLayerId("image"),
-        name: file?.name.replace(/\.[^.]+$/, "").slice(0, 50) || "Image",
-        panel: target,
-        x: target === "spine" ? 0 : Math.max(0.2, panelWidth * 0.5 - width / 2),
-        y: Math.max(0.2, metrics.trimHeight * 0.2),
-        width,
-        height,
-        src: image.src,
-        sourceWidth: image.width,
-        sourceHeight: image.height,
-        fit: "cover",
-      });
-      addLayer(layer, target);
-      void rememberCoverImage(layer.name, image);
-    } catch (error) {
-      notify("error", "Image could not be added", String(error));
-    }
+    else notify("info", "Image placed without a library copy", "The library may be full or local storage unavailable. Your placed image is still embedded in this book.");
   };
 
   const replaceImage = async (file: File | null) => {
     if (!selected || selected.type !== "image") return;
+    const sourceBookId = bookRef.current.id;
     try {
       const image = await readImageFile(file);
+      if (bookRef.current.id !== sourceBookId || layoutRef.current.cover.doc.layers.find((layer) => layer.id === selected.id) !== selected) {
+        notify("info", "The image changed", "Select the current image before replacing it.");
+        return;
+      }
       const name = file?.name.replace(/\.[^.]+$/, "").slice(0, 50) || selected.name;
-      updateLayer(selected.id, { src: image.src, sourceWidth: image.width, sourceHeight: image.height, name }, { key: `replace-image:${selected.id}` });
+      updateLayer(selected.id, { src: image.src, sourceWidth: image.width, sourceHeight: image.height, name, alt: "", credit: "", license: "", eraseMask: "" }, { key: `replace-image:${selected.id}` });
       void rememberCoverImage(name, image);
     } catch (error) {
       notify("error", "Image could not be replaced", String(error));
@@ -1242,6 +1230,7 @@ export function CoverScreen({
     const existing = current.doc.backgroundImage;
     updateDoc({ ...current.doc, backgroundImage: {
       src: image.src, sourceWidth: image.width, sourceHeight: image.height,
+      alt: image.alt ?? "", credit: image.credit ?? "", license: image.license ?? "",
       fit: existing?.fit ?? "cover", focusX: existing?.focusX ?? 0.5, focusY: existing?.focusY ?? 0.5,
       opacity: existing?.opacity ?? 1, blur: existing?.blur ?? 0,
       tint: existing?.tint ?? "#ffffff", tintStrength: existing?.tintStrength ?? 0,
@@ -1279,6 +1268,7 @@ export function CoverScreen({
       if (src.length > 24_000_000) throw new Error("The rendered image is too large. Reduce the frame size before copying it to the background.");
       updateDoc({ ...latest, layers: latest.layers.map((layer) => layer.id === source.id ? { ...layer, visible: false } : layer), backgroundImage: {
         src, sourceWidth: canvas.width, sourceHeight: canvas.height,
+        alt: source.alt, credit: source.credit, license: source.license,
         fit: "cover", focusX: 0.5, focusY: 0.5, opacity: 1, blur: 0, tint: "#ffffff", tintStrength: 0,
       } }, { key: "background:copy-image" });
       selectLayer(null);
@@ -1955,11 +1945,12 @@ export function CoverScreen({
     }
   };
 
-  const useLibraryImage = (asset: CoverImageAsset) => {
+  const useLibraryImage = (asset: CoverImageAsset, replaceSelected = true) => {
     const current = layoutRef.current.cover;
     const layer = current.doc.layers.find((item) => item.id === selectedLayerId);
-    if (layer && layer.type === "image") {
-      updateLayer(layer.id, { src: asset.src, sourceWidth: asset.width, sourceHeight: asset.height, name: asset.name }, { key: `library-image:${layer.id}` });
+    if (replaceSelected && layer && layer.type === "image") {
+      if (coverLayerLocked(current.doc, layer)) { notify("info", "Image is locked", "Unlock the image before replacing its source."); return; }
+      updateLayer(layer.id, { src: asset.src, sourceWidth: asset.width, sourceHeight: asset.height, name: asset.name, alt: asset.alt, credit: asset.credit, license: asset.license, eraseMask: "" }, { key: `library-image:${layer.id}` });
       notify("success", "Image applied", asset.name);
       return;
     }
@@ -1967,6 +1958,7 @@ export function CoverScreen({
     addLayer(imageLayer({
       id: newCoverLayerId("image"),
       name: asset.name,
+      alt: asset.alt, credit: asset.credit, license: asset.license,
       panel: target,
       x: Math.max(0.2, (target === "spine" ? metrics.spineWidth : metrics.panelWidths[target]) * 0.5 - Math.min(3.4, metrics.trimHeight * 0.4) / 2),
       y: Math.max(0.2, metrics.trimHeight * 0.2),
@@ -1978,16 +1970,6 @@ export function CoverScreen({
       fit: "cover",
     }), target);
     notify("success", "Image added from library", asset.name);
-  };
-
-  const removeLibraryImage = async (id: string) => {
-    const removed = await deleteCoverImageAsset(id);
-    if (!removed) {
-      notify("error", "Image could not be removed", "The local image library is unavailable.");
-      return;
-    }
-    setImageLibrary((assets) => assets.filter((asset) => asset.id !== id));
-    notify("success", "Image removed from library");
   };
 
   const handleDownloadPdf = async (marks: boolean) => {
@@ -2132,7 +2114,7 @@ export function CoverScreen({
     if (key === "z") setTool("zoom");
     if (key === "e") setTool("eyedropper");
     if (key === "t") { setTool("text"); makeTextLayer(); setTool("select"); }
-    if (key === "i") { fileInputRef.current?.click(); }
+    if (key === "i") { setImageLibraryTarget("add"); }
     if (key === "r") makeShapeLayer("rectangle");
     if (key === "o") makeShapeLayer("ellipse");
     if (key === "l") makeLineLayer();
@@ -2290,7 +2272,7 @@ export function CoverScreen({
                 if (value !== "symbol") setSymbolOpen(false);
                 if (value !== "artwork") setArtworkOpen(false);
                 if (value === "text") addTextTool();
-                else if (value === "image") fileInputRef.current?.click();
+                else if (value === "image") setImageLibraryTarget("add");
                 else if (value === "rect") makeShapeLayer("rectangle");
                 else if (value === "ellipse") makeShapeLayer("ellipse");
                 else if (value === "line") makeLineLayer();
@@ -2298,7 +2280,7 @@ export function CoverScreen({
                 else if (value === "artwork") { setArtworkOpen((open) => !open); setSymbolOpen(false); }
                 else if (value === "barcode") makeBarcodeLayer();
               }}
-              onAddImage={() => fileInputRef.current?.click()}
+              onAddImage={() => setImageLibraryTarget("add")}
               onAddText={addTextTool}
             />
           )}
@@ -2328,7 +2310,7 @@ export function CoverScreen({
               onUndo={undo}
               onRedo={redo}
               onSelect={selectLayer}
-              onAdd={() => fileInputRef.current?.click()}
+              onAdd={() => setImageLibraryTarget("add")}
               onAddGroup={addGroup}
               onSelectGroup={selectGroup}
               onToggleVisible={toggleVisible}
@@ -2392,7 +2374,7 @@ export function CoverScreen({
             onDuplicateSelection={duplicateSelection}
             onDeleteSelection={deleteSelection}
             onAddText={() => makeTextLayer()}
-            onAddImage={() => fileInputRef.current?.click()}
+            onAddImage={() => setImageLibraryTarget("add")}
             onOpenTemplates={() => setTemplateOpen(true)}
             onDropImage={(dataUrl, x, y, sourceWidth, sourceHeight) => {
               void rememberCoverImage("Dropped image", { src: dataUrl, width: sourceWidth, height: sourceHeight });
@@ -2455,9 +2437,9 @@ export function CoverScreen({
               onSaveStyle={saveCurrentStyle}
               onDeleteStylePreset={removeStylePreset}
               onExtractPalette={extractImagePalette}
+              onOpenImageLibrary={setImageLibraryTarget}
               imageLibrary={imageLibrary}
               onUseLibraryImage={useLibraryImage}
-              onDeleteLibraryImage={(id) => void removeLibraryImage(id)}
               brandPalettes={brandPalettes}
               onSaveBrandPalette={saveCurrentBrandPalette}
               onApplyBrandPalette={applyBrandPalette}
@@ -2472,18 +2454,6 @@ export function CoverScreen({
           )}
         </div>
 
-        <input
-          ref={(element) => {
-            fileInputRef.current = element;
-          }}
-          type="file"
-          accept="image/*"
-          className="cover-hidden-input"
-          onChange={(event) => {
-            void addImage(event.target.files?.[0] ?? null);
-            event.target.value = "";
-          }}
-        />
         <input
           ref={(element) => { replaceImageInputRef.current = element; }}
           type="file"
@@ -2518,6 +2488,7 @@ export function CoverScreen({
         )}
       </div>
 
+      {imageLibraryTarget && <BookImageLibrary onClose={() => setImageLibraryTarget(null)} actionLabel={imageLibraryTarget === "background" ? "Use as background" : imageLibraryTarget === "replace" ? "Replace selected image" : "Place image layer"} onUse={(asset) => { if (imageLibraryTarget === "background") useBackgroundImage(asset); else useLibraryImage(asset, imageLibraryTarget === "replace"); }} onUseBackground={imageLibraryTarget === "background" ? undefined : useBackgroundImage} />}
       {templateOpen && (
         <TemplateModal
           book={book}
@@ -4176,7 +4147,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, imageLibrary, onUseLibraryImage, onDeleteLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, onOpenImageLibrary, imageLibrary, onUseLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
   const eraserActive = tool === "eraser";
   const eraserTarget = selected?.type === "image" ? selected : null;
   const imageLayers = cover.doc.layers.filter((layer): layer is CoverImageLayer => layer.type === "image");
@@ -4224,9 +4195,9 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             onSaveStyle={onSaveStyle}
             onDeleteStylePreset={onDeleteStylePreset}
             onExtractPalette={onExtractPalette}
+            onOpenImageLibrary={onOpenImageLibrary}
             imageLibrary={imageLibrary}
             onUseLibraryImage={onUseLibraryImage}
-            onDeleteLibraryImage={onDeleteLibraryImage}
             onStartErasing={onStartErasing}
             onClearEraseMask={onClearEraseMask}
             focusContent={focusContent}
@@ -4250,6 +4221,7 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             onPickBackgroundImage={onPickBackgroundImage}
             onUseBackgroundImage={onUseBackgroundImage}
             onLiftBackground={onLiftBackground}
+            onOpenImageLibrary={onOpenImageLibrary}
             imageLibrary={imageLibrary}
             onExtractBackgroundPalette={() => { if (cover.doc.backgroundImage?.src) void onExtractPalette(imageLayer({ id: "background", name: "Background", src: cover.doc.backgroundImage.src, panel: "wrap", x: 0, y: 0, width: metrics.fullWidth, height: metrics.fullHeight })); }}
             onUploadBarcode={onUploadBarcode}
@@ -4472,9 +4444,9 @@ function LayerInspector({
   onSaveStyle,
   onDeleteStylePreset,
   onExtractPalette,
+  onOpenImageLibrary,
   imageLibrary,
   onUseLibraryImage,
-  onDeleteLibraryImage,
   onStartErasing,
   onClearEraseMask,
   focusContent,
@@ -4500,9 +4472,9 @@ function LayerInspector({
   onSaveStyle: () => void;
   onDeleteStylePreset: (id: string) => void;
   onExtractPalette: (layer: CoverImageLayer) => void;
+  onOpenImageLibrary: (target: "add" | "replace" | "background") => void;
   imageLibrary: CoverImageAsset[];
   onUseLibraryImage: (asset: CoverImageAsset) => void;
-  onDeleteLibraryImage: (id: string) => void;
   onStartErasing: () => void;
   onClearEraseMask: (id?: string) => void;
   focusContent: number;
@@ -4708,7 +4680,9 @@ function LayerInspector({
 
       {layer.type === "image" && (
         <Section title="Image lab" hint="Crop, tone & frame">
+          <button type="button" className="cover-wide-button" onClick={() => onOpenImageLibrary("replace")}><Images size={13} /> Browse studio images</button>
           <button type="button" className="cover-wide-button" onClick={onReplaceImage}><Upload size={13} /> Replace image</button>
+          <SaveStudioImageButton image={{ name: layer.name, src: layer.src, alt: layer.alt, credit: layer.credit, license: layer.license }} className="cover-wide-button subtle" />
           <button type="button" className="cover-wide-button subtle" onClick={onCopyImageToBackground} disabled={busyImageAction || !layer.src || !coverLayerVisible(cover.doc, layer) || coverLayerLocked(cover.doc, layer)}>{busyImageAction ? <LoaderCircle size={13} className="cover-tool-busy" /> : <ImagePlus size={13} />}{busyImageAction ? "Copying image" : "Copy to wrap background"}</button>
           <div className="cover-eraser-mask-row">
             <span><strong>{layer.eraseMask ? "Erase mask active" : "No erase mask"}</strong><small>{layer.eraseMask ? "Brush away pixels with the mask eraser." : "Paint transparent cut-outs without touching the file."}</small></span>
@@ -4722,16 +4696,18 @@ function LayerInspector({
             <div className="cover-image-library">
               <span className="cover-field-heading">Image library</span>
               <div className="cover-image-library-row">
-                {imageLibrary.map((asset) => (
+                {imageLibrary.slice(0, 6).map((asset) => (
                   <div className="cover-image-library-item" key={asset.id}>
                     <button type="button" title={`Use ${asset.name}`} aria-label={`Use ${asset.name}`} onClick={() => onUseLibraryImage(asset)}><img src={asset.src} alt="" /></button>
-                    <button type="button" className="cover-image-library-delete" title={`Remove ${asset.name}`} aria-label={`Remove ${asset.name} from library`} onClick={() => onDeleteLibraryImage(asset.id)}><X size={9} /></button>
                   </div>
                 ))}
               </div>
               <small className="cover-field-hint">Click a saved image to swap it into this frame. Uploads are stored locally for reuse across covers.</small>
             </div>
           )}
+          <label className="cover-text-input"><span>Alt text</span><input value={layer.alt ?? ""} maxLength={500} onChange={(event) => onUpdate({ alt: event.target.value }, { key: `image-alt:${layer.id}` })} /></label>
+          <label className="cover-text-input"><span>Photo credit</span><input value={layer.credit ?? ""} maxLength={240} onChange={(event) => onUpdate({ credit: event.target.value }, { key: `image-credit:${layer.id}` })} /></label>
+          <label className="cover-text-input"><span>License / source notes</span><input value={layer.license ?? ""} maxLength={500} onChange={(event) => onUpdate({ license: event.target.value }, { key: `image-license:${layer.id}` })} /></label>
           <div className="cover-image-preset-grid">
             {COVER_IMAGE_PRESETS.map((preset) => (
               <button key={preset.id} type="button" title={preset.description} onClick={() => onUpdate(preset.patch, { key: `image-preset:${layer.id}:${preset.id}` })}>{preset.label}</button>
@@ -4920,6 +4896,7 @@ function DocumentInspector({
   onPickBackgroundImage,
   onUseBackgroundImage,
   onLiftBackground,
+  onOpenImageLibrary,
   imageLibrary,
   onExtractBackgroundPalette,
   onUploadBarcode,
@@ -4946,6 +4923,7 @@ function DocumentInspector({
   onPickBackgroundImage: () => void;
   onUseBackgroundImage: (image: ReadCoverImage) => void;
   onLiftBackground: (tool?: "select" | "eraser") => void;
+  onOpenImageLibrary: (target: "add" | "replace" | "background") => void;
   imageLibrary: CoverImageAsset[];
   onExtractBackgroundPalette: () => void;
   onUploadBarcode: () => void;
@@ -4990,6 +4968,7 @@ function DocumentInspector({
           {doc.backgroundImage?.src ? (
             <>
               <CoverImageFocus src={doc.backgroundImage.src} fit={doc.backgroundImage.fit} focusX={doc.backgroundImage.focusX} focusY={doc.backgroundImage.focusY} aspectRatio={metrics.fullWidth / metrics.fullHeight} label="Background crop focus" onChange={(focusX, focusY) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, focusX, focusY } }, { key: "background-image:focus" })} />
+              <SaveStudioImageButton image={{ name: "Wrap background", src: doc.backgroundImage.src, alt: doc.backgroundImage.alt, credit: doc.backgroundImage.credit, license: doc.backgroundImage.license }} className="cover-wide-button subtle" />
               <button type="button" className="cover-wide-button subtle" onClick={() => onLiftBackground()}><LayersGlyph /> Edit as image layer</button>
               <div className="cover-select-grid">
                 <label className="cover-select-field"><span>Fit</span><select value={doc.backgroundImage.fit} onChange={(event) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, fit: event.target.value === "contain" ? "contain" : "cover" } }, { key: "background-image" })}><option value="cover">Fill wrap</option><option value="contain">Fit inside</option></select></label>
@@ -4998,6 +4977,7 @@ function DocumentInspector({
               <SliderField label="Opacity" value={doc.backgroundImage.opacity} onChange={(opacity) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, opacity } }, { key: "background-image" })} min={0} max={1} step={0.01} suffix="" />
               <SliderField label="Horizontal focus" value={doc.backgroundImage.focusX} onChange={(focusX) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, focusX } }, { key: "background-image" })} min={0} max={1} step={0.01} suffix="" />
               <SliderField label="Vertical focus" value={doc.backgroundImage.focusY} onChange={(focusY) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, focusY } }, { key: "background-image" })} min={0} max={1} step={0.01} suffix="" />
+              {([['alt', 'Alt text', 500], ['credit', 'Photo credit', 240], ['license', 'License / source notes', 500]] as const).map(([key, label, maxLength]) => <label className="cover-text-input" key={key}><span>{label}</span><input value={doc.backgroundImage?.[key] ?? ""} maxLength={maxLength} onChange={(event) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, [key]: event.target.value } }, { key: `background-image:${key}` })} /></label>)}
               <ColorField label="Image tint" value={doc.backgroundImage.tint} onChange={(tint) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, tint } }, { key: "background-image" })} />
               <SliderField label="Tint strength" value={doc.backgroundImage.tintStrength} onChange={(tintStrength) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, tintStrength } }, { key: "background-image" })} min={0} max={1} step={0.01} suffix="" />
               <button type="button" className="cover-wide-button subtle" onClick={onPickBackgroundImage}><Upload size={13} /> Replace background image</button>
@@ -5006,8 +4986,9 @@ function DocumentInspector({
           ) : (
             <button type="button" className="cover-wide-button" onClick={onPickBackgroundImage}><ImagePlus size={13} /> Choose a background image</button>
           )}
+          <button type="button" className="cover-wide-button subtle" onClick={() => onOpenImageLibrary("background")}><Images size={13} /> Browse studio images</button>
           {imageLibrary.length > 0 && <div className="cover-bg-stock-row" role="group" aria-label="Saved background images">
-            {imageLibrary.map((asset) => <button key={asset.id} type="button" title={`Use ${asset.name} as background`} aria-label={`Use ${asset.name} as background`} onClick={() => onUseBackgroundImage({ src: asset.src, width: asset.width, height: asset.height })}><img src={asset.src} alt="" /></button>)}
+            {imageLibrary.slice(0, 6).map((asset) => <button key={asset.id} type="button" title={`Use ${asset.name} as background`} aria-label={`Use ${asset.name} as background`} onClick={() => onUseBackgroundImage(asset)}><img src={asset.src} alt="" /></button>)}
           </div>}
           <div className="cover-bg-stock-row" role="group" aria-label="Stock backgrounds">
             {Object.entries(COVER_STOCK_PHOTOS).map(([stock, src]) => (

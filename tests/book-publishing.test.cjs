@@ -622,3 +622,95 @@ test("artwork presentation metadata round trips into export markup", () => {
   assert.match(html, /<figcaption>A considered caption<\/figcaption>/);
   assert.doesNotMatch(html, /<p[^>]*><figure/);
 });
+
+const { imageMarkdownFromAsset, imageFrameAspectRatio, replaceImageMarkdown } = require("./.compiled/src/lib/bookPublishing.js");
+
+const photo = { name: "The coast", src: `data:image/png;base64,${TINY_PNG}`, width: 2400, height: 1600, alt: 'The coast & "sky"', credit: "Photo: Amelia & Hart", license: "Private archive / print permission" };
+
+test("library placements carry source details into portable manuscript content", () => {
+  const markdown = imageMarkdownFromAsset(photo);
+  const parsed = canvasBlocks(markdown)[0].image;
+  assert.equal(parsed.alt, photo.alt);
+  assert.equal(parsed.presentation.sourceWidth, 2400);
+  assert.equal(parsed.presentation.sourceHeight, 1600);
+  assert.equal(parsed.presentation.credit, photo.credit);
+  assert.equal(parsed.presentation.license, photo.license);
+  const html = markdownToHtml(markdown);
+  assert.match(html, /alt="The coast &amp; &quot;sky&quot;"/);
+  assert.match(html, /<span class="book-image-credit">Photo: Amelia &amp; Hart<\/span>/);
+  assert.doesNotMatch(html, /Private archive/);
+});
+
+test("page image crop focus and height survive HTML, print and EPUB", async () => {
+  const markdown = imageMarkdownFromAsset(photo, { radius: "soft", align: "center", width: 60, height: 40, aspect: "square", fit: "cover", frame: "hairline", caption: "The morning tide", focusX: 0.9, focusY: 0.2, cornerRadius: 12, borderWidth: 2, borderColor: "#123456", opacity: 0.7, rotation: -5, shadow: "soft" });
+  const manuscript = book({ layout_json: JSON.stringify({ ...DEFAULT_BOOK_LAYOUT, cover: { ...DEFAULT_BOOK_LAYOUT.cover, enabled: false } }) });
+  const sections = [chapter(1, "Photo story", markdown)];
+  const html = bookHtml(manuscript, sections);
+  const print = bookPrintHtml(manuscript, sections);
+  for (const output of [html, print]) {
+    assert.match(output, /object-position:90% 20%/);
+    assert.match(output, /aspect-ratio:60\/40/);
+    assert.match(output, /border-radius:12px/);
+    assert.match(output, /border:2px solid #123456/);
+    assert.match(output, /opacity:0.7/);
+    assert.match(output, /transform:rotate\(-5deg\)/);
+    assert.match(output, /Photo: Amelia &amp; Hart/);
+  }
+  const epub = unzipSync(await bookEpub(manuscript, sections));
+  const pages = Object.entries(epub).filter(([name]) => name.endsWith(".xhtml")).map(([, bytes]) => strFromU8(bytes)).join("\n");
+  assert.match(pages, /object-position:90% 20%/);
+  assert.match(pages, /Photo: Amelia &amp; Hart/);
+});
+
+test("image focus clamps finite values and safely defaults legacy or malformed metadata", () => {
+  const extreme = canvasBlocks('![Photo](https://example.com/photo.png){fx=-2 fy=7 sw=2400 sh=1600}')[0].image.presentation;
+  assert.equal(extreme.focusX, 0);
+  assert.equal(extreme.focusY, 1);
+  const invalid = canvasBlocks('![Photo](https://example.com/photo.png){fx=NaN fy=Infinity sw=Infinity sh=-10}')[0].image.presentation;
+  assert.equal(invalid.focusX, undefined);
+  assert.equal(invalid.focusY, undefined);
+  assert.equal(invalid.sourceWidth, undefined);
+  assert.equal(invalid.sourceHeight, 0);
+  assert.match(markdownToHtml('![Photo](https://example.com/photo.png)'), /object-position:50% 50%/);
+});
+
+test("replacement images keep geometry and captions while replacing attribution", () => {
+  const original = imageMarkdown("Old", "https://example.com/old.png", { radius: "round", align: "left", width: 55, height: 35, x: 12, y: 26, z: 7, aspect: "wide", fit: "cover", frame: "mat", focusX: 0.7, caption: "Our story", credit: "Old photographer", license: "Old license" });
+  const replaced = replaceImageMarkdown(original, imageMarkdownFromAsset(photo));
+  const parsed = canvasBlocks(replaced)[0].image;
+  assert.equal(parsed.source, photo.src);
+  for (const [key, expected] of Object.entries({ width: 55, height: 35, x: 12, y: 26, z: 7, frame: "mat", focusX: 0.7, caption: "Our story", credit: photo.credit, license: photo.license, sourceWidth: 2400 })) assert.equal(parsed.presentation[key], expected, key);
+  const uncredited = canvasBlocks(replaceImageMarkdown(original, "![New](https://example.com/new.png)"))[0].image;
+  assert.equal(uncredited.presentation.credit, undefined);
+  assert.equal(uncredited.presentation.license, undefined);
+  assert.equal(uncredited.presentation.sourceWidth, undefined);
+  assert.equal(replaceImageMarkdown(original, "Plain text"), null);
+});
+
+test("crop preview proportions follow the same explicit height, shape and source rules", () => {
+  const defaults = { radius: "none", align: "center", width: 60, aspect: "auto", fit: "contain", frame: "none", caption: "" };
+  assert.equal(imageFrameAspectRatio({ ...defaults, height: 30, aspect: "portrait" }), 2);
+  assert.equal(imageFrameAspectRatio({ ...defaults, aspect: "portrait" }), 0.75);
+  assert.equal(imageFrameAspectRatio({ ...defaults, sourceWidth: 2400, sourceHeight: 1600 }), 1.5);
+  assert.equal(imageFrameAspectRatio(defaults), undefined);
+});
+
+test("Word exports retain photo credits below embedded artwork", async () => {
+  const files = textFiles(await bookDocx(book(), [chapter(1, "Photo story", imageMarkdownFromAsset(photo))]));
+  assert.match(files["word/document.xml"], /Photo: Amelia &amp; Hart/);
+  assert.doesNotMatch(files["word/document.xml"], /Private archive/);
+});
+
+test("photo attributes remain literal and XML-safe when they contain Markdown punctuation", () => {
+  const { JSDOM } = require("jsdom");
+  const alt = 'A **bold** coast & "sky" <archive>';
+  const src = 'https://example.com/a_b_c.png?one=1&two=2';
+  const html = markdownToHtml(imageMarkdown(alt, src, { radius: "none", align: "center", width: 100, aspect: "auto", fit: "contain", frame: "none", caption: "A **literal** caption", credit: "Amelia * Hart" }));
+  const dom = new JSDOM(`<div xmlns="http://www.w3.org/1999/xhtml">${html}</div>`, { contentType: "application/xhtml+xml" });
+  assert.equal(dom.window.document.querySelector("img").getAttribute("alt"), alt);
+  assert.equal(dom.window.document.querySelector("img").getAttribute("src"), src);
+  assert.match(dom.window.document.querySelector("figcaption").textContent, /A \*\*literal\*\* caption/);
+  assert.equal(dom.window.document.querySelector("strong"), null);
+  dom.window.close();
+  assert.doesNotMatch(markdownToHtml('`![example](https://example.com/a.png)`'), /<figure/);
+});

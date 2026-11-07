@@ -43,7 +43,13 @@ export interface CoverFill {
   pattern?: CoverPattern;
 }
 
-export interface CoverBackgroundImage {
+export interface CoverImageSourceDetails {
+  alt?: string;
+  credit?: string;
+  license?: string;
+}
+
+export interface CoverBackgroundImage extends CoverImageSourceDetails {
   src: string;
   sourceWidth: number;
   sourceHeight: number;
@@ -136,7 +142,7 @@ export interface CoverTextLayer extends CoverLayerBase {
   highlight: CoverTextHighlight;
 }
 
-export interface CoverImageLayer extends CoverLayerBase {
+export interface CoverImageLayer extends CoverLayerBase, CoverImageSourceDetails {
   type: "image";
   src: string;
   sourceWidth: number;
@@ -688,6 +694,9 @@ function normalizeBackgroundImage(value: unknown): CoverBackgroundImage | null {
   if (!src) return null;
   return {
     src,
+    alt: text(value.alt, "", 500),
+    credit: text(value.credit, "", 240),
+    license: text(value.license, "", 500),
     sourceWidth: decimal(value.sourceWidth, 0, 0, 100_000),
     sourceHeight: decimal(value.sourceHeight, 0, 0, 100_000),
     fit: value.fit === "contain" ? "contain" : "cover",
@@ -772,6 +781,9 @@ export function imageLayer(input: Partial<CoverImageLayer> & Pick<CoverImageLaye
     type: "image",
     ...baseLayer(input),
     src: input.src,
+    alt: input.alt ?? "",
+    credit: input.credit ?? "",
+    license: input.license ?? "",
     sourceWidth: input.sourceWidth ?? 0,
     sourceHeight: input.sourceHeight ?? 0,
     eraseMask: input.eraseMask ?? "",
@@ -948,6 +960,9 @@ function normalizeLayer(value: unknown, index: number): CoverLayer | null {
       ...base,
       type,
       src: text(value.src, "", 24_000_000),
+      alt: text(value.alt, "", 500),
+      credit: text(value.credit, "", 240),
+      license: text(value.license, "", 500),
       sourceWidth: integer(value.sourceWidth, 0, 0, 100_000),
       sourceHeight: integer(value.sourceHeight, 0, 0, 100_000),
       eraseMask: text(value.eraseMask, "", 24_000_000),
@@ -3628,7 +3643,7 @@ function coverLayerContentHtml(book: Book, cover: BookCoverDesign, layer: CoverL
     const eraseMask = layer.eraseMask
       ? `-webkit-mask-image:url('${layer.eraseMask}');-webkit-mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-image:url('${layer.eraseMask}');mask-size:100% 100%;mask-repeat:no-repeat;`
       : "";
-    return `<div class="cover-doc-image-frame" style="position:relative;width:100%;height:100%;overflow:hidden;isolation:isolate;border-radius:${layer.radius}in;${coverImageMaskCss(layer.mask)}${eraseMask}"><img class="cover-doc-image" src="${escapeHtml(layer.src)}" alt="" draggable="false" style="width:100%;height:100%;object-fit:${layer.fit};object-position:${Math.round(layer.focusX * 100)}% ${Math.round(layer.focusY * 100)}%;${filter ? `filter:${filter};` : ""}transform:scale(${layer.flipX ? -1 : 1},${layer.flipY ? -1 : 1})" />${tint}</div>`;
+    return `<div class="cover-doc-image-frame" style="position:relative;width:100%;height:100%;overflow:hidden;isolation:isolate;border-radius:${layer.radius}in;${coverImageMaskCss(layer.mask)}${eraseMask}"><img class="cover-doc-image" src="${escapeHtml(layer.src)}" alt="${escapeHtml(layer.alt ?? "")}" draggable="false" style="width:100%;height:100%;object-fit:${layer.fit};object-position:${Math.round(layer.focusX * 100)}% ${Math.round(layer.focusY * 100)}%;${filter ? `filter:${filter};` : ""}transform:scale(${layer.flipX ? -1 : 1},${layer.flipY ? -1 : 1})" />${tint}</div>`;
   }
   if (layer.type === "shape") {
     return shapeSvgMarkup(layer, `${idPrefix}-${layer.id}`);

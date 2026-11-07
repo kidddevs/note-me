@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "@tauri-apps/api/core";
 import {
   ArrowDown,
   ArrowLeft,
@@ -17,6 +18,7 @@ import {
   GripVertical,
   History,
   ImagePlus,
+  Images,
   LayoutList,
   LayoutTemplate,
   Lock,
@@ -60,6 +62,8 @@ import { BOOK_GRAPHICS, BOOK_GRAPHIC_CATEGORIES, graphicDataUri, type BookGraphi
 import { hasSectionLayoutOverride, layoutForBook, layoutForChapter, layoutSectionKey, mergeEditorialStyles, parseBookLayout, sectionLayoutOverrideJson, sectionPageMasterLayout, serializeBookLayout, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTypography } from "../lib/bookLayout";
 import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVars } from "../lib/bookStyles";
 import { api } from "../lib/api";
+import { readBookImageFile, readBookImageSource, saveCoverImageAsset } from "../lib/bookImageLibrary";
+import { BookImageLibrary } from "./BookImageLibrary";
 import { htmlToMarkdown } from "../lib/richtext";
 import { useBooks } from "../store/books";
 import { useTheme } from "../store/theme";
@@ -83,9 +87,10 @@ import {
   findOccurrences,
   imageAltText,
   imageDataUri,
-  imageFileToMarkdown,
+  imageMarkdownFromAsset,
   imageMimeType,
   imageMarkdown,
+  replaceImageMarkdown,
   markdownToHtml,
   bookInputFromBook,
   restyleCanvasTextSource,
@@ -194,31 +199,19 @@ function BooksAssetDrawer({ onClose, onInsert, replacing = false }: { onClose: (
     return `${item.label} ${item.category}`.toLocaleLowerCase().includes(search);
   });
 
-  const importImage = async () => {
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const importImage = async (file: File | undefined) => {
+    if (!file) return;
     setUploading(true);
     try {
-      const [{ open }, { readFile }] = await Promise.all([
-        import("@tauri-apps/plugin-dialog"),
-        import("@tauri-apps/plugin-fs"),
-      ]);
-      const path = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
-      });
-      if (typeof path !== "string") return;
-      const data = await readFile(path);
-      if (data.byteLength > 12 * 1024 * 1024) {
-        notify("error", "Image is too large", "Choose an image smaller than 12 MB.");
-        return;
-      }
-      const alt = imageAltText(path);
-      onInsert(`![${alt}](${imageDataUri(imageMimeType(path), data)})\n`);
+      const image = await readBookImageFile(file);
+      const saved = await saveCoverImageAsset(image);
+      onInsert(`${imageMarkdownFromAsset(saved ?? image)}\n`);
+      if (!saved) notify("info", "Image placed without a library copy", "The library may be full or storage unavailable. Your image is embedded in this section.");
     } catch (error) {
       notify("error", "Image could not be added", String(error));
-    } finally {
-      setUploading(false);
-    }
+    } finally { setUploading(false); }
   };
 
   return (
@@ -228,7 +221,9 @@ function BooksAssetDrawer({ onClose, onInsert, replacing = false }: { onClose: (
         <button className="books-assets-close" onClick={onClose} aria-label="Close artwork drawer"><X size={14} /></button>
       </div>
       <div className="books-assets-tools">
-        <button className="books-asset-upload" onClick={() => void importImage()} disabled={uploading}><Upload size={13} /> {uploading ? "Reading image…" : replacing ? "Replace with image from computer" : "Add image from computer"}</button>
+        <button className="books-asset-upload" onClick={() => uploadRef.current?.click()} disabled={uploading}><Upload size={13} /> {uploading ? "Reading image…" : replacing ? "Replace with image from computer" : "Add image from computer"}</button>
+        <input ref={uploadRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden onChange={(event) => { void importImage(event.target.files?.[0]); event.target.value = ""; }} />
+        <button type="button" className="books-shared-image-button" onClick={() => setLibraryOpen(true)}><Images size={14} /> Studio image library</button>
         <div className="books-asset-color-group"><label className="books-asset-color"><span>Graphic color</span><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /><code>{color}</code></label><div className="books-asset-swatches" aria-label="Graphic color presets">{["#a56b3e", "#29231e", "#6f7f6d", "#874e47", "#756e62"].map((preset) => <button key={preset} className={color === preset ? "active" : ""} style={{ background: preset }} onClick={() => setColor(preset)} aria-label={`Use ${preset}`} />)}</div></div>
       </div>
       <label className="books-asset-search"><Search size={12} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this collection" aria-label="Search artwork collection" />{query && <button onClick={() => setQuery("")} aria-label="Clear artwork search"><X size={12} /></button>}</label>
@@ -243,6 +238,7 @@ function BooksAssetDrawer({ onClose, onInsert, replacing = false }: { onClose: (
          })}
         {graphics.length === 0 && <p className="books-assets-empty">No artwork matches “{query}”.</p>}
       </div>
+      {libraryOpen && <BookImageLibrary onClose={() => setLibraryOpen(false)} onUse={(asset) => onInsert(`${imageMarkdownFromAsset(asset)}\n`)} actionLabel={replacing ? "Replace artwork" : "Place on page"} />}
       <p className="books-assets-note">Graphics are embedded as portable SVG data, so their color and shape travel with exported copies.</p>
     </section>
   );
@@ -611,9 +607,10 @@ function ManuscriptCanvas({ content, selection, selectedStarts, typography, para
       };
       return <div className="books-canvas-artwork">
         <div className={`books-canvas-image-inner radius-${image.radius} aspect-${image.aspect} fit-${image.fit}${frameClass}`} style={frameStyle}>
-          {safeSource ? <img src={block.image.source} alt={block.image.alt || "Manuscript artwork"} draggable={false} /> : <span className="books-canvas-unsupported">This image source cannot be previewed.</span>}
+          {safeSource ? <img src={block.image.source} alt={block.image.alt} draggable={false} style={{ objectPosition: `${(image.focusX ?? 0.5) * 100}% ${(image.focusY ?? 0.5) * 100}%` }} /> : <span className="books-canvas-unsupported">This image source cannot be previewed.</span>}
         </div>
         {image.caption && <p className="books-canvas-image-caption">{image.caption}</p>}
+        {image.credit && <p className="books-canvas-image-credit">{image.credit}</p>}
       </div>;
     }
     const canvasSource = block.kind === "table"
@@ -867,7 +864,7 @@ function ManuscriptCanvas({ content, selection, selectedStarts, typography, para
         {block.kind === "text" ? (
           <CanvasTextBlock block={block} index={index} width={width} left={left} freeY={freeY} layer={layer} height={liveHeight ?? block.presentation.height} fullResize={fullResize} selected={selected} moving={moving} resizing={Boolean(liveResize)} typography={blockTypography} focusRequest={focusRequest?.start === block.start ? focusRequest : null} onFocusHandled={onFocusHandled} onTextChange={onTextChange} onTextSelection={onTextSelection} onEditorKeyDown={onEditorKeyDown} onResizeStart={onResizeStart} onMoveStart={beginBlockMove} onParagraphBreak={onParagraphBreak} onContextMenu={onContextMenu} />
         ) : (
-          <div className={`books-canvas-visual ${selected ? "selected" : ""} ${moving ? "is-moving" : ""} align-${block.presentation.align} ${block.presentation.bleed ? "bleed" : ""} ${flowClasses}`} style={{ ...canvasBlockStyle(width, left, freeY, moving, layer), ...(imageWrap ? { marginRight: imageWrap === "left" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined, marginLeft: imageWrap === "right" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined } : {}) }} role="button" tabIndex={0} data-canvas-block data-block-start={block.start} onContextMenu={(event) => onContextMenu(event, block)} onPointerDown={(event) => beginBlockMove(event, block)} onKeyDown={(event) => {
+          <div className={`books-canvas-visual ${block.kind === "image" ? "is-image" : ""} ${selected ? "selected" : ""} ${moving ? "is-moving" : ""} align-${block.presentation.align} ${block.presentation.bleed ? "bleed" : ""} ${flowClasses}`} style={{ ...canvasBlockStyle(width, left, freeY, moving, layer), ...(imageWrap ? { marginRight: imageWrap === "left" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined, marginLeft: imageWrap === "right" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined } : {}) }} role="button" tabIndex={0} data-canvas-block data-block-start={block.start} onContextMenu={(event) => onContextMenu(event, block)} onPointerDown={(event) => beginBlockMove(event, block)} onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
               onSelectVisual(block, event.shiftKey || event.metaKey);
@@ -959,7 +956,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [findQuery, setFindQuery] = useState("");
   const [findIndex, setFindIndex] = useState(0);
   const [assetOpen, setAssetOpen] = useState(false);
-  const [artworkReplaceTarget, setArtworkReplaceTarget] = useState<{ start: number; end: number } | null>(null);
+  const [artworkReplaceTarget, setArtworkReplaceTarget] = useState<{ start: number; end: number; source: string } | null>(null);
   const [canvasPrefs] = useState(readCanvasPrefs);
   const [canvasZoom, setCanvasZoom] = useState(canvasPrefs.zoom);
   const canvasZoomRef = useRef(canvasZoom);
@@ -1062,6 +1059,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setReplaceOpen(false);
     setReplaceQuery("");
     setAssetOpen(false);
+    setArtworkReplaceTarget(null);
     setCanvasResize(null);
     setPendingCanvasFocus(null);
     editorRef.current = null;
@@ -1187,6 +1185,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.target as Element | null)?.closest?.('[role="dialog"]')) return;
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
       if (!(event.target instanceof HTMLElement) || !event.target.closest(".books-editor-screen")) return;
       if (event.key === "=" || event.key === "+") {
@@ -1250,6 +1249,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
 
   useEffect(() => {
+    if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     void getCurrentWindow().onCloseRequested(async (event) => {
@@ -1758,6 +1758,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
   const replaceCanvasArtwork = async (block: CanvasBlock) => {
     if (block.kind !== "image" || !block.image) return;
+    const chapterId = draftRef.current.id;
     try {
       const [{ open }, { readFile }] = await Promise.all([
         import("@tauri-apps/plugin-dialog"),
@@ -1774,8 +1775,17 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
         notify("error", "Image is too large", "Choose an image smaller than 12 MB.");
         return;
       }
-      const presentation = block.image.presentation;
-      replaceContentRange(block.start, block.end, `${block.image.indent}${imageMarkdown(imageAltText(path), imageDataUri(imageMimeType(path), data), presentation)}`);
+      const image = { ...await readBookImageSource(imageDataUri(imageMimeType(path), data)), name: imageAltText(path) };
+      if (draftRef.current.id !== chapterId || contentRef.current.slice(block.start, block.end) !== block.source) {
+        notify("info", "Artwork changed", "Select the current artwork and replace it again.");
+        return;
+      }
+      const saved = await saveCoverImageAsset(image);
+      if (draftRef.current.id !== chapterId || contentRef.current.slice(block.start, block.end) !== block.source) {
+        notify("info", "Artwork changed", "The new source is ready in the image library. Select the current artwork before replacing it.");
+        return;
+      }
+      replaceContentRange(block.start, block.end, `${block.image.indent}${imageMarkdownFromAsset(saved ?? image, block.image.presentation)}`);
       notify("success", "Artwork replaced", imageAltText(path));
     } catch (error) {
       notify("error", "Artwork could not be replaced", String(error));
@@ -1784,7 +1794,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
   const openArtworkReplacement = (block: CanvasBlock) => {
     if (block.kind !== "image") return;
-    setArtworkReplaceTarget({ start: block.start, end: block.end });
+    setArtworkReplaceTarget({ start: block.start, end: block.end, source: block.source });
     setAssetOpen(true);
   };
 
@@ -2137,9 +2147,24 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     return `${canvasTextSource(parsed.source, { ...parsed.presentation, y })}\n`;
   };
 
+  const focusPlacedArtwork = () => requestAnimationFrame(() => {
+    canvasRef.current?.querySelector<HTMLElement>(".books-canvas-visual.selected")?.focus({ preventScroll: true });
+  });
+
   const insertAsset = (markdown: string) => {
+    if (draftRef.current.id !== activeChapter?.id || draftRef.current.content !== content) {
+      notify("info", "The section changed", "Choose the image again from the artwork drawer to place it in the current section.");
+      return;
+    }
     if (artworkReplaceTarget) {
-      replaceContentRange(artworkReplaceTarget.start, artworkReplaceTarget.end, markdown.trim());
+      if (contentRef.current.slice(artworkReplaceTarget.start, artworkReplaceTarget.end) !== artworkReplaceTarget.source) {
+        notify("info", "Artwork changed", "Select the current artwork and replace it again.");
+        setArtworkReplaceTarget(null); setAssetOpen(false);
+        return;
+      }
+      const replacement = replaceImageMarkdown(artworkReplaceTarget.source, markdown.trim()) ?? markdown.trim();
+      replaceContentRange(artworkReplaceTarget.start, artworkReplaceTarget.end, replacement);
+      focusPlacedArtwork();
       setArtworkReplaceTarget(null);
       setAssetOpen(false);
       return;
@@ -2158,6 +2183,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       replaceSelection(nextMarkdown);
     }
     setAssetOpen(false);
+    focusPlacedArtwork();
   };
 
   const insertRichBlock = (block: string) => {
@@ -2291,7 +2317,10 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
   const insertImageFile = async (file: File) => {
     try {
-      insertAsset(await imageFileToMarkdown(file));
+      const image = await readBookImageFile(file);
+      const saved = await saveCoverImageAsset(image);
+      insertAsset(`${imageMarkdownFromAsset(saved ?? image)}\n`);
+      if (!saved) notify("info", "Image placed without a library copy", "The library may be full or storage unavailable. The placed image is still embedded in this section.");
     } catch (error) {
       notify("error", "Image could not be added", String(error));
     }

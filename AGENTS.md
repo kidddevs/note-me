@@ -2,7 +2,8 @@
 
 Read `README.md` and `docs/ARCHITECTURE.md` before changing code. For Books Studio
 cover work, also read `docs/COVER_DESIGNER.md` and the relevant part of
-`docs/BOOKS_STUDIO_AUDIT.md`.
+`docs/BOOKS_STUDIO_AUDIT.md`. For shared artwork, image placement or publishing,
+also read `docs/STUDIO_IMAGES.md`.
 
 ## Conventions
 

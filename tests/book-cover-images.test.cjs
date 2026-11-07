@@ -68,3 +68,15 @@ test("selection export rejects empty and oversized work before allocating a canv
   cover.doc.layers = [huge];
   await assert.rejects(renderCoverSelectionCanvas({ trim_size: "6x9" }, cover, [huge.id]), /too large/);
 });
+
+test("cover image source details survive normalization and background lifting", () => {
+  const source = { alt: 'Tide & "light"', credit: "Amelia Hart", license: "Archive permission" };
+  const layer = imageLayer({ ...photo(), ...source });
+  const doc = { ...emptyCoverDocument(), backgroundImage: { src: layer.src, sourceWidth: 1000, sourceHeight: 2000, fit: "cover", focusX: 0.2, focusY: 0.8, opacity: 1, blur: 0, tint: "#ffffff", tintStrength: 0, ...source }, layers: [layer] };
+  const parsed = parseCoverDocument(doc);
+  for (const key of ["alt", "credit", "license"]) {
+    assert.equal(parsed.layers[0][key], source[key]);
+    assert.equal(parsed.backgroundImage[key], source[key]);
+    assert.equal(liftCoverBackground(parsed, metrics, "lifted").layer[key], source[key]);
+  }
+});

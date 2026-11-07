@@ -86,6 +86,7 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 - **Free margins** unlock full-bleed text and artwork beyond the content margins. Individual objects can opt into full bleed, and artwork can carry its own background color to override the page background.
 - Measurement units are switchable between **inches, centimeters, and pixels** across page sizes, margins, rulers, pattern spacing, and settings while staying stored in print-safe inches.
 - A searchable artwork drawer with local images and recolorable editorial artwork — ornaments, dividers, botanicals, symbols, frames, lines, shapes, arrows, and a dedicated Journal set with cards, trackers, labels, washi tape, pockets, stamps, and photo corners. Artwork inserts at a sensible width for its role, and an existing artwork can be replaced directly from the collection.
+- **Shared studio image library** for manuscript pages, cover layers and image backgrounds, with search, favorites, orientation filters, tags, alt text, photo credits and source notes. Save an existing image back to the shelf, retain placed artwork when removing a library copy, and reuse identical uploads without duplicate entries. Page images share the cover's focal crop preview, while image replacements preserve the frame and caption. Credits travel into HTML, EPUB, print and Word, and cover production packages include an image-credits report.
 - Editorial page systems for magazines, newsletters, lookbooks, zines, annual reports, and recipe books, plus an opt-in editorial style kit with kickers, standfirsts, bylines, section labels, cover lines, folios, contributor bios, and contents entries.
 - Portable rich blocks for GFM tables, configurable tables, bar / line / area / donut / stat charts, callouts, and graph fences — all embedded in the manuscript Markdown.
 
@@ -165,7 +166,7 @@ NoteMe uses SQLite with WAL journaling. On macOS, the database lives at:
 ~/Library/Application Support/com.dakid.noteme/
 ```
 
-The app does not upload notes or attachments. The only network request made by the update checker is to the public GitHub Releases API when you explicitly choose **Check for Updates…**.
+The app does not upload notes or attachments. The update checker contacts the public GitHub Releases API when you explicitly choose **Check for Updates…**. If you use a remote image URL, previewing it or saving its source to the image library requests that image from its host; uploaded files and bundled artwork stay local.
 
 ## Technology
 
@@ -179,6 +180,8 @@ The codebase is split between a small React UI layer and explicit Rust commands 
 
 For cover designer development, shared color tools, image backgrounds, layer/group
 interactions, and the browser QA preview, see [docs/COVER_DESIGNER.md](docs/COVER_DESIGNER.md).
+Shared artwork, page crops and image publishing contracts are documented in
+[docs/STUDIO_IMAGES.md](docs/STUDIO_IMAGES.md).
 
 ## Project map
 

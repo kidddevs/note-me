@@ -88,7 +88,7 @@ function cover(overrides = {}) {
 test("background images normalize safely and explicit removal overrides a fallback", () => {
   const fallback = { ...emptyCoverDocument(), backgroundImage: { src: "data:image/png;base64,AA==", sourceWidth: 900, sourceHeight: 600 } };
   const doc = parseCoverDocument({ backgroundImage: { ...fallback.backgroundImage, focusX: -2, focusY: 2, opacity: 4, blur: 1, tintStrength: -3, fit: "bad" } });
-  assert.deepEqual(doc.backgroundImage, { src: fallback.backgroundImage.src, sourceWidth: 900, sourceHeight: 600, focusX: 0, focusY: 1, opacity: 1, blur: 0.08, tint: "#ffffff", tintStrength: 0, fit: "cover" });
+  assert.deepEqual(doc.backgroundImage, { src: fallback.backgroundImage.src, alt: "", credit: "", license: "", sourceWidth: 900, sourceHeight: 600, focusX: 0, focusY: 1, opacity: 1, blur: 0.08, tint: "#ffffff", tintStrength: 0, fit: "cover" });
   assert.equal(parseCoverDocument({ backgroundImage: null }, fallback).backgroundImage, null);
   assert.equal(parseCoverDocument({}, fallback).backgroundImage.src, fallback.backgroundImage.src);
   assert.equal(parseCoverDocument({ backgroundImage: {} }).backgroundImage, null);
