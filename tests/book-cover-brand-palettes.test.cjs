@@ -61,3 +61,10 @@ test("brand palette storage supports save, rename, and delete", () => {
     global.window = previousWindow;
   }
 });
+
+
+test("brand palettes preserve picker alpha colours when saved and reloaded", () => {
+  const palette = createBrandPalette("Transparent ink", ["#ABCDEF80", "#abcdef80", "#1234567"]);
+  assert.deepEqual(palette.colors, ["#abcdef80"]);
+  assert.deepEqual(parseBrandPalettes(serializeBrandPalettes([palette]))[0].colors, ["#abcdef80"]);
+});

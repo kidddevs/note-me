@@ -28,7 +28,7 @@ function timestamp(value: unknown, fallback: string) {
 function normalizeColors(value: unknown) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value
-    .filter((entry): entry is string => typeof entry === "string" && /^#[0-9a-f]{6}$/i.test(entry))
+    .filter((entry): entry is string => typeof entry === "string" && /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i.test(entry))
     .map((entry) => entry.toLocaleLowerCase()))].slice(0, MAX_BRAND_PALETTE_COLORS);
 }
 

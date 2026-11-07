@@ -143,7 +143,7 @@ function parseTemplateEntry(value: unknown, stamp: string): SavedCoverTemplate |
   const name = text(value.name, "", MAX_SAVED_COVER_TEMPLATE_NAME).trim();
   if (!name) return null;
   const doc = parseCoverDocument(value.doc);
-  if (doc.layers.length === 0 && !doc.templateId) return null;
+  if (doc.layers.length === 0 && !doc.templateId && !doc.backgroundImage?.src) return null;
   const metrics = parseSavedMetrics(value.metrics);
   if (!metrics) return null;
   return {

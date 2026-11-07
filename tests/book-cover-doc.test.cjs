@@ -85,6 +85,46 @@ function cover(overrides = {}) {
   };
 }
 
+test("background images normalize safely and explicit removal overrides a fallback", () => {
+  const fallback = { ...emptyCoverDocument(), backgroundImage: { src: "data:image/png;base64,AA==", sourceWidth: 900, sourceHeight: 600 } };
+  const doc = parseCoverDocument({ backgroundImage: { ...fallback.backgroundImage, focusX: -2, focusY: 2, opacity: 4, blur: 1, tintStrength: -3, fit: "bad" } });
+  assert.deepEqual(doc.backgroundImage, { src: fallback.backgroundImage.src, sourceWidth: 900, sourceHeight: 600, focusX: 0, focusY: 1, opacity: 1, blur: 0.08, tint: "#ffffff", tintStrength: 0, fit: "cover" });
+  assert.equal(parseCoverDocument({ backgroundImage: null }, fallback).backgroundImage, null);
+  assert.equal(parseCoverDocument({}, fallback).backgroundImage.src, fallback.backgroundImage.src);
+  assert.equal(parseCoverDocument({ backgroundImage: {} }).backgroundImage, null);
+  assert.equal(parseCoverDocument({ backgroundImage: { src: "/legacy.jpg" } }).backgroundImage.sourceWidth, 0);
+});
+
+test("background image and custom alpha colours survive layouts and each panel markup", () => {
+  const { parseBookLayout, serializeBookLayout } = require("./.compiled/src/lib/bookLayout.js");
+  const { createSavedCoverTemplate, serializeCoverTemplateFile, parseCoverTemplateFile } = require("./.compiled/src/lib/bookCoverLibrary.js");
+  const doc = parseCoverDocument({ background: { type: "gradient", gradient: { stops: [{ color: "#12345678", position: 0 }, { color: "#abcdef00", position: 1 }] } }, backgroundImage: { src: "/photo.jpg", sourceWidth: 6000, sourceHeight: 4000, fit: "contain", focusX: 0.2, focusY: 0.7, opacity: 0.6, blur: 0.02, tint: "#abcdef80", tintStrength: 0.3 }, palette: ["#12345678"] });
+  const design = cover({ doc });
+  assert.equal(require("./.compiled/src/lib/bookCoverDoc.js").hasCoverDocument(design), true);
+  const layout = parseBookLayout(serializeBookLayout({ ...DEFAULT_BOOK_LAYOUT, cover: design }));
+  assert.deepEqual(layout.cover.doc.backgroundImage, doc.backgroundImage);
+  assert.equal(layout.cover.doc.background.gradient.stops[0].color, "#12345678");
+  assert.deepEqual(layout.cover.doc.palette, ["#12345678"]);
+  const template = createSavedCoverTemplate("Photo", doc, coverMetrics("6x9", design));
+  const imported = parseCoverTemplateFile(serializeCoverTemplateFile(template));
+  assert.deepEqual(imported.doc.backgroundImage, doc.backgroundImage);
+  for (const panel of ["wrap", "front", "back", "spine"]) {
+    const html = coverDocMarkup(book(), design, panel);
+    assert.match(html, /cover-doc-background-image/);
+    assert.match(html, /object-fit:contain;object-position:20% 70%/);
+    assert.match(html, /opacity:0.6/);
+    assert.match(html, /filter:blur\(1.92px\)/);
+    assert.match(html, /width:13.05in;height:9.25in/);
+  }
+});
+
+test("malformed hex colours fall back while shorthand alpha composes with effect opacity", () => {
+  const source = textLayer({ id: "text", name: "Text", panel: "front", x: 1, y: 1, width: 2, height: 1, text: "Hello", color: "#12345", highlight: { enabled: true, color: "#f008", opacity: 0.5, padding: 0.05, radius: 0.02 } });
+  const doc = parseCoverDocument({ layers: [source] });
+  assert.notEqual(doc.layers[0].color, "#12345");
+  assert.match(coverDocMarkup(book(), cover({ doc }), "front"), /background:rgba\(255, 0, 0, 0.267\)/);
+});
+
 test("spine width follows page count and paper stock", () => {
   assert.equal(spineWidthForPages(320, "cream-60"), 0.8);
   assert.equal(spineWidthForPages(320, "white-60"), 0.721);

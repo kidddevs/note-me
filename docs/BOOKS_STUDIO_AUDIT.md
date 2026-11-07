@@ -4,6 +4,20 @@ _Last reviewed: November 2026_
 
 Books Studio already has an unusually strong foundation for a local-first writing app: a real manuscript data model, a direct-manipulation page canvas, print-aware typography, multi-format export, version checkpoints, and a considered editorial UI. The work below focuses on the gap between "beautiful manuscript editor" and "industry-grade magazine production surface."
 
+## Cover tool upgrades — November 7, 2026
+
+The cover editor now has pointer-driven ordered multi-layer dragging, group
+selection that moves together on canvas, a contained layer-panel toggle, a shared
+HSV/RGB/alpha wheel for solid and gradient colors, and full-wrap image backgrounds.
+The picker, eyedropper, document palettes, image library, and background palette
+extraction share the same document state. Image tools add a direct focal preview,
+separate tone/crop resets, source-ratio fitting, reversible photo/background
+transfer, a background-to-eraser action, and transparent selected-layer PNG export.
+Undo/redo snapshots and background-only template handling are repaired.
+
+See [Cover designer implementation and QA](COVER_DESIGNER.md) for the contracts,
+regressions, development fixture, and validation limits.
+
 ## What is already strong
 
 - **Content model**: books and sections are first-class SQLite records, not serialized notes. Section kinds carry semantic meaning and reorder within front/story/back bands.

@@ -1,3 +1,4 @@
+import { normalizeCoverHex, parseCoverColor } from "./bookCoverColor";
 import type { Book, Chapter } from "./types";
 import type { BookCoverDesign, BookCoverGradient } from "./bookLayout";
 import { BOOK_GRAPHICS, graphicDataUri } from "./bookAssets";
@@ -40,6 +41,19 @@ export interface CoverFill {
   color: string;
   gradient: BookCoverGradient;
   pattern?: CoverPattern;
+}
+
+export interface CoverBackgroundImage {
+  src: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  fit: "cover" | "contain";
+  focusX: number;
+  focusY: number;
+  opacity: number;
+  blur: number;
+  tint: string;
+  tintStrength: number;
 }
 
 export interface CoverLayerShadow {
@@ -194,6 +208,7 @@ export interface BookCoverDocument {
   version: 1;
   templateId: string;
   background: CoverFill;
+  backgroundImage?: CoverBackgroundImage | null;
   layers: CoverLayer[];
   groups: CoverLayerGroup[];
   palette: string[];
@@ -368,7 +383,7 @@ export const COVER_TEMPLATE_PRESETS: CoverTemplatePreset[] = [
   { id: "afterhours", label: "After Hours", description: "Cinematic city night, neon accents and a sleek thriller finish.", mood: "Thriller", palette: ["#101722", "#f2e8db", "#d97757"] },
 ];
 
-const COVER_STOCK_PHOTOS = {
+export const COVER_STOCK_PHOTOS = {
   coast: "/cover-templates/coast.jpg",
   dunes: "/cover-templates/dunes.jpg",
   forest: "/cover-templates/forest.jpg",
@@ -422,7 +437,7 @@ function oneOf<T extends string>(value: unknown, options: T[], fallback: T): T {
 }
 
 function color(value: unknown, fallback: string) {
-  return typeof value === "string" && /^#[0-9a-f]{3,8}$/i.test(value) ? value : fallback;
+  return typeof value === "string" ? normalizeCoverHex(value) ?? fallback : fallback;
 }
 
 export function roundInches(value: number) {
@@ -519,6 +534,7 @@ export function emptyCoverDocument(): BookCoverDocument {
     palette: [],
     templateId: "",
     background: coverFill("#f5efe4"),
+    backgroundImage: null,
     layers: [],
     guides: [],
     showGuides: true,
@@ -529,7 +545,7 @@ export function emptyCoverDocument(): BookCoverDocument {
 }
 
 export function hasCoverDocument(cover: BookCoverDesign) {
-  return Boolean(cover.doc && (cover.doc.layers.length > 0 || cover.doc.templateId !== ""));
+  return Boolean(cover.doc && (cover.doc.layers.length > 0 || cover.doc.templateId !== "" || cover.doc.backgroundImage?.src));
 }
 
 export function newCoverLayerId(prefix = "layer") {
@@ -663,6 +679,24 @@ function normalizePattern(value: unknown, fallback: CoverPattern): CoverPattern 
     background: color(source.background, fallback.background),
     scale: decimal(source.scale, fallback.scale, 0.08, 2),
     angle: decimal(source.angle, fallback.angle, 0, 360),
+  };
+}
+
+function normalizeBackgroundImage(value: unknown): CoverBackgroundImage | null {
+  if (!isRecord(value)) return null;
+  const src = text(value.src, "", 24_000_000);
+  if (!src) return null;
+  return {
+    src,
+    sourceWidth: decimal(value.sourceWidth, 0, 0, 100_000),
+    sourceHeight: decimal(value.sourceHeight, 0, 0, 100_000),
+    fit: value.fit === "contain" ? "contain" : "cover",
+    focusX: decimal(value.focusX, 0.5, 0, 1),
+    focusY: decimal(value.focusY, 0.5, 0, 1),
+    opacity: decimal(value.opacity, 1, 0, 1),
+    blur: decimal(value.blur, 0, 0, 0.08),
+    tint: color(value.tint, "#ffffff"),
+    tintStrength: decimal(value.tintStrength, 0, 0, 1),
   };
 }
 
@@ -1008,12 +1042,13 @@ export function parseCoverDocument(value: unknown, fallback: BookCoverDocument =
     ? source.guides.slice(0, 80).map((guide, index) => normalizeGuide(guide, index)).filter((guide): guide is CoverGuideline => Boolean(guide))
     : fallback.guides.map((guide) => ({ ...guide }));
   const palette = Array.isArray(source.palette)
-    ? [...new Set(source.palette.filter((entry): entry is string => typeof entry === "string" && /^#[0-9a-f]{6}$/i.test(entry)).map((entry) => entry.toLocaleLowerCase()))].slice(0, 16)
+    ? [...new Set(source.palette.filter((entry): entry is string => typeof entry === "string" && /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i.test(entry)).map((entry) => entry.toLocaleLowerCase()))].slice(0, 16)
     : fallback.palette.map((entry) => entry);
   return {
     version: 1,
     templateId: text(source.templateId, fallback.templateId, 80),
     background: normalizeFill(source.background, fallback.background),
+    backgroundImage: normalizeBackgroundImage(source.backgroundImage === undefined ? fallback.backgroundImage : source.backgroundImage),
     layers: clippedLayers,
     groups,
     palette,
@@ -3629,12 +3664,9 @@ export function coverLayerInnerHtml(book: Book, cover: BookCoverDesign, layer: C
 }
 
 function rgbaColor(value: string, opacity: number) {
-  const match = /^#([0-9a-f]{6})$/i.exec(value);
-  if (!match) return value;
-  const red = Number.parseInt(match[1].slice(0, 2), 16);
-  const green = Number.parseInt(match[1].slice(2, 4), 16);
-  const blue = Number.parseInt(match[1].slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${Math.round(clamp(opacity, 0, 1) * 1000) / 1000})`;
+  if (!normalizeCoverHex(value)) return value;
+  const { r, g, b, a } = parseCoverColor(value);
+  return `rgba(${r}, ${g}, ${b}, ${Math.round(clamp(opacity * a, 0, 1) * 1000) / 1000})`;
 }
 
 export function coverLayerEffectsCss(layer: CoverLayer) {
@@ -3726,12 +3758,23 @@ function layerMarkup(book: Book, cover: BookCoverDesign, layer: CoverLayer, offs
   return `<div class="cover-doc-layer cover-doc-layer-${layer.type}${clipped ? " is-clipped" : ""}" data-layer-id="${escapeHtml(layer.id)}" style="${Object.entries(style).map(([key, value]) => `${key.replace(/[A-Z]/g, (letter) => `-${letter.toLocaleLowerCase()}`)}:${value}`).join(";")};transform-origin:50% 50%;position:absolute;${layer.locked ? "pointer-events:none;" : ""}">${coverLayerInnerHtml(book, cover, layer, instanceId)}</div>`;
 }
 
+/** Shared background image markup for the editable stage and every HTML panel. */
+export function coverBackgroundImageMarkup(background: CoverBackgroundImage | null | undefined, width: number, height: number, offsetX = 0, offsetY = 0) {
+  if (!background?.src) return "";
+  const blur = background.blur > 0 ? `filter:blur(${roundInches(background.blur * 96)}px);` : "";
+  const tint = background.tintStrength > 0
+    ? `<span style="position:absolute;inset:0;background:${escapeHtml(background.tint)};opacity:${background.tintStrength};mix-blend-mode:color;pointer-events:none"></span>`
+    : "";
+  return `<div class="cover-doc-background-image" aria-hidden="true" style="position:absolute;left:${-offsetX}in;top:${-offsetY}in;width:${width}in;height:${height}in;overflow:hidden;isolation:isolate;pointer-events:none;opacity:${background.opacity}"><img src="${escapeHtml(background.src)}" alt="" draggable="false" style="display:block;width:100%;height:100%;object-fit:${background.fit};object-position:${background.focusX * 100}% ${background.focusY * 100}%;${blur}" />${tint}</div>`;
+}
+
 export function coverDocMarkup(book: Book, cover: BookCoverDesign, panel: CoverPanel = "wrap", options: { guides?: boolean; className?: string; instanceId?: string } = {}) {
   const metrics = coverMetrics(book.trim_size, cover);
   const rect = coverPanelRect(metrics, panel);
   coverMarkupInstance += 1;
   const instanceId = options.instanceId ?? `cover-doc-${coverMarkupInstance}`;
   const backgroundLayer = `<div class="cover-doc-background" style="position:absolute;left:${-rect.x}in;top:${-rect.y}in;width:${metrics.fullWidth}in;height:${metrics.fullHeight}in;background:${coverFillCss(cover.doc.background)}"></div>`;
+  const backgroundImage = coverBackgroundImageMarkup(cover.doc.backgroundImage, metrics.fullWidth, metrics.fullHeight, rect.x, rect.y);
   const layers = cover.doc.layers.filter((layer) => layerForPanel(layer, panel) && coverLayerVisible(cover.doc, layer)).map((layer) => {
     const origin = layer.panel === "wrap" ? { x: 0, y: 0 } : coverPanelRect(metrics, layer.panel as Exclude<CoverPanel, "wrap">);
     const offsetX = rect.x - origin.x;
@@ -3739,7 +3782,7 @@ export function coverDocMarkup(book: Book, cover: BookCoverDesign, panel: CoverP
     return layerMarkup(book, cover, layer, offsetX, offsetY, false, instanceId);
   }).join("");
   const guides = options.guides && panel === "wrap" ? guideMarkup(metrics) : "";
-  return `<div class="cover-doc cover-doc-panel-${panel} ${options.className ?? ""}" style="position:relative;width:${rect.width}in;height:${rect.height}in;overflow:hidden;isolation:isolate;background:${coverFillCss(cover.doc.background)}" data-panel="${panel}">${backgroundLayer}${layers}${guides}</div>`;
+  return `<div class="cover-doc cover-doc-panel-${panel} ${options.className ?? ""}" style="position:relative;width:${rect.width}in;height:${rect.height}in;overflow:hidden;isolation:isolate;background:${coverFillCss(cover.doc.background)}" data-panel="${panel}">${backgroundLayer}${backgroundImage}${layers}${guides}</div>`;
 }
 
 export function guideMarkup(metrics: CoverMetrics) {
@@ -3856,8 +3899,8 @@ function drawImageFit(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x:
   const focusY = clamp(options.focusY ?? 0.5, 0, 1);
   const extraX = Math.max(0, drawWidth - width);
   const extraY = Math.max(0, drawHeight - height);
-  const dx = fit === "cover" ? x - extraX * focusX : x + (width - drawWidth) / 2;
-  const dy = fit === "cover" ? y - extraY * focusY : y + (height - drawHeight) / 2;
+  const dx = fit === "cover" ? x - extraX * focusX : x + (width - drawWidth) * focusX;
+  const dy = fit === "cover" ? y - extraY * focusY : y + (height - drawHeight) * focusY;
   ctx.save();
   clipImageMask(ctx, options.mask ?? "none", x, y, width, height, radius);
   if (options.filter) ctx.filter = options.filter;
@@ -3870,7 +3913,7 @@ function drawImageFit(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x:
   ctx.filter = "none";
   if (options.tint && (options.tintStrength ?? 0) > 0) {
     ctx.globalCompositeOperation = "color";
-    ctx.globalAlpha = clamp(options.tintStrength ?? 0, 0, 1);
+    ctx.globalAlpha *= clamp(options.tintStrength ?? 0, 0, 1);
     ctx.fillStyle = options.tint;
     ctx.fillRect(x, y, width, height);
     ctx.globalAlpha = 1;
@@ -4148,6 +4191,9 @@ export interface CoverCanvasOptions {
   marks?: boolean;
   slug?: number;
   watermark?: boolean;
+  transparent?: boolean;
+  layerIds?: string[];
+  region?: CoverPanelRect;
 }
 
 function drawProductionMarks(ctx: CanvasRenderingContext2D, book: Book, cover: BookCoverDesign, metrics: CoverMetrics, slug: number) {
@@ -4234,11 +4280,13 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   if (typeof document === "undefined") throw new Error("Cover rendering is only available in the app.");
   const metrics = coverMetrics(book.trim_size, cover);
   const slug = options.marks && target === "wrap" ? Math.max(0.15, options.slug ?? 0.25) : 0;
-  const rect = slug > 0
+  const rect = options.region ?? (slug > 0
     ? { x: -slug, y: -slug, width: metrics.fullWidth + slug * 2, height: metrics.fullHeight + slug * 2 }
     : target === "wrap" && options.bleed === false
       ? { x: metrics.bleed, y: metrics.bleed, width: metrics.trimWidthTotal, height: metrics.trimHeight }
-      : coverPanelRect(metrics, target);
+      : coverPanelRect(metrics, target));
+  if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) throw new Error("The export area must have a positive size.");
+  const layers = cover.doc.layers.filter((layer) => coverLayerVisible(cover.doc, layer) && layerForPanel(layer, target) && (!options.layerIds || options.layerIds.includes(layer.id)));
   const dpi = clamp(options.dpi ?? 300, 72, 450);
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(rect.width * dpi));
@@ -4247,18 +4295,22 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   if (!ctx) throw new Error("Canvas is not available.");
   ctx.scale(dpi, dpi);
   ctx.translate(-rect.x, -rect.y);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+  if (!options.transparent) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+  }
   const patternSources = new Set<string>();
   const addPatternSource = (fill: CoverFill) => {
     if (fill.type === "pattern") patternSources.add(coverPatternDataUrl(fill.pattern ?? coverPattern(fill.color)));
   };
-  addPatternSource(cover.doc.background);
-  for (const layer of cover.doc.layers) if (layer.type === "shape") addPatternSource(layer.fill);
-  const imageSources = cover.doc.layers
-    .flatMap((layer) => layer.type === "image"
+  if (!options.transparent) addPatternSource(cover.doc.background);
+  for (const layer of layers) if (layer.type === "shape") addPatternSource(layer.fill);
+  const imageSources = [
+    ...(!options.transparent && cover.doc.backgroundImage?.src ? [cover.doc.backgroundImage.src] : []),
+    ...layers.flatMap((layer) => layer.type === "image"
       ? [layer.src, layer.eraseMask].filter(Boolean)
-      : layer.type === "artwork" ? [coverArtworkDataUrl(layer)] : []);
+      : layer.type === "artwork" ? [coverArtworkDataUrl(layer)] : []),
+  ];
   const patternList = [...patternSources];
   const [images, patternImages] = await Promise.all([
     Promise.all(imageSources.map(loadImage)),
@@ -4267,8 +4319,29 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
   const imageBySource = new Map(imageSources.map((source, index) => [source, images[index]]));
   const patternBySource = new Map(patternList.map((source, index) => [source, patternImages[index]]));
   const barcodeImage = cover.barcodeImage ? await loadImage(cover.barcodeImage) : null;
-  applyFill(ctx, cover.doc.background, 0, 0, metrics.fullWidth, metrics.fullHeight, patternBySource);
-  const layers = cover.doc.layers.filter((layer) => coverLayerVisible(cover.doc, layer) && layerForPanel(layer, target));
+  if (!options.transparent) applyFill(ctx, cover.doc.background, 0, 0, metrics.fullWidth, metrics.fullHeight, patternBySource);
+  const backgroundImage = cover.doc.backgroundImage?.src ? imageBySource.get(cover.doc.backgroundImage.src) : null;
+  if (!options.transparent && backgroundImage && cover.doc.backgroundImage) {
+    const background = cover.doc.backgroundImage;
+    const imageCanvas = document.createElement("canvas");
+    imageCanvas.width = Math.max(1, Math.round(metrics.fullWidth * dpi));
+    imageCanvas.height = Math.max(1, Math.round(metrics.fullHeight * dpi));
+    const imageCtx = imageCanvas.getContext("2d");
+    if (!imageCtx) throw new Error("Canvas is not available.");
+    imageCtx.scale(dpi, dpi);
+    drawImageFit(imageCtx, backgroundImage, 0, 0, metrics.fullWidth, metrics.fullHeight, background.fit, 0, {
+      focusX: background.focusX,
+      focusY: background.focusY,
+      filter: background.blur > 0 ? `blur(${roundInches(background.blur * dpi)}px)` : "",
+      tint: background.tint,
+      tintStrength: background.tintStrength,
+    });
+    ctx.save();
+    ctx.globalAlpha = background.opacity;
+    ctx.drawImage(imageCanvas, 0, 0, metrics.fullWidth, metrics.fullHeight);
+    ctx.restore();
+  }
+
   const drawLayerContent = (target: CanvasRenderingContext2D, layer: CoverLayer, spread: CoverPanelRect, imageFilter: string) => {
     const clipPath = layer.clipTo ? coverLayerClipPath2D(book, cover, layer) : null;
     if (clipPath) {
@@ -4337,7 +4410,7 @@ export async function renderCoverCanvas(book: Book, cover: BookCoverDesign, targ
     const imageGrade = layer.type === "image" ? coverImageFilterCanvas(layer, dpi) : "";
     const masked = coverLayerFadeActive(layer);
     const eraseMask = layer.type === "image" && layer.eraseMask ? imageBySource.get(layer.eraseMask) : null;
-    const isolated = masked || Boolean(eraseMask);
+    const isolated = masked || Boolean(eraseMask) || layer.type === "image" && layer.tintStrength > 0;
     ctx.save();
     ctx.globalAlpha = layer.opacity;
     ctx.globalCompositeOperation = layer.blendMode === "normal" ? "source-over" : layer.blendMode as GlobalCompositeOperation;

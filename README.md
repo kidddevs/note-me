@@ -177,6 +177,9 @@ The app does not upload notes or attachments. The only network request made by t
 
 The codebase is split between a small React UI layer and explicit Rust commands for persistence and OS integration. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data flow and command boundary.
 
+For cover designer development, shared color tools, image backgrounds, layer/group
+interactions, and the browser QA preview, see [docs/COVER_DESIGNER.md](docs/COVER_DESIGNER.md).
+
 ## Project map
 
 ```text

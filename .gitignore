@@ -10,3 +10,6 @@ books-studio-*.png
 
 # Exported agent sessions are working notes, not app source.
 oc-session/
+
+# Browser QA screenshots, snapshots, and console logs.
+.playwright-mcp/

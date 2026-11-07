@@ -53,6 +53,7 @@ import {
   FolderPlus,
   Frame,
   Grid3X3,
+  GripVertical,
   Hand,
   ImagePlus,
   Info,
@@ -61,11 +62,14 @@ import {
   LayoutTemplate,
   Link2,
   Lock,
+  LoaderCircle,
   Maximize2,
   Minus,
   Move,
   Package,
   Paintbrush,
+  PanelLeftClose,
+  PanelLeftOpen,
   Palette,
   Pencil,
   Pipette,
@@ -104,6 +108,7 @@ import {
   COVER_GRADIENT_PRESETS,
   COVER_IMAGE_PRESETS,
   COVER_PAPER_STOCKS,
+  COVER_STOCK_PHOTOS,
   COVER_SYMBOLS,
   COVER_TEMPLATE_PRESETS,
   artworkLayer,
@@ -113,7 +118,9 @@ import {
   cloneCoverLayers,
   coverDocMarkup,
   coverFill,
+  coverExportFilename,
   coverFillCss,
+  coverBackgroundImageMarkup,
   coverFontCss,
   coverGradientCss,
   coverLayerClipCss,
@@ -123,6 +130,8 @@ import {
   coverLayerLocked,
   coverShapePath,
   coverImageOverflow,
+  coverImageFilterCss,
+  saveCoverBlob,
   coverGroupLocked,
   coverLayerVisible,
   coverMetrics,
@@ -224,6 +233,10 @@ import {
   type SavedCoverTemplate,
 } from "../lib/bookCoverLibrary";
 import { useBooks } from "../store/books";
+import { CoverImageFocus } from "./CoverImageFocus";
+import { liftCoverBackground, matchCoverImageRatio, renderCoverSelectionCanvas, resetCoverImageCrop, resetCoverImageTone } from "../lib/bookCoverImages";
+import { CoverColorField, CoverColorSwatch, CoverColorProvider } from "./CoverColorPicker";
+import { moveCoverLayers, stepCoverLayers, type CoverLayerPlacement } from "../lib/bookCoverLayers";
 import { notify } from "../store/toast";
 
 const COVER_CSS = coverCss();
@@ -329,6 +342,11 @@ interface InspectorProps {
   onTrimSize: (value: string) => void;
   onOpenSettings: () => void;
   onReplaceImage: () => void;
+  onCopyImageToBackground: () => void;
+  busyImageAction: boolean;
+  onPickBackgroundImage: () => void;
+  onUseBackgroundImage: (image: ReadCoverImage) => void;
+  onLiftBackground: (tool?: "select" | "eraser") => void;
   onUploadBarcode: () => void;
   onClearBarcode: () => void;
   imagePanMode: boolean;
@@ -384,13 +402,14 @@ interface LayerPanelProps {
   onAssignGroup: (layerId: string, groupId: string | null) => void;
   onCopySelection: () => void;
   onPasteSelection: () => void;
+  onGroupSelection: () => void;
   onContextMenu: (event: React.MouseEvent<HTMLElement>, layerId: string) => void;
-  onDuplicate: (id: string) => void;
-  onDelete: (id: string) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
   onRenameLayer: (id: string, name: string) => void;
   onReorder: (id: string, direction: "up" | "down") => void;
   onReorderGroup: (id: string, direction: "up" | "down") => void;
-  onReorderDrag: (id: string, targetId: string) => void;
+  onReorderDrag: (id: string, targetId: string, placement: CoverLayerPlacement) => void;
   onCollapse: () => void;
 }
 
@@ -406,10 +425,6 @@ interface TemplateModalProps {
   onImportTemplate: (template: SavedCoverTemplate) => void;
   onExportTemplate: (template: SavedCoverTemplate) => void;
   onClose: () => void;
-}
-
-function pickerColor(value: string) {
-  return /^#[0-9a-f]{6}$/i.test(value) ? value : /^#[0-9a-f]{6}/i.test(value) ? value.slice(0, 7) : "#000000";
 }
 
 interface ReadCoverImage {
@@ -432,7 +447,7 @@ function readImageFile(file: File | null, maxMb = 16): Promise<ReadCoverImage> {
       }
       const image = new Image();
       image.onload = () => resolve({ src, width: image.naturalWidth || 0, height: image.naturalHeight || 0 });
-      image.onerror = () => resolve({ src, width: 0, height: 0 });
+      image.onerror = () => reject(new Error("The image could not be decoded. Choose another image."));
       image.src = src;
     };
     reader.onerror = () => reject(new Error(String(reader.error ?? "The image could not be read.")));
@@ -452,10 +467,10 @@ function layerLabel(type: CoverLayerType) {
 
 function LayerThumb({ layer, cover }: { layer: CoverLayer; cover: BookCoverDesign }) {
   if (layer.type === "image" && layer.src) {
-    return <span className="cover-layer-thumb"><img src={layer.src} alt="" style={{ objectFit: layer.fit === "contain" ? "contain" : "cover" }} /></span>;
+    return <span className="cover-layer-thumb"><img src={layer.src} alt="" draggable={false} style={{ objectFit: layer.fit === "contain" ? "contain" : "cover" }} /></span>;
   }
   if (layer.type === "artwork") {
-    return <span className="cover-layer-thumb"><img src={coverArtworkDataUrl(layer)} alt="" /></span>;
+    return <span className="cover-layer-thumb"><img src={coverArtworkDataUrl(layer)} alt="" draggable={false} /></span>;
   }
   if (layer.type === "barcode") {
     return <span className="cover-layer-thumb thumb-barcode" dangerouslySetInnerHTML={{ __html: barcodeSvgMarkup(cover.isbn, layer.barColor) }} />;
@@ -768,6 +783,7 @@ export function CoverScreen({
   const [dpi, setDpi] = useState(300);
   const [pdfx, setPdfx] = useState(false);
   const [proofWatermark, setProofWatermark] = useState(false);
+  const [busyImageAction, setBusyImageAction] = useState(false);
   const [busyDownload, setBusyDownload] = useState<string | null>(null);
   const [history, setHistory] = useState<CoverHistoryEntry[]>([]);
   const [future, setFuture] = useState<CoverHistoryEntry[]>([]);
@@ -778,10 +794,12 @@ export function CoverScreen({
   const bookRef = useRef(book);
   const dirtyRef = useRef(false);
   const timerRef = useRef<number | null>(null);
+  const colorSampleRef = useRef<((color: string) => void) | null>(null);
   const colorRef = useRef(book.cover_color || FALLBACK_ACCENT);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const replaceImageInputRef = useRef<HTMLInputElement | null>(null);
+  const backgroundImageInputRef = useRef<HTMLInputElement | null>(null);
   const lastHistoryKeyRef = useRef("");
   const lastHistoryTimeRef = useRef(0);
   const historyRef = useRef(history);
@@ -801,6 +819,7 @@ export function CoverScreen({
 
   useEffect(() => {
     if (tool === "eraser" || tool === "hand" || tool === "zoom") setImagePanMode(false);
+    if (tool !== "eyedropper") colorSampleRef.current = null;
   }, [tool]);
   const selectedIds = useMemo(
     () => selectedLayerId ? [selectedLayerId, ...extraSelectedIds.filter((id) => id !== selectedLayerId)] : [],
@@ -887,6 +906,8 @@ export function CoverScreen({
   }, []);
 
   const restoreCover = (snapshot: BookCoverDesign) => {
+    lastHistoryKeyRef.current = "";
+    lastHistoryTimeRef.current = 0;
     const next = { ...layoutRef.current, cover: snapshot };
     layoutRef.current = next;
     setLayout(next);
@@ -898,8 +919,9 @@ export function CoverScreen({
     const items = historyRef.current;
     if (items.length === 0) return;
     const previous = items[items.length - 1];
+    const currentCover = layoutRef.current.cover;
     setHistory(items.slice(0, -1));
-    setFuture((next) => [{ cover: layoutRef.current.cover, label: previous.label, at: Date.now() }, ...next].slice(0, 50));
+    setFuture((next) => [{ cover: currentCover, label: previous.label, at: Date.now() }, ...next].slice(0, 50));
     restoreCover(previous.cover);
   }, []);
 
@@ -908,8 +930,9 @@ export function CoverScreen({
     const items = futureRef.current;
     if (items.length === 0) return;
     const next = items[0];
+    const currentCover = layoutRef.current.cover;
     setFuture(items.slice(1));
-    setHistory((previous) => [...previous.slice(-49), { cover: layoutRef.current.cover, label: next.label, at: Date.now() }]);
+    setHistory((previous) => [...previous.slice(-49), { cover: currentCover, label: next.label, at: Date.now() }]);
     restoreCover(next.cover);
   }, []);
 
@@ -949,7 +972,7 @@ export function CoverScreen({
   useEffect(() => {
     const next = layoutForBook(book);
     let initial = next;
-    const needsSeed = !next.cover.doc.templateId && next.cover.doc.layers.length === 0;
+    const needsSeed = !next.cover.doc.templateId && next.cover.doc.layers.length === 0 && !next.cover.doc.backgroundImage?.src;
     if (needsSeed) {
       const estimatedPages = estimateManuscriptPages(book, chapters);
       const seededCover = { ...next.cover, pageCount: estimatedPages > 0 ? estimatedPages : next.cover.pageCount };
@@ -961,6 +984,9 @@ export function CoverScreen({
     setSelectedLayerId(null);
     setExtraSelectedIds([]);
     setPanel("wrap");
+    setActiveGroupId(null);
+    setTool("select");
+    colorSampleRef.current = null;
     setHistory([]);
     setFuture([]);
     historyTouchedRef.current = false;
@@ -1211,6 +1237,68 @@ export function CoverScreen({
     }
   };
 
+  const useBackgroundImage = (image: ReadCoverImage) => {
+    const current = layoutRef.current.cover;
+    const existing = current.doc.backgroundImage;
+    updateDoc({ ...current.doc, backgroundImage: {
+      src: image.src, sourceWidth: image.width, sourceHeight: image.height,
+      fit: existing?.fit ?? "cover", focusX: existing?.focusX ?? 0.5, focusY: existing?.focusY ?? 0.5,
+      opacity: existing?.opacity ?? 1, blur: existing?.blur ?? 0,
+      tint: existing?.tint ?? "#ffffff", tintStrength: existing?.tintStrength ?? 0,
+    } }, { key: "background-image" });
+  };
+
+  const liftBackground = (nextTool: "select" | "eraser" = "select") => {
+    const current = layoutRef.current.cover;
+    const lifted = liftCoverBackground(current.doc, coverMetrics(bookRef.current.trim_size, current), newCoverLayerId("image"));
+    if (!lifted) return;
+    updateDoc(lifted.doc, { key: "background:lift" });
+    setSelectedLayerId(lifted.layer.id);
+    setExtraSelectedIds([]);
+    setActiveGroupId(null);
+    setPanel("wrap");
+    setTool(nextTool);
+    setAutoFit(true);
+  };
+
+  const copyImageToBackground = async () => {
+    const current = layoutRef.current.cover;
+    const source = current.doc.layers.find((layer) => layer.id === selectedLayerId);
+    if (!source || source.type !== "image" || !source.src || coverLayerLocked(current.doc, source)) return;
+    const sourceBook = bookRef.current;
+    setBusyImageAction(true);
+    try {
+      const canvas = await renderCoverSelectionCanvas(sourceBook, current, [source.id], 300);
+      if (bookRef.current.id !== sourceBook.id) return;
+      const latest = layoutRef.current.cover.doc;
+      if (latest.layers.find((layer) => layer.id === source.id) !== source) {
+        notify("info", "The image changed", "Finish editing the image, then copy it to the background again.");
+        return;
+      }
+      const src = canvas.toDataURL("image/webp", 0.98);
+      if (src.length > 24_000_000) throw new Error("The rendered image is too large. Reduce the frame size before copying it to the background.");
+      updateDoc({ ...latest, layers: latest.layers.map((layer) => layer.id === source.id ? { ...layer, visible: false } : layer), backgroundImage: {
+        src, sourceWidth: canvas.width, sourceHeight: canvas.height,
+        fit: "cover", focusX: 0.5, focusY: 0.5, opacity: 1, blur: 0, tint: "#ffffff", tintStrength: 0,
+      } }, { key: "background:copy-image" });
+      selectLayer(null);
+      notify("success", "Image copied to background", "The original editable layer is kept hidden in Layers.");
+    } catch (error) { notify("error", "Image could not be copied to background", String(error)); }
+    finally { setBusyImageAction(false); }
+  };
+
+  const uploadBackgroundImage = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const image = await readImageFile(file);
+      useBackgroundImage(image);
+      void rememberCoverImage(file.name, image);
+      notify("success", "Background image updated", file.name);
+    } catch (error) {
+      notify("error", "Background image could not be added", String(error));
+    }
+  };
+
   const uploadBarcode = async (file: File | null) => {
     try {
       const image = await readImageFile(file, 8);
@@ -1391,7 +1479,6 @@ export function CoverScreen({
     setExtraSelectedIds(clones.slice(0, -1).map((layer) => layer.id));
   };
 
-  const duplicateLayer = (id: string) => duplicateLayers([id]);
   const duplicateSelection = () => duplicateLayers(selectedIds);
 
   const copySelection = () => {
@@ -1542,7 +1629,6 @@ export function CoverScreen({
     setExtraSelectedIds([]);
   };
 
-  const deleteLayer = (id: string) => deleteLayers([id]);
   const deleteSelection = () => deleteLayers(selectedIds);
 
   const selectAllLayers = () => {
@@ -1595,6 +1681,14 @@ export function CoverScreen({
     setActiveGroupId(group.id);
   };
 
+  const selectGroup = (id: string) => {
+    const current = layoutRef.current.cover.doc;
+    const members = coverGroupLocked(current, id) ? [] : current.layers.filter((layer) => layer.groupId === id);
+    setActiveGroupId(id);
+    setSelectedLayerId(members[members.length - 1]?.id ?? null);
+    setExtraSelectedIds(members.slice(0, -1).map((layer) => layer.id));
+  };
+
   const toggleGroup = (id: string, patch: Partial<CoverLayerGroup>) => {
     const current = layoutRef.current.cover;
     updateDoc({
@@ -1635,17 +1729,11 @@ export function CoverScreen({
 
   const assignGroup = (layerId: string, groupId: string | null) => {
     const current = layoutRef.current.cover;
-    const layer = current.doc.layers.find((item) => item.id === layerId);
-    if (!layer || coverLayerLocked(current.doc, layer)) {
-      notify("info", "Layer is locked", "Unlock the layer before moving it between groups.");
-      return;
-    }
-    if (groupId && coverGroupLocked(current.doc, groupId)) {
-      notify("info", "Group is locked", "Unlock the group before adding layers to it.");
-      return;
-    }
-    updateLayer(layerId, { groupId }, { key: `group:assign:${layerId}` });
-    if (groupId) setActiveGroupId(groupId);
+    const ids = selectedIds.includes(layerId) ? selectedIds : [layerId];
+    const next = moveCoverLayers(current.doc, ids, { groupId });
+    if (!next) return;
+    updateDoc(next, { key: `group:assign:${ids.join(",")}` });
+    setActiveGroupId(groupId);
   };
 
   const alignSelection = (mode: CoverAlignMode) => {
@@ -1720,23 +1808,9 @@ export function CoverScreen({
 
   const reorderLayer = (id: string, direction: "up" | "down") => {
     const current = layoutRef.current.cover;
-    const index = current.doc.layers.findIndex((layer) => layer.id === id);
-    if (index < 0) return;
-    const target = direction === "up" ? index + 1 : index - 1;
-    if (target < 0 || target >= current.doc.layers.length) return;
-    const layer = current.doc.layers[index];
-    const neighbor = current.doc.layers[target];
-    if (coverLayerLocked(current.doc, layer) || coverLayerLocked(current.doc, neighbor)) {
-      notify("info", "Layer is locked", "Unlock the layer or its group before moving it.");
-      return;
-    }
-    const layers = [...current.doc.layers];
-    [layers[index], layers[target]] = [layers[target], layers[index]];
-    if (layer.groupId !== neighbor.groupId) {
-      layers[target] = { ...layer, groupId: neighbor.groupId } as CoverLayer;
-      if (neighbor.groupId) setActiveGroupId(neighbor.groupId);
-    }
-    updateDoc({ ...current.doc, layers }, { key: `reorder:${id}` });
+    const ids = selectedIds.includes(id) ? selectedIds : [id];
+    const next = stepCoverLayers(current.doc, ids, direction);
+    if (next) updateDoc(next, { key: `reorder:${ids.join(",")}` });
   };
 
   const reorderGroup = (id: string, direction: "up" | "down") => {
@@ -1750,24 +1824,13 @@ export function CoverScreen({
     updateDoc(next, { key: `group:reorder:${id}` });
   };
 
-  const reorderDrag = (id: string, targetId: string) => {
-    if (id === targetId) return;
+  const reorderDrag = (id: string, targetId: string, placement: CoverLayerPlacement) => {
     const current = layoutRef.current.cover;
-    const from = current.doc.layers.findIndex((layer) => layer.id === id);
-    const to = current.doc.layers.findIndex((layer) => layer.id === targetId);
-    if (from < 0 || to < 0) return;
-    const layer = current.doc.layers[from];
-    const target = current.doc.layers[to];
-    if (coverLayerLocked(current.doc, layer) || coverLayerLocked(current.doc, target)) {
-      notify("info", "Layer is locked", "Unlock the layer or its group before moving it.");
-      return;
-    }
-    const layers = [...current.doc.layers];
-    const [moved] = layers.splice(from, 1);
-    const insertAt = layers.findIndex((item) => item.id === targetId);
-    const nextLayer = moved.groupId !== target.groupId ? { ...moved, groupId: target.groupId } : moved;
-    layers.splice(insertAt < 0 ? to : insertAt, 0, nextLayer);
-    updateDoc({ ...current.doc, layers }, { key: `reorder-drag:${id}` });
+    const ids = selectedIds.includes(id) ? selectedIds : [id];
+    const next = moveCoverLayers(current.doc, ids, { layerId: targetId, placement });
+    if (!next) return;
+    updateDoc(next, { key: `reorder-drag:${ids.join(",")}` });
+    setActiveGroupId(next.layers.find((layer) => layer.id === id)?.groupId ?? null);
   };
 
   const onInteractionStart = useCallback((key: string) => {
@@ -1793,6 +1856,19 @@ export function CoverScreen({
     }
   };
 
+  const downloadSelection = async () => {
+    setBusyDownload("selection");
+    setDownloadOpen(false);
+    try {
+      const canvas = await renderCoverSelectionCanvas(bookRef.current, layoutRef.current.cover, selectedIds, dpi);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("The selected layers could not be rendered.");
+      const filename = await saveCoverBlob(blob, coverExportFilename(bookRef.current, "wrap", "png").replace(/-full-wrap\.png$/, "-selection.png"));
+      if (filename) notify("success", "Selection exported", filename);
+    } catch (error) { notify("error", "Selection could not be exported", String(error)); }
+    finally { setBusyDownload(null); }
+  };
+
   const printCover = () => {
     const start = () => {
       document.body.classList.add("print-cover-only");
@@ -1814,6 +1890,13 @@ export function CoverScreen({
       const py = Math.min(canvas.height - 1, Math.max(0, Math.round((y / metrics.fullHeight) * canvas.height)));
       const data = ctx.getImageData(px, py, 1, 1).data;
       const hex = `#${[data[0], data[1], data[2]].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+      const applySample = colorSampleRef.current;
+      if (applySample) {
+        colorSampleRef.current = null;
+        applySample(hex);
+        setTool("select");
+        return;
+      }
       const layer = selectedLayerId ? current.doc.layers.find((item) => item.id === selectedLayerId) ?? null : null;
       let nextLayer: CoverLayer | null = null;
       if (layer) {
@@ -1952,6 +2035,7 @@ export function CoverScreen({
     const target = event.target as HTMLElement | null;
     const editing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable);
     if (event.key === "Escape") {
+      colorSampleRef.current = null;
       if (previewing) setPreviewing(false);
       else if (imagePanMode) setImagePanMode(false);
       else if (symbolOpen) setSymbolOpen(false);
@@ -1963,7 +2047,7 @@ export function CoverScreen({
       else if (preflightOpen) setPreflightOpen(false);
       else if (shortcutsOpen) setShortcutsOpen(false);
       else if (layerDrawerOpen) setLayerDrawerOpen(false);
-      else if (tool === "eraser" || tool === "hand" || tool === "zoom") setTool("select");
+      else if (tool === "eraser" || tool === "hand" || tool === "zoom" || tool === "eyedropper") setTool("select");
       else if (selectedIds.length > 1) { setSelectedLayerId(selectedLayerId); setExtraSelectedIds([]); }
       else selectLayer(null);
       return;
@@ -2098,6 +2182,17 @@ export function CoverScreen({
   const menuAllLocked = menuLayers.length > 0 && menuLayers.every((layer) => coverLayerLocked(doc, layer));
 
   return (
+    <CoverColorProvider palette={doc.palette} onSaveColor={(color) => {
+      const current = layoutRef.current.cover.doc;
+      updateDoc({ ...current, palette: [color, ...current.palette.filter((entry) => entry.toLowerCase() !== color.toLowerCase())].slice(0, 16) }, { key: "palette:save-colour" });
+    }} onPickColor={(apply) => {
+      colorSampleRef.current = (color) => {
+        apply(color);
+        const current = layoutRef.current.cover.doc;
+        updateDoc({ ...current, palette: [color, ...current.palette.filter((entry) => entry.toLowerCase() !== color)].slice(0, 16) }, { history: false });
+      };
+      setTool("eyedropper");
+    }}>
     <div className={`books-screen books-cover-screen ${previewing ? "is-previewing" : ""}`}>
       <div className="cover-designer">
         <header className="cover-designer-bar">
@@ -2142,7 +2237,7 @@ export function CoverScreen({
             </div>
             <div className="cover-download-wrap">
               <button type="button" className="cover-primary-button" onClick={() => { setDownloadOpen((value) => !value); setSymbolOpen(false); setArtworkOpen(false); }} disabled={Boolean(busyDownload)}>
-                {busyDownload ? <span className="cover-spinner" /> : <Download size={14} />}<span>{busyDownload ? "Rendering…" : "Download"}</span><ChevronDown size={13} />
+                {busyDownload ? <LoaderCircle size={14} className="cover-tool-busy" /> : <Download size={14} />}<span>{busyDownload ? "Rendering…" : "Download"}</span><ChevronDown size={13} />
               </button>
               {downloadOpen && (
                 <div className="cover-download-menu" role="menu">
@@ -2159,6 +2254,7 @@ export function CoverScreen({
                     <button type="button" role="menuitem" onClick={() => void handleDownload("back")}><span><strong>Back</strong><small>Trim size</small></span></button>
                     <button type="button" role="menuitem" onClick={() => void handleDownload("spine")}><span><strong>Spine</strong><small>{formatDimension(metrics.spineWidth)} in</small></span></button>
                   </div>
+                  <button type="button" role="menuitem" disabled={selectedIds.length === 0 || Boolean(busyDownload)} onClick={() => void downloadSelection()}><LayersGlyph /><span><strong>Selected layers PNG</strong><small>Transparent background · cropped to selection</small></span></button>
                   <button type="button" role="menuitem" onClick={() => void handleDownload("wrap", "jpeg")}><FileDown size={14} /><span><strong>Full wrap JPEG</strong><small>Smaller file for proofs & sharing</small></span></button>
                   <div className="cover-download-sep" />
                   <div className="cover-download-subhead">Print-ready PDF <small>Vector page · embedded image</small></div>
@@ -2231,10 +2327,10 @@ export function CoverScreen({
               onJumpHistory={jumpToHistory}
               onUndo={undo}
               onRedo={redo}
-              onSelect={(id, additive) => { selectLayer(id, additive); if (layerDrawerOpen && !additive && id) setLayerDrawerOpen(false); }}
+              onSelect={selectLayer}
               onAdd={() => fileInputRef.current?.click()}
               onAddGroup={addGroup}
-              onSelectGroup={(id) => { setActiveGroupId(id); setSelectedLayerId(null); setExtraSelectedIds([]); }}
+              onSelectGroup={selectGroup}
               onToggleVisible={toggleVisible}
               onToggleLocked={toggleLocked}
               onToggleGroupVisible={toggleGroupVisible}
@@ -2245,9 +2341,10 @@ export function CoverScreen({
               onAssignGroup={assignGroup}
               onCopySelection={copySelection}
               onPasteSelection={pasteSelection}
+              onGroupSelection={groupSelection}
               onContextMenu={openLayerMenu}
-              onDuplicate={duplicateLayer}
-              onDelete={deleteLayer}
+              onDuplicate={duplicateSelection}
+              onDelete={deleteSelection}
               onRenameLayer={renameLayer}
               onReorder={reorderLayer}
               onReorderGroup={reorderGroup}
@@ -2257,7 +2354,7 @@ export function CoverScreen({
           )}
           {!previewing && !showLayers && (
             <div className="cover-layers-collapsed">
-              <button type="button" onClick={() => setShowLayers(true)} title="Show layers" aria-label="Show layers"><LayersIcon /><span>{doc.layers.length}</span></button>
+              <button type="button" onClick={() => setShowLayers(true)} title="Show layers panel" aria-label="Show layers panel"><PanelLeftOpen size={14} /><span>{doc.layers.length}</span></button>
             </div>
           )}
           <CoverStage
@@ -2336,6 +2433,11 @@ export function CoverScreen({
               onTrimSize={changeTrimSize}
               onOpenSettings={() => onNavigate?.("settings")}
               onReplaceImage={() => { if (selected?.type === "image") replaceImageInputRef.current?.click(); }}
+              onCopyImageToBackground={() => void copyImageToBackground()}
+              busyImageAction={busyImageAction}
+              onPickBackgroundImage={() => backgroundImageInputRef.current?.click()}
+              onUseBackgroundImage={useBackgroundImage}
+              onLiftBackground={liftBackground}
               onUploadBarcode={() => barcodeInputRef.current?.click()}
               onClearBarcode={() => updateCover({ barcodeImage: "" }, { key: "barcode-image" })}
               tool={tool}
@@ -2391,6 +2493,13 @@ export function CoverScreen({
             void replaceImage(event.target.files?.[0] ?? null);
             event.target.value = "";
           }}
+        />
+        <input
+          ref={(element) => { backgroundImageInputRef.current = element; }}
+          type="file"
+          accept="image/*"
+          className="cover-hidden-input"
+          onChange={(event) => { void uploadBackgroundImage(event.target.files?.[0] ?? null); event.target.value = ""; }}
         />
         <input
           ref={(element) => { barcodeInputRef.current = element; }}
@@ -2474,6 +2583,7 @@ export function CoverScreen({
         />
       )}
     </div>
+    </CoverColorProvider>
   );
 }
 
@@ -2764,6 +2874,7 @@ function LayerPanel({
   onAssignGroup,
   onCopySelection,
   onPasteSelection,
+  onGroupSelection,
   onContextMenu,
   onDuplicate,
   onDelete,
@@ -2774,13 +2885,96 @@ function LayerPanel({
   onCollapse,
 }: LayerPanelProps) {
   const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
-  const [overGroupId, setOverGroupId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ layerId?: string; groupId?: string | null; placement?: CoverLayerPlacement } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
   const [layerRenameValue, setLayerRenameValue] = useState("");
   const [query, setQuery] = useState("");
+  const listRef = useRef<HTMLDivElement>(null);
+  const suppressClickRef = useRef(false);
+  const dragRef = useRef<{ id: string; x: number; y: number; startX: number; startY: number; pointerId: number; active: boolean } | null>(null);
+  const dragActionsRef = useRef({ onReorderDrag, onAssignGroup });
+  dragActionsRef.current = { onReorderDrag, onAssignGroup };
+
+  useEffect(() => {
+    let frame = 0;
+    let target: typeof dropTarget = null;
+    const hitTest = () => {
+      const drag = dragRef.current;
+      if (!drag?.active) return;
+      const list = listRef.current;
+      if (!list) return;
+      const rect = list.getBoundingClientRect();
+      const inside = drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top && drag.y <= rect.bottom;
+      let next: typeof dropTarget = null;
+      if (inside) {
+        const element = document.elementFromPoint(drag.x, drag.y);
+        const row = element?.closest<HTMLElement>("[data-cover-layer-id]");
+        const group = element?.closest<HTMLElement>("[data-cover-group-id]");
+        if (row && row.dataset.coverLayerId !== drag.id) {
+          const bounds = row.getBoundingClientRect();
+          next = { layerId: row.dataset.coverLayerId, placement: drag.y < bounds.top + bounds.height / 2 ? "before" : "after" };
+        } else if (group) next = { groupId: group.dataset.coverGroupId };
+        else if (element?.closest(".cover-background-row") || element === list) next = { groupId: null };
+        if (drag.y < rect.top + 32) list.scrollTop -= 8;
+        else if (drag.y > rect.bottom - 32) list.scrollTop += 8;
+      }
+      if (JSON.stringify(next) !== JSON.stringify(target)) { target = next; setDropTarget(next); }
+      frame = window.requestAnimationFrame(hitTest);
+    };
+    const move = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      drag.x = event.clientX;
+      drag.y = event.clientY;
+      if (!drag.active && Math.hypot(drag.x - drag.startX, drag.y - drag.startY) >= 5) {
+        drag.active = true;
+        suppressClickRef.current = true;
+        setDragId(drag.id);
+        hitTest();
+      }
+    };
+    const finish = (event: PointerEvent | KeyboardEvent | Event) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof PointerEvent && event.pointerId !== drag.pointerId) return;
+      if (drag.active && event.type === "pointerup") { window.cancelAnimationFrame(frame); hitTest(); }
+      if (drag.active && event.type === "pointerup" && target) {
+        if (target.layerId) dragActionsRef.current.onReorderDrag(drag.id, target.layerId, target.placement ?? "before");
+        else dragActionsRef.current.onAssignGroup(drag.id, target.groupId ?? null);
+      }
+      window.cancelAnimationFrame(frame);
+      dragRef.current = null;
+      target = null;
+      setDragId(null);
+      setDropTarget(null);
+      window.setTimeout(() => { suppressClickRef.current = false; }, 0);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+    window.addEventListener("keydown", finish);
+    window.addEventListener("blur", finish);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      window.removeEventListener("keydown", finish);
+      window.removeEventListener("blur", finish);
+    };
+  }, []);
+
+  const beginPointerDrag = (event: ReactPointerEvent<HTMLElement>, layer: CoverLayer) => {
+    if (event.button !== 0 || coverLayerLocked(doc, layer)) return;
+    if (selectedIds.includes(layer.id) && doc.layers.some((item) => selectedIds.includes(item.id) && coverLayerLocked(doc, item))) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("input, button") && !target.closest(".cover-layer-grip")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { id: layer.id, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, pointerId: event.pointerId, active: false };
+  };
   const search = query.trim().toLocaleLowerCase();
   const matches = (layer: CoverLayer) => !search
     || layer.name.toLocaleLowerCase().includes(search)
@@ -2790,6 +2984,8 @@ function LayerPanel({
   const groupsById = new Map(doc.groups.map((group) => [group.id, group]));
   const activeGroup = activeGroupId ? groupsById.get(activeGroupId) ?? null : null;
   const activeGroupLocked = activeGroupId ? coverGroupLocked(doc, activeGroupId) : false;
+  const groupMembers = doc.layers.filter((layer) => layer.groupId === activeGroupId);
+  const wholeGroupSelected = Boolean(activeGroup) && (selectedIds.length === 0 || groupMembers.length === selectedIds.length && groupMembers.every((layer) => selectedIds.includes(layer.id)));
 
   const commitRename = (groupId: string) => {
     onRenameGroup(groupId, renameValue);
@@ -2813,23 +3009,21 @@ function LayerPanel({
     return (
       <div
         key={layer.id}
-        className={`cover-layer-row ${inGroup ? "in-group" : ""} ${selectedIds.includes(layer.id) ? "active" : ""} ${selectedId === layer.id ? "primary" : ""} ${overId === layer.id ? "drop-target" : ""} ${visible ? "" : "is-hidden"}`}
-        draggable
-        onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", layer.id); setDragId(layer.id); }}
-        onDragOver={(event) => { event.preventDefault(); setOverId(layer.id); }}
-        onDragLeave={() => setOverId((value) => value === layer.id ? null : value)}
-        onDrop={(event) => {
-          event.preventDefault();
-          const source = event.dataTransfer.getData("text/plain") || dragId;
-          if (source) onReorderDrag(source, layer.id);
-          setDragId(null);
-          setOverId(null);
-          setOverGroupId(null);
-        }}
-        onDragEnd={() => { setDragId(null); setOverId(null); setOverGroupId(null); }}
+        data-cover-layer-id={layer.id}
+        className={`cover-layer-row ${inGroup ? "in-group" : ""} ${selectedIds.includes(layer.id) ? "active" : ""} ${selectedId === layer.id ? "primary" : ""} ${dropTarget?.layerId === layer.id ? `drop-${dropTarget.placement}` : ""} ${dragId && (selectedIds.includes(dragId) ? selectedIds.includes(layer.id) : dragId === layer.id) ? "dragging" : ""} ${visible ? "" : "is-hidden"}`}
+        tabIndex={0}
+        aria-label={`${layer.name}, ${layer.panel}${locked ? ", locked" : ""}${selectedIds.includes(layer.id) ? ", selected" : ""}`}
+        onPointerDown={(event) => beginPointerDrag(event, layer)}
+        onClickCapture={(event) => { if (suppressClickRef.current) { event.preventDefault(); event.stopPropagation(); } }}
         onContextMenu={(event) => onContextMenu(event, layer.id)}
         onClick={(event) => onSelect(layer.id, event.shiftKey || event.metaKey || event.ctrlKey)}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === " " || event.key === "Enter") { event.preventDefault(); event.stopPropagation(); onSelect(layer.id, event.shiftKey || event.metaKey || event.ctrlKey); }
+          if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) { event.preventDefault(); event.stopPropagation(); onReorder(layer.id, event.key === "ArrowUp" ? "up" : "down"); }
+        }}
       >
+        <button type="button" className="cover-layer-grip" title="Drag to reorder · Alt + ↑/↓ to move" aria-label={`Drag ${layer.name} to reorder`} disabled={locked} onClick={(event) => { event.stopPropagation(); onSelect(layer.id, event.shiftKey || event.metaKey || event.ctrlKey); }} onKeyDown={(event) => { if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) { event.preventDefault(); event.stopPropagation(); onReorder(layer.id, event.key === "ArrowUp" ? "up" : "down"); } }}><GripVertical size={11} /></button>
         <button type="button" className={`cover-layer-eye ${visible ? "" : "off"}`} onClick={(event) => { event.stopPropagation(); onToggleVisible(layer.id); }} title={layer.visible ? (visible ? "Hide layer" : "Hidden by group") : "Show layer"} aria-label={layer.visible ? "Hide layer" : "Show layer"}>{visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
         <LayerThumb layer={layer} cover={cover} />
         <span className="cover-layer-name" title={renamingLayerId === layer.id ? "Press Enter to save" : "Double-click to rename"} onDoubleClick={(event) => { event.stopPropagation(); beginLayerRename(layer); }}>
@@ -2860,19 +3054,14 @@ function LayerPanel({
     return (
     <div
       key={`group-${group.id}`}
-      className={`cover-group-row ${activeGroupId === group.id ? "active" : ""} ${group.visible ? "" : "is-hidden"} ${lockedChild ? "has-locked-child" : ""} ${overGroupId === group.id ? "drop-target" : ""}`}
+      data-cover-group-id={group.id}
+      className={`cover-group-row ${activeGroupId === group.id ? "active" : ""} ${group.visible ? "" : "is-hidden"} ${lockedChild ? "has-locked-child" : ""} ${dropTarget?.groupId === group.id ? "drop-target" : ""}`}
       title={lockedChild ? "Contains locked layers — unlock them to move the group" : undefined}
       onClick={() => onSelectGroup(group.id)}
-      onDragOver={(event) => { event.preventDefault(); setOverGroupId(group.id); }}
-      onDragLeave={() => setOverGroupId((value) => value === group.id ? null : value)}
-      onDrop={(event) => {
-        event.preventDefault();
-        const source = event.dataTransfer.getData("text/plain") || dragId;
-        if (source) onAssignGroup(source, group.id);
-        setDragId(null);
-        setOverGroupId(null);
-        setOverId(null);
-      }}
+      tabIndex={0}
+      aria-label={`Select ${group.name} group`}
+      onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); event.stopPropagation(); onSelectGroup(group.id); } }}
+
     >
       <button type="button" className="cover-group-chevron" onClick={(event) => { event.stopPropagation(); onToggleGroupCollapsed(group.id); }} aria-label={group.collapsed ? "Expand group" : "Collapse group"}>{group.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</button>
       <span className="cover-group-icon"><Folder size={13} /></span>
@@ -2932,18 +3121,12 @@ function LayerPanel({
           <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "active" : ""} onClick={() => onTab("history")}>History <small>{history.length}</small></button>
         </div>
         <div className="cover-panel-heading-actions">
-          {tab === "layers" ? (
-            <>
-              <button type="button" onClick={onAddGroup} title="New group" aria-label="New group"><FolderPlus size={15} /></button>
-              <button type="button" onClick={onAdd} title="Add image layer" aria-label="Add image layer"><Plus size={15} /></button>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={onUndo} disabled={history.length === 0} title="Undo" aria-label="Undo"><Undo2 size={14} /></button>
-              <button type="button" onClick={onRedo} disabled={future.length === 0} title="Redo" aria-label="Redo"><Redo2 size={14} /></button>
-            </>
-          )}
-          <button type="button" onClick={onCollapse} title="Hide panel" aria-label="Hide panel"><ChevronLeft size={15} /></button>
+          {tab === "history" && <>
+            <button type="button" onClick={onUndo} disabled={history.length === 0} title="Undo" aria-label="Undo"><Undo2 size={14} /></button>
+            <button type="button" onClick={onRedo} disabled={future.length === 0} title="Redo" aria-label="Redo"><Redo2 size={14} /></button>
+          </>}
+
+          <button type="button" className="cover-layer-collapse-toggle" onClick={onCollapse} title="Collapse layers panel" aria-label="Collapse layers panel"><PanelLeftClose size={15} /></button>
         </div>
       </div>
       {tab === "layers" ? (
@@ -2952,17 +3135,24 @@ function LayerPanel({
             <Search size={12} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search layers" aria-label="Search layers" />
             {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear layer search"><X size={11} /></button>}
+            <button type="button" onClick={onAddGroup} title="New group" aria-label="New group"><FolderPlus size={14} /></button>
+            <button type="button" onClick={onAdd} title="Add image layer" aria-label="Add image layer"><Plus size={14} /></button>
           </div>
-          <div className="cover-layer-list">
+          <div className={`cover-layer-list ${dragId ? "is-dragging" : ""}`} ref={listRef}>
             {rows.length === 0 && search && <div className="cover-layer-empty"><Search size={15} /><span>No layers match “{query}”</span></div>}
             {rows}
-            <button type="button" className="cover-background-row" onClick={() => onSelect(null)}>
-              <span className="cover-layer-type-icon"><Palette size={13} /></span>
-              <span className="cover-layer-name">Background<small>paper &amp; gradient</small></span>
-              <span className="cover-background-swatch" style={{ background: coverFillCss(doc.background) }} />
+            <button type="button" className={`cover-background-row ${dropTarget && !dropTarget.layerId && dropTarget.groupId === null ? "drop-target" : ""}`} onClick={() => onSelect(null)} title="Edit the background fill or image">
+              <span className="cover-layer-type-icon">{doc.backgroundImage?.src ? <ImagePlus size={13} /> : <Palette size={13} />}</span>
+              <span className="cover-layer-name">Background<small>{doc.backgroundImage?.src ? "image · paper fill behind" : "paper, colour or gradient"}</small></span>
+              <span
+                className="cover-background-swatch"
+                style={doc.backgroundImage?.src
+                  ? { backgroundImage: `url("${doc.backgroundImage.src}")`, backgroundSize: "cover", backgroundPosition: "center" }
+                  : { background: coverFillCss(doc.background) }}
+              />
             </button>
           </div>
-          {activeGroup && selectedIds.length === 0 ? (
+          {activeGroup && wholeGroupSelected ? (
             <div className="cover-layer-actions cover-group-actions">
               <span className="cover-group-action-label" title={activeGroup.name}>{activeGroup.name}</span>
               <button type="button" onClick={() => onReorderGroup(activeGroup.id, "up")} disabled={activeGroupLocked} title={activeGroupLocked ? "Group contains locked layers" : "Move group up"} aria-label="Move group up"><ArrowUp size={13} /></button>
@@ -2974,13 +3164,14 @@ function LayerPanel({
             <div className="cover-layer-actions">
               <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "up")} title="Move layer up" aria-label="Move layer up"><ArrowUp size={13} /></button>
               <button type="button" onClick={() => onReorder(selectedId ?? selectedIds[0], "down")} title="Move layer down" aria-label="Move layer down"><ArrowDown size={13} /></button>
+              <button type="button" onClick={onGroupSelection} disabled={selectedIds.length < 2} title="Group selected layers" aria-label="Group selected layers"><FolderPlus size={13} /></button>
               <button type="button" onClick={onCopySelection} title="Copy selected layers" aria-label="Copy selected layers"><Copy size={13} /></button>
               <button type="button" onClick={onPasteSelection} title="Paste layers" aria-label="Paste layers"><ClipboardPaste size={13} /></button>
-              <button type="button" onClick={() => onDuplicate(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Duplicate selected layers" : "Duplicate layer"} aria-label="Duplicate layer"><Files size={13} /></button>
-              <button type="button" className="danger" onClick={() => onDelete(selectedId ?? selectedIds[0])} title={selectedIds.length > 1 ? "Delete selected layers" : "Delete layer"} aria-label="Delete layer"><Trash2 size={13} /></button>
+              <button type="button" onClick={onDuplicate} title={selectedIds.length > 1 ? "Duplicate selected layers" : "Duplicate layer"} aria-label={selectedIds.length > 1 ? "Duplicate selected layers" : "Duplicate layer"}><Files size={13} /></button>
+              <button type="button" className="danger" onClick={onDelete} title={selectedIds.length > 1 ? "Delete selected layers" : "Delete layer"} aria-label={selectedIds.length > 1 ? "Delete selected layers" : "Delete layer"}><Trash2 size={13} /></button>
             </div>
           )}
-          <div className="cover-layer-hint"><Move size={11} /> {activeGroupId ? "New layers join the selected group" : selectedIds.length > 1 ? `${selectedIds.length} layers selected` : "Drag to reorder · Right-click for layer actions"}</div>
+          <div className="cover-layer-hint"><Move size={11} /> {selectedIds.length > 1 ? `${selectedIds.length} layers selected · ⌘/Ctrl+G to group` : activeGroupId ? "New layers join the selected group" : "Drag to reorder · Right-click for layer actions"}</div>
         </>
       ) : (
         <HistoryPanel history={history} future={future} onJump={onJumpHistory} />
@@ -3840,6 +4031,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
               ["--cover-zoom" as string]: String(effectiveZoom),
             }}
           >
+            {cover.doc.backgroundImage?.src && <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: coverBackgroundImageMarkup(cover.doc.backgroundImage, metrics.fullWidth, metrics.fullHeight) }} />}
             {cover.doc.layers.map((layer) => {
               if (!coverLayerVisible(cover.doc, layer)) return null;
               const rect = spreadRectFor(layer);
@@ -3984,7 +4176,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, imageLibrary, onUseLibraryImage, onDeleteLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, imageLibrary, onUseLibraryImage, onDeleteLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
   const eraserActive = tool === "eraser";
   const eraserTarget = selected?.type === "image" ? selected : null;
   const imageLayers = cover.doc.layers.filter((layer): layer is CoverImageLayer => layer.type === "image");
@@ -4006,6 +4198,7 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             imageLayers={imageLayers}
             onSelectImage={(id: string) => onSelect(id)}
             onClearMask={() => onClearEraseMask(eraserTarget?.id)}
+            onEraseBackground={cover.doc.backgroundImage?.src ? () => onLiftBackground("eraser") : undefined}
           />
         )}
         {selected ? (
@@ -4017,6 +4210,8 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             onUpdate={(patch, options) => onUpdateLayer(selected.id, patch, options)}
             onUpdateCover={onUpdateCover}
             onReplaceImage={onReplaceImage}
+            onCopyImageToBackground={onCopyImageToBackground}
+            busyImageAction={busyImageAction}
             onUploadBarcode={onUploadBarcode}
             onClearBarcode={onClearBarcode}
             imagePanMode={imagePanMode}
@@ -4052,6 +4247,11 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             onBleed={onBleed}
             onTrimSize={onTrimSize}
             onOpenSettings={onOpenSettings}
+            onPickBackgroundImage={onPickBackgroundImage}
+            onUseBackgroundImage={onUseBackgroundImage}
+            onLiftBackground={onLiftBackground}
+            imageLibrary={imageLibrary}
+            onExtractBackgroundPalette={() => { if (cover.doc.backgroundImage?.src) void onExtractPalette(imageLayer({ id: "background", name: "Background", src: cover.doc.backgroundImage.src, panel: "wrap", x: 0, y: 0, width: metrics.fullWidth, height: metrics.fullHeight })); }}
             onUploadBarcode={onUploadBarcode}
             onClearBarcode={onClearBarcode}
             brandPalettes={brandPalettes}
@@ -4107,23 +4307,7 @@ function SliderField({ label, value, onChange, min, max, step, suffix = "" }: { 
 }
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <label className="cover-color-field">
-      <span>{label}</span>
-      <span className="cover-color-input-wrap">
-        <input type="color" value={pickerColor(value)} onChange={(event) => onChange(event.target.value)} aria-label={`${label} colour`} />
-        <input
-          type="text"
-          value={value}
-          spellCheck={false}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (/^#[0-9a-f]{0,8}$/i.test(next) || next === "") onChange(next || "#000000");
-          }}
-        />
-      </span>
-    </label>
-  );
+  return <CoverColorField label={label} value={value} onChange={onChange} />;
 }
 
 function Segmented<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: ReactNode; title?: string }[]; onChange: (value: T) => void }) {
@@ -4172,7 +4356,7 @@ function FillEditor({ label, fill, onChange }: { label: string; fill: CoverFill;
           <div className="cover-gradient-stops">
             {fill.gradient.stops.map((stop, index) => (
               <div className="cover-gradient-stop" key={index}>
-                <input type="color" value={pickerColor(stop.color)} onChange={(event) => setStop(index, { color: event.target.value })} aria-label={`Gradient stop ${index + 1} colour`} />
+                <CoverColorSwatch value={stop.color} onChange={(color) => setStop(index, { color })} label={`Gradient stop ${index + 1} colour`} />
                 <input type="range" min={0} max={1} step={0.01} value={stop.position} onChange={(event) => setStop(index, { position: Number(event.target.value) })} aria-label={`Gradient stop ${index + 1} position`} />
                 <span>{Math.round(stop.position * 100)}%</span>
                 {fill.gradient.stops.length > 2 && <button type="button" onClick={() => updateGradient({ stops: fill.gradient.stops.filter((_item, stopIndex) => stopIndex !== index) })} aria-label="Remove gradient stop"><X size={11} /></button>}
@@ -4196,6 +4380,7 @@ function EraserControls({
   imageLayers,
   onSelectImage,
   onClearMask,
+  onEraseBackground,
 }: {
   settings: CoverEraserSettings;
   onChange: (settings: CoverEraserSettings) => void;
@@ -4203,6 +4388,7 @@ function EraserControls({
   imageLayers: CoverImageLayer[];
   onSelectImage: (id: string) => void;
   onClearMask: () => void;
+  onEraseBackground?: () => void;
 }) {
   const set = (patch: Partial<CoverEraserSettings>) => onChange({ ...settings, ...patch });
   return (
@@ -4244,6 +4430,7 @@ function EraserControls({
       ) : (
         <div className="cover-eraser-targets">
           <span className="cover-field-heading">Choose an image layer</span>
+          {onEraseBackground && <button type="button" className="cover-wide-button" onClick={onEraseBackground}><Eraser size={13} /> Erase on background image</button>}
           {imageLayers.length === 0 ? (
             <p className="cover-inspector-note">Add an image to the canvas first, then switch back to the eraser.</p>
           ) : (
@@ -4271,6 +4458,8 @@ function LayerInspector({
   onUpdate,
   onUpdateCover,
   onReplaceImage,
+  onCopyImageToBackground,
+  busyImageAction,
   onUploadBarcode,
   onClearBarcode,
   imagePanMode,
@@ -4297,6 +4486,8 @@ function LayerInspector({
   onUpdate: (patch: Partial<CoverLayer>, options?: CommitOptions) => void;
   onUpdateCover: (patch: Partial<BookCoverDesign>, options?: CommitOptions) => void;
   onReplaceImage: () => void;
+  onCopyImageToBackground: () => void;
+  busyImageAction: boolean;
   onUploadBarcode: () => void;
   onClearBarcode: () => void;
   imagePanMode: boolean;
@@ -4518,6 +4709,7 @@ function LayerInspector({
       {layer.type === "image" && (
         <Section title="Image lab" hint="Crop, tone & frame">
           <button type="button" className="cover-wide-button" onClick={onReplaceImage}><Upload size={13} /> Replace image</button>
+          <button type="button" className="cover-wide-button subtle" onClick={onCopyImageToBackground} disabled={busyImageAction || !layer.src || !coverLayerVisible(cover.doc, layer) || coverLayerLocked(cover.doc, layer)}>{busyImageAction ? <LoaderCircle size={13} className="cover-tool-busy" /> : <ImagePlus size={13} />}{busyImageAction ? "Copying image" : "Copy to wrap background"}</button>
           <div className="cover-eraser-mask-row">
             <span><strong>{layer.eraseMask ? "Erase mask active" : "No erase mask"}</strong><small>{layer.eraseMask ? "Brush away pixels with the mask eraser." : "Paint transparent cut-outs without touching the file."}</small></span>
             <div>
@@ -4568,6 +4760,11 @@ function LayerInspector({
           </div>
           <div className="cover-focus-block">
             <span className="cover-field-heading">Crop focus</span>
+            <CoverImageFocus src={layer.src} fit={layer.fit} focusX={layer.focusX} focusY={layer.focusY} aspectRatio={layer.width / layer.height} filter={coverImageFilterCss(layer)} label="Image crop focus" onChange={(focusX, focusY) => onUpdate({ focusX, focusY }, { key: `focus:${layer.id}` })} />
+            <div className="cover-image-quick-actions">
+              <button type="button" onClick={() => onUpdate(resetCoverImageCrop(layer), { key: `crop-reset:${layer.id}` })}><RotateCcw size={12} /> Reset crop</button>
+              <button type="button" disabled={!layer.sourceWidth || !layer.sourceHeight} onClick={() => { const patch = matchCoverImageRatio(layer); if (patch) onUpdate(patch, { key: `image-ratio:${layer.id}` }); }}><Frame size={12} /> Match photo ratio</button>
+            </div>
             <button type="button" className={`cover-wide-button ${imagePanMode ? "active" : ""}`} onClick={() => onImagePanMode(!imagePanMode)}><Hand size={13} /> {imagePanMode ? "Panning — drag the photo" : "Reposition in frame"}</button>
             <small className="cover-field-hint">Or hold ⌥ and drag the photo on the canvas. The frame, crop mask, and effects stay put.</small>
             <SliderField label="Horizontal" value={layer.focusX} onChange={(focusX) => onUpdate({ focusX }, { key: `focus-x:${layer.id}` })} min={0} max={1} step={0.01} suffix="" />
@@ -4575,7 +4772,7 @@ function LayerInspector({
             <div className="cover-image-flip-row">
               <button type="button" className={layer.flipX ? "active" : ""} onClick={() => onUpdate({ flipX: !layer.flipX }, { key: `flip-x:${layer.id}` })}><FlipHorizontal2 size={13} /> Flip H</button>
               <button type="button" className={layer.flipY ? "active" : ""} onClick={() => onUpdate({ flipY: !layer.flipY }, { key: `flip-y:${layer.id}` })}><FlipVertical2 size={13} /> Flip V</button>
-              <button type="button" onClick={() => onUpdate({ brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0, grayscale: false, sepia: false, tint: "#ffffff", tintStrength: 0, mask: "none", focusX: 0.5, focusY: 0.5, flipX: false, flipY: false, eraseMask: "" }, { key: `image-reset:${layer.id}` })}><RotateCcw size={12} /> Reset</button>
+              <button type="button" onClick={() => onUpdate(resetCoverImageTone(layer), { key: `image-reset:${layer.id}` })}><RotateCcw size={12} /> Reset tone</button>
             </div>
           </div>
         </Section>
@@ -4623,7 +4820,7 @@ function LayerInspector({
         <Section title="Artwork" hint="Library & colour">
           <label className="cover-select-field full"><span>Graphic</span><select value={layer.graphicId} onChange={(event) => onUpdate({ graphicId: event.target.value }, { key: `graphic:${layer.id}` })}>{BOOK_GRAPHIC_CATEGORIES.map((category) => <optgroup key={category} label={category}>{BOOK_GRAPHICS.filter((graphic) => graphic.category === category).map((graphic) => <option key={graphic.id} value={graphic.id}>{graphic.label}</option>)}</optgroup>)}</select></label>
           <ColorField label="Ink colour" value={layer.color} onChange={(color) => onUpdate({ color }, { key: `artwork-color:${layer.id}` })} />
-          <div className="cover-artwork-inspector-preview"><img src={coverArtworkDataUrl(layer)} alt="" /></div>
+          <div className="cover-artwork-inspector-preview"><img src={coverArtworkDataUrl(layer)} alt="" draggable={false} /></div>
         </Section>
       )}
 
@@ -4720,6 +4917,11 @@ function DocumentInspector({
   onBleed,
   onTrimSize,
   onOpenSettings,
+  onPickBackgroundImage,
+  onUseBackgroundImage,
+  onLiftBackground,
+  imageLibrary,
+  onExtractBackgroundPalette,
   onUploadBarcode,
   onClearBarcode,
   brandPalettes,
@@ -4741,6 +4943,11 @@ function DocumentInspector({
   onBleed: (value: number) => void;
   onTrimSize: (value: string) => void;
   onOpenSettings: () => void;
+  onPickBackgroundImage: () => void;
+  onUseBackgroundImage: (image: ReadCoverImage) => void;
+  onLiftBackground: (tool?: "select" | "eraser") => void;
+  imageLibrary: CoverImageAsset[];
+  onExtractBackgroundPalette: () => void;
   onUploadBarcode: () => void;
   onClearBarcode: () => void;
   brandPalettes: CoverBrandPalette[];
@@ -4751,16 +4958,65 @@ function DocumentInspector({
   const doc = cover.doc;
   const isbn = normalizeIsbn13(cover.isbn);
   const validIsbn = isbnIsValid(cover.isbn);
+  const useStockBackground = (src: string) => {
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas is not available.");
+        context.drawImage(image, 0, 0);
+        onUseBackgroundImage({ src: canvas.toDataURL("image/jpeg", 0.95), width: image.naturalWidth, height: image.naturalHeight });
+      } catch (error) { notify("error", "Background image could not be added", String(error)); }
+    };
+    image.onerror = () => notify("error", "Background image could not be loaded");
+    image.src = src;
+  };
   return (
     <>
       <div className="cover-document-pills">
         <span className="cover-pill accent"><Palette size={12} /> {doc.templateId ? COVER_TEMPLATE_PRESETS.find((template) => template.id === doc.templateId)?.label ?? "Custom design" : "Custom design"}</span>
         <button type="button" className="cover-pill" onClick={onApplyTemplate}><LayoutTemplate size={12} /> Change template</button>
       </div>
-      <Section title="Background" hint="Paper, colour or gradient">
+      <Section title="Background" hint="Paper, colour or image">
         <FillEditor label="Cover finish" fill={doc.background} onChange={(background) => onUpdateDoc({ ...doc, background }, { key: "background" })} />
         <div className="cover-swatch-row">
           {["#f6efe3", "#fffdf8", "#1f3a2d", "#14161a", "#e4583a", "#315f73", "#d4b26b", "#e8d9c7"].map((color) => <button key={color} type="button" style={{ background: color }} onClick={() => onUpdateDoc({ ...doc, background: coverFill(color) }, { key: "background-swatch" })} aria-label={`Set background ${color}`} />)}
+        </div>
+        <div className="cover-background-image-editor">
+          <div className="cover-bg-image-head"><span className="cover-field-heading">Background image</span>{doc.backgroundImage?.src && <button type="button" className="cover-bg-clear" onClick={() => onUpdateDoc({ ...doc, backgroundImage: null }, { key: "background-image" })}>Remove</button>}</div>
+          {doc.backgroundImage?.src ? (
+            <>
+              <CoverImageFocus src={doc.backgroundImage.src} fit={doc.backgroundImage.fit} focusX={doc.backgroundImage.focusX} focusY={doc.backgroundImage.focusY} aspectRatio={metrics.fullWidth / metrics.fullHeight} label="Background crop focus" onChange={(focusX, focusY) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, focusX, focusY } }, { key: "background-image:focus" })} />
+              <button type="button" className="cover-wide-button subtle" onClick={() => onLiftBackground()}><LayersGlyph /> Edit as image layer</button>
+              <div className="cover-select-grid">
+                <label className="cover-select-field"><span>Fit</span><select value={doc.backgroundImage.fit} onChange={(event) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, fit: event.target.value === "contain" ? "contain" : "cover" } }, { key: "background-image" })}><option value="cover">Fill wrap</option><option value="contain">Fit inside</option></select></label>
+                <NumberField label="Blur" value={doc.backgroundImage.blur} onChange={(blur) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, blur: Math.max(0, blur) } }, { key: "background-image" })} step={0.002} min={0} max={0.08} suffix="in" />
+              </div>
+              <SliderField label="Opacity" value={doc.backgroundImage.opacity} onChange={(opacity) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, opacity } }, { key: "background-image" })} min={0} max={1} step={0.01} suffix="" />
+              <SliderField label="Horizontal focus" value={doc.backgroundImage.focusX} onChange={(focusX) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, focusX } }, { key: "background-image" })} min={0} max={1} step={0.01} suffix="" />
+              <SliderField label="Vertical focus" value={doc.backgroundImage.focusY} onChange={(focusY) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, focusY } }, { key: "background-image" })} min={0} max={1} step={0.01} suffix="" />
+              <ColorField label="Image tint" value={doc.backgroundImage.tint} onChange={(tint) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, tint } }, { key: "background-image" })} />
+              <SliderField label="Tint strength" value={doc.backgroundImage.tintStrength} onChange={(tintStrength) => onUpdateDoc({ ...doc, backgroundImage: { ...doc.backgroundImage!, tintStrength } }, { key: "background-image" })} min={0} max={1} step={0.01} suffix="" />
+              <button type="button" className="cover-wide-button subtle" onClick={onPickBackgroundImage}><Upload size={13} /> Replace background image</button>
+              <button type="button" className="cover-wide-button subtle" onClick={onExtractBackgroundPalette}><Palette size={13} /> Extract background palette</button>
+            </>
+          ) : (
+            <button type="button" className="cover-wide-button" onClick={onPickBackgroundImage}><ImagePlus size={13} /> Choose a background image</button>
+          )}
+          {imageLibrary.length > 0 && <div className="cover-bg-stock-row" role="group" aria-label="Saved background images">
+            {imageLibrary.map((asset) => <button key={asset.id} type="button" title={`Use ${asset.name} as background`} aria-label={`Use ${asset.name} as background`} onClick={() => onUseBackgroundImage({ src: asset.src, width: asset.width, height: asset.height })}><img src={asset.src} alt="" /></button>)}
+          </div>}
+          <div className="cover-bg-stock-row" role="group" aria-label="Stock backgrounds">
+            {Object.entries(COVER_STOCK_PHOTOS).map(([stock, src]) => (
+              <button key={stock} type="button" title={`Use ${stock} stock photo as background`} aria-label={`Use ${stock} background`} onClick={() => useStockBackground(src)}>
+                <img src={src} alt="" />
+              </button>
+            ))}
+          </div>
+          <small className="cover-field-hint">Background images fill the full wrap behind every layer, stay embedded in exports, and still respect the paper fill when set to Fit inside.</small>
         </div>
       </Section>
 

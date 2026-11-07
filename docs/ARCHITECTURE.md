@@ -1,5 +1,8 @@
 # NoteMe Architecture
 
+For cover designer document contracts, shared color tools, layer ordering,
+background images, history, and browser QA, see [Cover designer](COVER_DESIGNER.md).
+
 ## Overview
 
 NoteMe is a Tauri 2 desktop application. A Rust process owns the window, native integration (menus, global shortcuts, clipboard), and a local SQLite database. The UI is a React 18 + Vite webview that talks to Rust exclusively through typed `invoke` calls and `emit`/`listen` events.

@@ -213,8 +213,8 @@ export function coverPreflight(book: Book, cover: BookCoverDesign): CoverPreflig
       ? `${missingImages.length} image layer${missingImages.length === 1 ? " has" : "s have"} no source.`
       : images.length
         ? `${images.length} image layer${images.length === 1 ? " is" : "s are"} embedded in the design.`
-        : "No photographic image layers on this cover.",
-    severity: missingImages.length ? "error" : images.length ? "pass" : "info",
+        : doc.backgroundImage?.src ? "A full-wrap background image is included in the design." : "No photographic image layers on this cover.",
+    severity: missingImages.length ? "error" : images.length || doc.backgroundImage?.src ? "pass" : "info",
     layerId: missingImages[0]?.id,
   });
 
@@ -240,6 +240,21 @@ export function coverPreflight(book: Book, cover: BookCoverDesign): CoverPreflig
     layerId: lowResolution[0]?.layer.id ?? reviewResolution[0]?.layer.id,
     fix: lowResolution.length ? { kind: "image-resolution", label: "Fit to 300 DPI" } : undefined,
   });
+
+  const background = doc.backgroundImage;
+  if (background && background.opacity > 0) {
+    const ratios = [background.sourceWidth / metrics.fullWidth, background.sourceHeight / metrics.fullHeight];
+    const dpi = Math.floor(background.fit === "contain" ? Math.max(...ratios) : Math.min(...ratios));
+    const measured = background.sourceWidth > 0 && background.sourceHeight > 0;
+    add({
+      id: "background-resolution",
+      label: "Background image resolution",
+      detail: measured
+        ? `The full-wrap background is ${dpi} DPI at its placed size.${dpi < 220 ? " Choose a larger image for sharper print output." : ""}`
+        : "Background resolution is unknown. Replace the image to record its pixel dimensions.",
+      severity: !measured ? "info" : dpi < 150 ? "warning" : dpi < 220 ? "info" : "pass",
+    });
+  }
 
   return checks;
 }

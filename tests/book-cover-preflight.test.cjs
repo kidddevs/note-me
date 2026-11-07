@@ -168,3 +168,24 @@ test("preflight reports image resolution and can fit low-resolution layers to 30
   assert.equal(legacyCheck.severity, "info");
   assert.equal(legacyCheck.fix, undefined);
 });
+
+
+test("background resolution uses full-wrap geometry and the actual fit", () => {
+  const cover = coverWith(completeLayers);
+  const backgroundImage = { src: "/photo.jpg", sourceWidth: 1305, sourceHeight: 925 };
+  cover.doc = parseCoverDocument({ ...cover.doc, backgroundImage });
+  const check = () => coverPreflight(book, cover).find((item) => item.id === "background-resolution");
+  assert.equal(check().severity, "warning");
+  assert.match(check().detail, /100 DPI/);
+  assert.equal(check().fix, undefined);
+  cover.doc.backgroundImage.sourceWidth = 5220;
+  cover.doc.backgroundImage.sourceHeight = 3700;
+  assert.equal(check().severity, "pass");
+  cover.doc.backgroundImage.sourceWidth = 1305;
+  cover.doc.backgroundImage.fit = "contain";
+  assert.equal(check().severity, "pass");
+  cover.doc.backgroundImage.sourceWidth = 0;
+  assert.equal(check().severity, "info");
+  cover.doc.backgroundImage.opacity = 0;
+  assert.equal(check(), undefined);
+});
