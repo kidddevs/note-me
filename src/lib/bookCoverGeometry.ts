@@ -1,4 +1,5 @@
-import { coverPanelRect, type CoverGuideline, type CoverLayer, type CoverMetrics, type CoverPanel } from "./bookCoverDoc";
+import { coverLayerLocked, coverLayerMinimumHeight, coverPanelRect, type BookCoverDocument, type CoverGuideline, type CoverLayer, type CoverMetrics, type CoverPanel } from "./bookCoverDoc";
+import { alignStudioRects, distributeStudioRects, rotatedStudioBounds, studioBounds, type StudioSpacing } from "./studioGeometry";
 
 export interface CoverRect {
   x: number;
@@ -31,16 +32,11 @@ export function coverSpreadRect(metrics: CoverMetrics, layer: CoverLayer): Cover
 }
 
 export function coverRectUnion(rects: CoverRect[]): CoverRect | null {
-  if (rects.length === 0) return null;
-  const left = Math.min(...rects.map((rect) => rect.x));
-  const top = Math.min(...rects.map((rect) => rect.y));
-  const right = Math.max(...rects.map((rect) => rect.x + rect.width));
-  const bottom = Math.max(...rects.map((rect) => rect.y + rect.height));
-  return { x: left, y: top, width: right - left, height: bottom - top };
+  return studioBounds(rects);
 }
 
 export function coverSelectionBounds(metrics: CoverMetrics, layers: CoverLayer[]): CoverRect | null {
-  return coverRectUnion(layers.map((layer) => coverSpreadRect(metrics, layer)));
+  return coverRectUnion(layers.map((layer) => rotatedStudioBounds(coverSpreadRect(metrics, layer), layer.rotation)));
 }
 
 /**
@@ -48,55 +44,70 @@ export function coverSelectionBounds(metrics: CoverMetrics, layers: CoverLayer[]
  * union of the layers is used, matching Photoshop's align-to-selection feel.
  */
 export function alignCoverLayers(metrics: CoverMetrics, layers: CoverLayer[], mode: CoverAlignMode, bounds?: CoverRect | null): CoverPositionPatch[] {
-  const target = bounds ?? coverSelectionBounds(metrics, layers);
-  if (!target || layers.length === 0) return [];
-  return layers.map((layer) => {
-    const rect = coverSpreadRect(metrics, layer);
-    let spreadX = rect.x;
-    let spreadY = rect.y;
-    if (mode === "left") spreadX = target.x;
-    if (mode === "center-x") spreadX = target.x + (target.width - rect.width) / 2;
-    if (mode === "right") spreadX = target.x + target.width - rect.width;
-    if (mode === "top") spreadY = target.y;
-    if (mode === "middle") spreadY = target.y + (target.height - rect.height) / 2;
-    if (mode === "bottom") spreadY = target.y + target.height - rect.height;
-    return {
-      id: layer.id,
-      x: round(layer.x + spreadX - rect.x),
-      y: round(layer.y + spreadY - rect.y),
-    };
-  });
+  const rects = layers.map((layer) => rotatedStudioBounds(coverSpreadRect(metrics, layer), layer.rotation));
+  return alignStudioRects(rects, mode, bounds ?? studioBounds(rects)).map((rect, i) => ({
+    id: layers[i].id, x: round(layers[i].x + rect.x - rects[i].x), y: round(layers[i].y + rect.y - rects[i].y),
+  }));
 }
 
 /**
  * Distributes layers with equal gaps between their edges. The outermost layers
  * stay put and the inner layers move to create even spacing.
  */
-export function distributeCoverLayers(metrics: CoverMetrics, layers: CoverLayer[], axis: CoverDistributeAxis): CoverPositionPatch[] {
-  if (layers.length < 3) return [];
-  const entries = layers
-    .map((layer) => ({ layer, rect: coverSpreadRect(metrics, layer) }))
-    .sort((a, b) => axis === "horizontal" ? a.rect.x - b.rect.x : a.rect.y - b.rect.y);
-  const first = entries[0];
-  const last = entries[entries.length - 1];
-  const span = axis === "horizontal"
-    ? last.rect.x + last.rect.width - first.rect.x
-    : last.rect.y + last.rect.height - first.rect.y;
-  const occupied = entries.reduce((total, entry) => total + (axis === "horizontal" ? entry.rect.width : entry.rect.height), 0);
-  const gap = (span - occupied) / (entries.length - 1);
-  let cursor = axis === "horizontal" ? first.rect.x : first.rect.y;
-  return entries.map((entry, index) => {
-    const size = axis === "horizontal" ? entry.rect.width : entry.rect.height;
-    const spreadPosition = index === 0 ? cursor : index === entries.length - 1
-      ? (axis === "horizontal" ? last.rect.x : last.rect.y)
-      : cursor;
-    cursor += size + gap;
-    return {
-      id: entry.layer.id,
-      x: round(axis === "horizontal" ? entry.layer.x + spreadPosition - entry.rect.x : entry.layer.x),
-      y: round(axis === "vertical" ? entry.layer.y + spreadPosition - entry.rect.y : entry.layer.y),
+export function distributeCoverLayers(metrics: CoverMetrics, layers: CoverLayer[], axis: CoverDistributeAxis, spacing: StudioSpacing = "gaps"): CoverPositionPatch[] {
+  const rects = layers.map((layer) => rotatedStudioBounds(coverSpreadRect(metrics, layer), layer.rotation));
+  return distributeStudioRects(rects, axis, spacing).map((rect, i) => ({
+    id: layers[i].id, x: round(layers[i].x + rect.x - rects[i].x), y: round(layers[i].y + rect.y - rects[i].y),
+  }));
+}
+
+export interface CoverSelectionTransform {
+  dx?: number;
+  dy?: number;
+  scale?: number;
+  rotation?: number;
+  anchor?: { x: number; y: number };
+}
+
+/** An atomic similarity transform, including text and physical effects, across panels. */
+export function transformCoverSelection(metrics: CoverMetrics, doc: BookCoverDocument, ids: string[], change: CoverSelectionTransform): Array<{ id: string; patch: Partial<CoverLayer> }> {
+  const layers = doc.layers.filter((layer) => ids.includes(layer.id));
+  const bounds = coverSelectionBounds(metrics, layers);
+  const { dx = 0, dy = 0, scale = 1, rotation = 0 } = change;
+  const anchor = change.anchor ?? (bounds ? { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 } : { x: 0, y: 0 });
+  if (!bounds || new Set(ids).size !== layers.length || layers.some((layer) => coverLayerLocked(doc, layer)) || ![dx, dy, scale, rotation, anchor.x, anchor.y].every(Number.isFinite) || scale <= 0) return [];
+  if (!dx && !dy && scale === 1 && !rotation) return [];
+  const angle = rotation * Math.PI / 180;
+  const updates = layers.map((layer) => {
+    const rect = coverSpreadRect(metrics, layer);
+    const offsetX = (rect.x + rect.width / 2 - anchor.x) * scale;
+    const offsetY = (rect.y + rect.height / 2 - anchor.y) * scale;
+    const width = layer.width * scale, height = layer.height * scale;
+    const patch: Partial<CoverLayer> = {
+      x: round(layer.x + anchor.x + offsetX * Math.cos(angle) - offsetY * Math.sin(angle) + dx - width / 2 - rect.x),
+      y: round(layer.y + anchor.y + offsetX * Math.sin(angle) + offsetY * Math.cos(angle) + dy - height / 2 - rect.y),
+      width: round(width), height: round(height), rotation: round(((layer.rotation + rotation + 180) % 360 + 360) % 360 - 180),
     };
+    if (scale !== 1) {
+      if (layer.shadow.enabled) patch.shadow = { ...layer.shadow, blur: round(layer.shadow.blur * scale), offsetX: round(layer.shadow.offsetX * scale), offsetY: round(layer.shadow.offsetY * scale) };
+      if (layer.glow.enabled) patch.glow = { ...layer.glow, blur: round(layer.glow.blur * scale) };
+      if (layer.type === "text") {
+        Object.assign(patch, { fontSize: round(layer.fontSize * scale) });
+        if (layer.highlight.enabled) Object.assign(patch, { highlight: { ...layer.highlight, padding: round(layer.highlight.padding * scale), radius: round(layer.highlight.radius * scale) } });
+      }
+      if (layer.type === "shape") Object.assign(patch, { radius: round(layer.radius * scale), strokeWidth: round(layer.strokeWidth * scale) });
+      if (layer.type === "image") Object.assign(patch, { radius: round(layer.radius * scale), blur: round(layer.blur * scale) });
+    }
+    return { id: layer.id, patch };
   });
+  // Reject the entire operation if reloading would clamp any transformed geometry.
+  if (updates.some(({ patch }, index) => ![patch.x!, patch.y!].every((v) => v >= -20 && v <= 60)
+    || patch.width! < 0.02 || patch.width! > 60 || patch.height! < coverLayerMinimumHeight(layers[index].type) || patch.height! > 60
+    || ("fontSize" in patch && (patch.fontSize! < 4 || patch.fontSize! > 240))
+    || (patch.shadow && (patch.shadow.blur > 1 || Math.abs(patch.shadow.offsetX) > 1 || Math.abs(patch.shadow.offsetY) > 1)) || (patch.glow && patch.glow.blur > 1)
+    || ("radius" in patch && patch.radius! > 12) || ("strokeWidth" in patch && patch.strokeWidth! > 1) || ("blur" in patch && patch.blur! > 0.08)
+    || ("highlight" in patch && (patch.highlight!.padding > 0.3 || patch.highlight!.radius > 0.2)))) return [];
+  return updates;
 }
 
 /**

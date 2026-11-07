@@ -6903,3 +6903,34 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 /* Selection chrome must not shrink a placed photo or change its crop. */
 .books-canvas-visual.is-image { padding: 0; border-width: 0; border-radius: 0; outline: 1px solid transparent; outline-offset: 4px; }
 .books-canvas-visual.is-image:hover, .books-canvas-visual.is-image.selected { outline-color: color-mix(in srgb, var(--editor-accent) 55%, transparent); }
+
+/* One arrangement vocabulary for page objects and cover layers. */
+.studio-arrange-controls, .studio-selection-transform { min-width: 0; margin: 0; padding: 0; border: 0; }
+.studio-arrange-controls { display: flex; flex-direction: column; gap: 10px; }
+.studio-arrange-controls > label { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text-2); font-size: 10px; }
+.studio-arrange-controls select { min-width: 0; max-width: 175px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-2); color: var(--text); font: 11px var(--font); }
+.studio-arrange-align { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+.studio-arrange-controls button, .studio-selection-rotation button, .studio-selection-actions button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 31px; padding: 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-2); color: var(--text-2); font: 11px var(--font); cursor: pointer; }
+.studio-arrange-controls button:hover:not(:disabled), .studio-selection-rotation button:hover:not(:disabled), .studio-selection-actions button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.studio-arrange-controls button:disabled, .studio-arrange-controls select:disabled, .studio-selection-transform:disabled, .studio-selection-actions button:disabled { opacity: .45; cursor: default; }
+.studio-arrange-controls :focus-visible, .studio-selection-transform :focus-visible, .studio-selection-actions :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.studio-arrange-distribute, .studio-selection-rotation { display: flex; gap: 6px; }
+.studio-arrange-distribute > button, .studio-selection-rotation > button { flex: 1; }
+.studio-arrange-controls > p, .studio-selection-ratio { margin: 0; color: var(--text-3); font-size: 10px; line-height: 1.6; }
+.studio-selection-section { padding: 16px 14px; border-bottom: 1px solid var(--border); }
+.studio-selection-section h3 { margin: 0 0 6px; color: var(--text); font-size: 11px; font-weight: 650; }
+.studio-selection-section > p { margin: 0 0 12px; color: var(--text-3); font-size: 10px; }
+.studio-selection-dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.studio-selection-dimension { display: flex; min-width: 0; flex-direction: column; gap: 5px; color: var(--text-2); font-size: 10px; }
+.studio-selection-dimension > span:last-child { display: flex; align-items: center; gap: 4px; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-2); }
+.studio-selection-dimension input { width: 100%; min-width: 0; height: 30px; border: 0; background: transparent; color: var(--text); font: 11px var(--font); }
+.studio-selection-dimension small { color: var(--text-3); }
+.studio-selection-ratio { display: flex; align-items: flex-start; gap: 6px; margin: 12px 0; }
+.studio-selection-ratio svg { flex-shrink: 0; margin-top: 2px; }
+.studio-selection-actions { display: flex; flex-direction: column; gap: 8px; }
+.studio-selection-locked { display: flex; align-items: flex-start; gap: 8px; margin: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 5px; color: var(--text-2); font-size: 11px; line-height: 1.6; }
+.studio-selection-locked svg { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+.cover-selection-box { position: absolute; z-index: 55; pointer-events: none; }
+.cover-selection-box .cover-selection-outline { border-style: dashed; }
+.cover-selection-box button { pointer-events: auto; }
+.cover-selection-bar button:disabled { opacity: .4; cursor: default; }

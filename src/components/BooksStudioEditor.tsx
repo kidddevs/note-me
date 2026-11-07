@@ -100,7 +100,6 @@ import {
   EMPTY_CANVAS_PARAGRAPH,
   richPresentationLeft,
   richAlignForLeft,
-  alignedCanvasBox,
   clampPresentationX,
   clampPresentationY,
   clampPresentationHeight,
@@ -112,6 +111,7 @@ import {
   type RichPresentation,
 } from "../lib/bookPublishing";
 import { handleTabListKeyDown, manuscriptStyle, useConfirmationDialog } from "./BooksStudio";
+import { alignStudioRects, distributeStudioRects, type StudioAlign, type StudioArrangeReference, type StudioAxis, type StudioSpacing } from "../lib/studioGeometry";
 
 const SPRINT_PRESETS = [15, 25, 45] as const;
 
@@ -157,6 +157,7 @@ type EditorHistoryEntry = {
   title: string;
   content: string;
   selection: { start: number; end: number; titleFocused: boolean };
+  selectedIndices?: number[];
   layoutJson: string;
 };
 
@@ -1008,6 +1009,8 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const contentRef = useRef(content);
   const titleRef = useRef(title);
   const selectionRef = useRef(editorSelection);
+  const selectedStartsRef = useRef(selectedStarts);
+  selectedStartsRef.current = selectedStarts;
   const lastSnapshotRef = useRef<{ chapterId: number; content: string; title: string } | null>(null);
   const draftVersionRef = useRef(0);
   const closingRef = useRef(false);
@@ -1330,9 +1333,13 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const commitHistory = () => {
     const layoutJson = serializeBookLayout(bookLayoutRef.current);
     const last = historyRef.current[historyIndexRef.current];
-    if (last && last.content === contentRef.current && last.title === titleRef.current && last.layoutJson === layoutJson) return;
+    const selectedIndices = canvasBlocks(contentRef.current).flatMap((block, index) => selectedStartsRef.current.includes(block.start) ? [index] : []);
+    if (last && last.content === contentRef.current && last.title === titleRef.current && last.layoutJson === layoutJson) {
+      historyRef.current[historyIndexRef.current] = { ...last, selection: { ...selectionRef.current }, selectedIndices };
+      return;
+    }
     const next = historyRef.current.slice(0, historyIndexRef.current + 1);
-    next.push({ title: titleRef.current, content: contentRef.current, selection: { ...selectionRef.current }, layoutJson });
+    next.push({ title: titleRef.current, content: contentRef.current, selection: { ...selectionRef.current }, selectedIndices, layoutJson });
     const capped = next.slice(-120);
     historyRef.current = capped;
     historyIndexRef.current = capped.length - 1;
@@ -1359,6 +1366,8 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setTitle(entry.title);
     setContent(entry.content);
     setEditorSelection(entry.selection);
+    const blocks = canvasBlocks(entry.content);
+    setSelectedStarts((entry.selectedIndices ?? []).flatMap((index) => blocks[index] ? [blocks[index].start] : []));
     markDraft({ title: entry.title, content: entry.content });
     const nextBookLayout = parseBookLayout(entry.layoutJson);
     bookLayoutRef.current = nextBookLayout;
@@ -1376,7 +1385,6 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     flushHistory();
     if (historyIndexRef.current <= 0) return;
     historyIndexRef.current -= 1;
-    setSelectedStarts([]);
     applyHistoryEntry(historyRef.current[historyIndexRef.current]);
     setUndoState({ canUndo: historyIndexRef.current > 0, canRedo: historyIndexRef.current < historyRef.current.length - 1 });
   };
@@ -1385,7 +1393,6 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     flushHistory();
     if (historyIndexRef.current >= historyRef.current.length - 1) return;
     historyIndexRef.current += 1;
-    setSelectedStarts([]);
     applyHistoryEntry(historyRef.current[historyIndexRef.current]);
     setUndoState({ canUndo: historyIndexRef.current > 0, canRedo: historyIndexRef.current < historyRef.current.length - 1 });
   };
@@ -1644,7 +1651,9 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const setFreeLayout = (free: boolean) => {
     const currentlyFree = chapterUsesFreeLayout(content);
     if (currentlyFree === free) return;
+    flushHistory();
     const blocks = canvasBlocks(content);
+    const selectedIndices = blocks.flatMap((block, index) => selectedStarts.includes(block.start) ? [index] : []);
     const canvas = canvasRef.current?.querySelector<HTMLElement>(".books-manuscript-canvas");
     const canvasRect = canvas?.getBoundingClientRect();
     let working = content;
@@ -1664,8 +1673,10 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     working = setChapterFreeLayout(working, free);
     setContent(working);
     markDraft({ content: working });
-    setEditorSelection({ start: 0, end: 0, titleFocused: false });
-    setSelectedStarts([]);
+    const nextBlocks = canvasBlocks(working);
+    const selection = selectedIndices.map((index) => nextBlocks[index]).filter((block): block is CanvasBlock => Boolean(block));
+    setEditorSelection({ start: selection[0]?.start ?? 0, end: selection[selection.length - 1]?.end ?? 0, titleFocused: false });
+    setSelectedStarts(selection.map((block) => block.start));
     notify("success", free ? "Free layout enabled" : "Flow layout restored", free ? "Drag any block anywhere on the artboard." : "Blocks are back in document order.");
   };
 
@@ -1935,11 +1946,10 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     }
   };
 
-  const alignCanvasSelection = (mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => {
-    if (!freeLayout || selectedStarts.length < 2) return;
+  const measureCanvasSelection = () => {
     const canvas = canvasRef.current?.querySelector<HTMLElement>(".books-manuscript-canvas");
     const rect = canvas?.getBoundingClientRect();
-    if (!canvas || !rect) return;
+    if (!canvas || !rect) return null;
     const measured = canvasBlocks(content)
       .filter((block) => selectedStarts.includes(block.start))
       .map((block) => {
@@ -1947,25 +1957,34 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
         const bounds = element?.getBoundingClientRect();
         return {
           block,
-          left: bounds ? ((bounds.left - rect.left) / Math.max(1, rect.width)) * 100 : richPresentationLeft(block.presentation),
-          top: bounds ? ((bounds.top - rect.top) / Math.max(1, rect.width)) * 100 : block.presentation.y ?? 0,
+          x: bounds ? ((bounds.left - rect.left) / Math.max(1, rect.width)) * 100 : richPresentationLeft(block.presentation),
+          y: bounds ? ((bounds.top - rect.top) / Math.max(1, rect.width)) * 100 : block.presentation.y ?? 0,
           width: bounds ? (bounds.width / Math.max(1, rect.width)) * 100 : block.presentation.width,
           height: bounds ? (bounds.height / Math.max(1, rect.width)) * 100 : 10,
         };
       });
-    if (measured.length < 2) return;
-    const bounds = {
-      left: Math.min(...measured.map((item) => item.left)),
-      right: Math.max(...measured.map((item) => item.left + item.width)),
-      top: Math.min(...measured.map((item) => item.top)),
-      bottom: Math.max(...measured.map((item) => item.top + item.height)),
-    };
-    moveCanvasBlocks(measured.map(({ block, left, top, width, height }) => {
-      const aligned = alignedCanvasBox({ left, top, width, height }, bounds, mode);
-      const nextX = clampPresentationX(aligned.x, width) ?? aligned.x;
-      const nextY = clampPresentationY(aligned.y) ?? aligned.y;
-      return { block, patch: { x: nextX, y: nextY, align: richAlignForLeft(nextX, width) } };
+    return { measured, page: { x: 0, y: 0, width: 100, height: rect.height / Math.max(1, rect.width) * 100 } };
+  };
+
+  const arrangeCanvasSelection = (items: Array<{ block: CanvasBlock; x: number; y: number }>) => {
+    flushHistory();
+    moveCanvasBlocks(items.map(({ block, x, y }) => {
+      const nextX = clampPresentationX(x, block.presentation.width) ?? x;
+      const nextY = clampPresentationY(y) ?? y;
+      return { block, patch: { x: nextX, y: nextY, align: richAlignForLeft(nextX, block.presentation.width) } };
     }));
+  };
+
+  const alignCanvasSelection = (mode: StudioAlign, reference: StudioArrangeReference) => {
+    if (!freeLayout || selectedStarts.length < 2) return;
+    const selection = measureCanvasSelection();
+    if (selection) arrangeCanvasSelection(alignStudioRects(selection.measured, mode, reference === "canvas" ? selection.page : undefined));
+  };
+
+  const distributeCanvasSelection = (axis: StudioAxis, spacing: StudioSpacing) => {
+    if (!freeLayout || selectedStarts.length < 3) return;
+    const selection = measureCanvasSelection();
+    if (selection) arrangeCanvasSelection(distributeStudioRects(selection.measured, axis, spacing));
   };
 
   const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: ResizeDirection) => {
@@ -2772,7 +2791,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                 </div>
              </div>
         </div>
-           {inspectorOpen && <BooksInspector context={editorContext} layout={inspectorLayout} bookLayout={bookLayout} sectionLayoutActive={hasSectionLayoutOverride(activeChapter.layout_json)} sectionKind={activeChapter.chapter_kind} sectionLabel={activeChapter.title || "This section"} sectionKey={activeSectionKey} freeLayout={freeLayout} selectionCount={selectedStarts.length} onAlignSelection={alignCanvasSelection} onClearSelection={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); }} layers={canvasLayers} onSelectLayer={(start, end, additive) => { const block = canvasBlocks(content).find((item) => item.start === start && item.end === end); if (block) selectCanvasBlock(block, additive); }} onLayerFront={(start, end) => setLayerForRange(start, end, "front")} onLayerBack={(start, end) => setLayerForRange(start, end, "back")} onLayoutChange={changeLayout} onSectionLayoutChange={changeSectionLayout} onResetSectionLayout={resetSectionLayout} onApplySectionPageMaster={applySectionPageMaster} onApplySectionPageToBook={applySectionPageToBook} onApplySectionPageToKind={applySectionPageToKind} onReplaceRange={replaceContentRange} onMoveRange={moveCanvasRange} onDeleteRange={confirmDeleteCanvasRange} onDuplicateRange={duplicateCanvasRange} onBringToFront={() => setSelectedLayer("front")} onSendToBack={() => setSelectedLayer("back")} onReplaceImage={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) void replaceCanvasArtwork(block); }} onReplaceArtwork={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) openArtworkReplacement(block); }} onInlineFormat={applyInlineFormat} onConvertRole={applyHeading} chapterWords={chapterWords} totalWords={totalWords} wordGoal={wordGoal} />}
+           {inspectorOpen && <BooksInspector context={editorContext} layout={inspectorLayout} bookLayout={bookLayout} sectionLayoutActive={hasSectionLayoutOverride(activeChapter.layout_json)} sectionKind={activeChapter.chapter_kind} sectionLabel={activeChapter.title || "This section"} sectionKey={activeSectionKey} freeLayout={freeLayout} selectionCount={selectedStarts.length} onAlignSelection={alignCanvasSelection} onDistributeSelection={distributeCanvasSelection} onEnableFreeLayout={() => setFreeLayout(true)} onClearSelection={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); }} layers={canvasLayers} onSelectLayer={(start, end, additive) => { const block = canvasBlocks(content).find((item) => item.start === start && item.end === end); if (block) selectCanvasBlock(block, additive); }} onLayerFront={(start, end) => setLayerForRange(start, end, "front")} onLayerBack={(start, end) => setLayerForRange(start, end, "back")} onLayoutChange={changeLayout} onSectionLayoutChange={changeSectionLayout} onResetSectionLayout={resetSectionLayout} onApplySectionPageMaster={applySectionPageMaster} onApplySectionPageToBook={applySectionPageToBook} onApplySectionPageToKind={applySectionPageToKind} onReplaceRange={replaceContentRange} onMoveRange={moveCanvasRange} onDeleteRange={confirmDeleteCanvasRange} onDuplicateRange={duplicateCanvasRange} onBringToFront={() => setSelectedLayer("front")} onSendToBack={() => setSelectedLayer("back")} onReplaceImage={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) void replaceCanvasArtwork(block); }} onReplaceArtwork={() => { const block = canvasBlocks(content).find((item) => item.kind === "image" && item.start === editorContext.start && item.end === editorContext.end); if (block) openArtworkReplacement(block); }} onInlineFormat={applyInlineFormat} onConvertRole={applyHeading} chapterWords={chapterWords} totalWords={totalWords} wordGoal={wordGoal} />}
       </div>
     </div>
     {canvasMenu && (() => {

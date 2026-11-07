@@ -1,15 +1,9 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   AlignCenter,
-  AlignCenterHorizontal,
-  AlignCenterVertical,
-  AlignEndHorizontal,
-  AlignEndVertical,
   AlignJustify,
   AlignLeft,
   AlignRight,
-  AlignStartHorizontal,
-  AlignStartVertical,
   ArrowDown,
   ArrowUp,
   BarChart3,
@@ -86,6 +80,8 @@ import { useTheme } from "../store/theme";
 import { CoverImageFocus } from "./CoverImageFocus";
 import { SaveStudioImageButton } from "./BookImageLibrary";
 import { PagePatternPicker } from "./PagePatternPicker";
+import { StudioArrangeControls } from "./StudioArrangeControls";
+import type { StudioAlign, StudioArrangeReference, StudioAxis, StudioSpacing } from "../lib/studioGeometry";
 
 function InspectorSection({ icon, title, summary, children, defaultOpen = false }: { icon: ReactNode; title: string; summary?: string; children: ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -652,7 +648,7 @@ export interface LayerEntry {
   canReorder: boolean;
 }
 
-export function BooksInspector({ context, layout, bookLayout, sectionLayoutActive, sectionKind, sectionLabel, sectionKey, freeLayout, selectionCount, onAlignSelection, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onSectionLayoutChange, onResetSectionLayout, onApplySectionPageMaster, onApplySectionPageToBook, onApplySectionPageToKind, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onReplaceArtwork, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; bookLayout: BookLayout; sectionLayoutActive: boolean; sectionKind?: string; sectionLabel?: string; sectionKey: string; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: "left" | "center" | "right" | "top" | "middle" | "bottom") => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onSectionLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onResetSectionLayout: () => void; onApplySectionPageMaster: (masterId: string) => void; onApplySectionPageToBook: () => void; onApplySectionPageToKind: () => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onReplaceArtwork?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
+export function BooksInspector({ context, layout, bookLayout, sectionLayoutActive, sectionKind, sectionLabel, sectionKey, freeLayout, selectionCount, onAlignSelection, onDistributeSelection, onEnableFreeLayout, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onSectionLayoutChange, onResetSectionLayout, onApplySectionPageMaster, onApplySectionPageToBook, onApplySectionPageToKind, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onReplaceArtwork, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; bookLayout: BookLayout; sectionLayoutActive: boolean; sectionKind?: string; sectionLabel?: string; sectionKey: string; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: StudioAlign, reference: StudioArrangeReference) => void; onDistributeSelection?: (axis: StudioAxis, spacing: StudioSpacing) => void; onEnableFreeLayout?: () => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onSectionLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onResetSectionLayout: () => void; onApplySectionPageMaster: (masterId: string) => void; onApplySectionPageToBook: () => void; onApplySectionPageToKind: () => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onReplaceArtwork?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
   const role = context.role;
   const roleStyle = role ? layout.typography[role] : null;
   const activePreset = context.presentation?.styleId ? layout.paragraphStyles.find((preset) => preset.id === context.presentation?.styleId) ?? null : null;
@@ -660,6 +656,8 @@ export function BooksInspector({ context, layout, bookLayout, sectionLayoutActiv
   const goalProgress = Math.min(100, Math.round((totalWords / Math.max(1, wordGoal)) * 100));
   const isText = context.kind === "paragraph" || context.kind === "heading" || context.kind === "quote";
   const multiCount = selectionCount ?? 0;
+  const [arrangeReference, setArrangeReference] = useState<StudioArrangeReference>("selection");
+  const [arrangeSpacing, setArrangeSpacing] = useState<StudioSpacing>("gaps");
 
   if (multiCount > 1) {
     return <aside className="books-editor-inspector design-inspector">
@@ -668,15 +666,9 @@ export function BooksInspector({ context, layout, bookLayout, sectionLayoutActiv
         <span className="design-kind selection">selection</span>
       </div>
       <div className="design-inspector-body">
-        <InspectorSection icon={<Move size={14} />} title="Align & arrange" summary="Edge and center alignment" defaultOpen>
-          <div className="design-align-grid">
-            <button onClick={() => onAlignSelection?.("left")}><AlignStartVertical size={14} /> Left</button>
-            <button onClick={() => onAlignSelection?.("center")}><AlignCenterVertical size={14} /> Center</button>
-            <button onClick={() => onAlignSelection?.("right")}><AlignEndVertical size={14} /> Right</button>
-            <button onClick={() => onAlignSelection?.("top")}><AlignStartHorizontal size={14} /> Top</button>
-            <button onClick={() => onAlignSelection?.("middle")}><AlignCenterHorizontal size={14} /> Middle</button>
-            <button onClick={() => onAlignSelection?.("bottom")}><AlignEndHorizontal size={14} /> Bottom</button>
-          </div>
+        <InspectorSection icon={<Move size={14} />} title="Align & arrange" summary="Alignment and even spacing" defaultOpen>
+          <StudioArrangeControls count={multiCount} reference={arrangeReference} onReference={setArrangeReference} spacing={arrangeSpacing} onSpacing={setArrangeSpacing} references={[{ value: "selection", label: "Selection" }, { value: "canvas", label: "Page content area" }]} onAlign={(mode) => onAlignSelection?.(mode, arrangeReference)} onDistribute={(axis, spacing) => onDistributeSelection?.(axis, spacing)} disabled={!freeLayout} />
+          {!freeLayout && <button className="design-clear-selection" onClick={onEnableFreeLayout}><Move size={13} /> Enable Free layout to arrange</button>}
           <p className="design-help">Shift-click objects to add or remove them from the selection. Drag any selected object to move the whole group.</p>
           <button className="design-clear-selection" onClick={onClearSelection}><X size={13} /> Clear selection</button>
         </InspectorSection>

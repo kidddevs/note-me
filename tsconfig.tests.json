@@ -19,6 +19,7 @@
     "src/lib/bookCoverLayers.ts",
     "src/lib/bookCoverImages.ts",
     "src/lib/bookCoverGeometry.ts",
+    "src/lib/studioGeometry.ts",
     "src/lib/bookCoverHistory.ts",
     "src/lib/bookCoverLibrary.ts",
     "src/lib/bookCoverMockup.ts",

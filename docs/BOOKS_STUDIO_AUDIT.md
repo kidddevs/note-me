@@ -29,6 +29,17 @@ with matching HTML/EPUB/print crops and visible credits. Replacing artwork prese
 frame geometry and clears old source attribution. Cover production packages include
 an image-credits report. See [Studio images](STUDIO_IMAGES.md).
 
+## Selection systems — November 8, 2026
+
+Cover selections now have a shared visual transform frame and inspector: resize,
+rotate and position the composition, including typography and active physical
+effects. Locks block the whole operation, and cancelled gestures restore history.
+Rotated selection snapping and full-wrap snap-guide coordinates are connected.
+The page and cover inspectors share arrangement controls with reference alignment
+and equal-gap/equal-center distribution. Page arrange actions have individual undo
+boundaries and retain selection through undo/redo and Flow/Free handoff. See
+[Studio selection](STUDIO_SELECTION.md) for contracts and verification boundaries.
+
 ## What is already strong
 
 - **Content model**: books and sections are first-class SQLite records, not serialized notes. Section kinds carry semantic meaning and reorder within front/story/back bands.

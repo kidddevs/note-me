@@ -12,6 +12,9 @@ import { BOOK_GRAPHICS, graphicDataUri } from "./bookAssets";
 
 export type CoverPanel = "front" | "back" | "spine" | "wrap";
 export type CoverLayerType = "text" | "image" | "shape" | "line" | "symbol" | "artwork" | "barcode";
+
+/** Rules may be thinner than an ordinary object frame. Values are inches. */
+export function coverLayerMinimumHeight(type: CoverLayerType) { return type === "line" ? 0.001 : 0.02; }
 export type CoverTextAlign = "left" | "center" | "right" | "justify";
 export type CoverVerticalAlign = "top" | "middle" | "bottom";
 export type CoverTextEffect = "none" | "soft" | "hard" | "glow" | "outline";
@@ -874,7 +877,7 @@ function normalizeLayerBase(source: Record<string, unknown>, type: CoverLayerTyp
     x: decimal(source.x, 0, -20, 60),
     y: decimal(source.y, 0, -20, 60),
     width: decimal(source.width, 1, 0.02, 60),
-    height: decimal(source.height, 0.4, 0.02, 60),
+    height: decimal(source.height, 0.4, coverLayerMinimumHeight(type), 60),
     rotation: decimal(source.rotation, 0, -360, 360),
     opacity: decimal(source.opacity, 1, 0, 1),
     blendMode: oneOf(source.blendMode, BLEND_MODES, "normal"),

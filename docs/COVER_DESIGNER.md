@@ -8,6 +8,10 @@ The image tool now opens the shared searchable [studio image library](STUDIO_IMA
 which also serves manuscript artwork. That guide covers source metadata, favorites,
 capacity without eviction, save-source controls and production image credits.
 
+Multi-layer selection has shared resize/rotate handles and a geometry/arrange
+inspector. See [Studio selection](STUDIO_SELECTION.md) for transform, locking,
+snapping, cancellation and history contracts shared with the page editor.
+
 ## Source map
 
 | File | Responsibility |

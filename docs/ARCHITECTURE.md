@@ -4,6 +4,8 @@ For cover designer document contracts, shared color tools, layer ordering,
 background images, history, and browser QA, see [Cover designer](COVER_DESIGNER.md).
 For the shared photo library, page-image focal crops, source details and export
 contracts, see [Studio images](STUDIO_IMAGES.md).
+Shared selection geometry, cover transforms and page arrangement are documented
+in [Studio selection](STUDIO_SELECTION.md).
 
 ## Overview
 

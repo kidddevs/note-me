@@ -129,6 +129,7 @@ import {
   coverLayerFadeCss,
   coverLayerInnerHtml,
   coverLayerLocked,
+  coverLayerMinimumHeight,
   coverShapePath,
   coverImageOverflow,
   coverImageFilterCss,
@@ -191,9 +192,14 @@ import {
   coverSpreadRect,
   distributeCoverLayers,
   snapCoverRect,
+  transformCoverSelection,
+  type CoverSelectionTransform,
+  type CoverRect,
   type CoverAlignMode,
   type CoverDistributeAxis,
 } from "../lib/bookCoverGeometry";
+import type { StudioArrangeReference, StudioSpacing } from "../lib/studioGeometry";
+import { CoverSelectionInspector } from "./CoverSelectionInspector";
 import {
   layoutForBook,
   serializeBookLayout,
@@ -243,7 +249,6 @@ import { notify } from "../store/toast";
 
 const COVER_CSS = coverCss();
 const FALLBACK_ACCENT = "#a56b3e";
-const NOOP = () => undefined;
 
 type SaveState = "saved" | "dirty" | "saving";
 
@@ -307,6 +312,7 @@ interface CoverStageProps {
   onLayersChange: (updates: Array<{ id: string; patch: Partial<CoverLayer> }>, options?: CommitOptions) => void;
   onInteractionStart: (key: string) => void;
   onInteractionEnd: () => void;
+  onInteractionCancel: () => void;
   onEditText: (id: string) => void;
   onDropImage: (dataUrl: string, x: number, y: number, sourceWidth: number, sourceHeight: number) => void;
   onAddText: () => void;
@@ -330,6 +336,7 @@ interface InspectorProps {
   metrics: ReturnType<typeof coverMetrics>;
   selected: CoverLayer | null;
   selectedCount: number;
+  selectionInspector?: ReactNode;
   pageEstimate: number;
   onSelect: (id: string | null) => void;
   onUpdateLayer: (id: string, patch: Partial<CoverLayer>, options?: CommitOptions) => void;
@@ -643,6 +650,9 @@ function historyLabel(key?: string) {
   if (value.startsWith("move:")) return "Moved layer";
   if (value.startsWith("resize:")) return "Resized layer";
   if (value.startsWith("rotate:")) return "Rotated layer";
+  if (value.startsWith("selection-resize:")) return "Resized selection";
+  if (value.startsWith("selection-rotate:")) return "Rotated selection";
+  if (value.startsWith("transform:")) return "Transformed selection";
   if (value.startsWith("add:")) return `Added ${value.slice(4)} layer`;
   if (value.startsWith("duplicate:")) return "Duplicated layers";
   if (value.startsWith("delete:")) return "Deleted layers";
@@ -775,6 +785,8 @@ export function CoverScreen({
   const [styleClipboard, setStyleClipboard] = useState<CoverLayerStyleValues | null>(null);
   const [imageLibrary, setImageLibrary] = useState<CoverImageAsset[]>([]);
   const [imageLibraryTarget, setImageLibraryTarget] = useState<"add" | "replace" | "background" | null>(null);
+  const [arrangeReference, setArrangeReference] = useState<StudioArrangeReference>("selection");
+  const [arrangeSpacing, setArrangeSpacing] = useState<StudioSpacing>("gaps");
   const [brandPalettes, setBrandPalettes] = useState<CoverBrandPalette[]>(() => readBrandPalettes());
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [symbolOpen, setSymbolOpen] = useState(false);
@@ -810,6 +822,7 @@ export function CoverScreen({
   const historyRef = useRef(history);
   const futureRef = useRef(future);
   const historyTouchedRef = useRef(false);
+  const interactionCheckpointRef = useRef<{ cover: BookCoverDesign; history: CoverHistoryEntry[]; future: CoverHistoryEntry[] } | null>(null);
   historyRef.current = history;
   futureRef.current = future;
   bookRef.current = book;
@@ -1728,27 +1741,34 @@ export function CoverScreen({
 
   const alignSelection = (mode: CoverAlignMode) => {
     if (selectedLayers.length === 0) return;
-    const bounds = selectedLayers.length > 1
-      ? coverSelectionBounds(metrics, selectedLayers)
-      : coverPanelRectFor(metrics, selectedLayers[0].panel);
+    if (selectedLayers.some((layer) => coverLayerLocked(doc, layer))) return;
+    let bounds = arrangeReference === "selection" && selectedLayers.length > 1 ? coverSelectionBounds(metrics, selectedLayers) : coverPanelRectFor(metrics, arrangeReference === "selection" ? selectedLayers[0].panel : panel);
+    if (bounds && arrangeReference === "safe") {
+      const insetX = Math.min((panel === "wrap" ? metrics.bleed : 0) + 0.25, bounds.width / 4);
+      const insetY = Math.min((panel === "wrap" ? metrics.bleed : 0) + 0.25, bounds.height / 4);
+      bounds = { x: bounds.x + insetX, y: bounds.y + insetY, width: bounds.width - insetX * 2, height: bounds.height - insetY * 2 };
+    }
     const patches = alignCoverLayers(metrics, selectedLayers, mode, bounds);
     updateLayers(patches.map((patch) => ({ id: patch.id, patch: { x: patch.x, y: patch.y } })), { key: `align:${mode}:${selectedIds.join(",")}` });
   };
 
-  const distributeSelection = (axis: CoverDistributeAxis) => {
-    const patches = distributeCoverLayers(metrics, selectedLayers, axis);
+  const distributeSelection = (axis: CoverDistributeAxis, spacing: StudioSpacing = arrangeSpacing) => {
+    if (selectedLayers.some((layer) => coverLayerLocked(doc, layer))) return;
+    const patches = distributeCoverLayers(metrics, selectedLayers, axis, spacing);
     if (patches.length === 0) return;
     updateLayers(patches.map((patch) => ({ id: patch.id, patch: { x: patch.x, y: patch.y } })), { key: `distribute:${axis}:${selectedIds.join(",")}` });
   };
 
+  const transformSelection = (change: CoverSelectionTransform, key: string) => {
+    const updates = transformCoverSelection(metrics, layoutRef.current.cover.doc, selectedIds, change);
+    if (!updates.length) { notify("info", "Selection could not be transformed", "Keep dimensions within range and unlock every selected layer and group."); return; }
+    updateLayers(updates, { key: `transform:${key}:${selectedIds.join(",")}` });
+  };
+
   const nudgeSelection = (dx: number, dy: number) => {
     const current = layoutRef.current.cover;
-    const layers = current.doc.layers.filter((layer) => selectedIds.includes(layer.id) && !coverLayerLocked(current.doc, layer));
-    if (layers.length === 0) return;
-    updateLayers(layers.map((layer) => ({
-      id: layer.id,
-      patch: { x: layer.x + dx, y: layer.y + dy },
-    })), { key: `nudge:${selectedIds.join(",")}` });
+    const updates = transformCoverSelection(metrics, current.doc, selectedIds, { dx, dy });
+    if (updates.length) updateLayers(updates, { key: `nudge:${selectedIds.join(",")}` });
   };
 
   const addGuide = (axis: "x" | "y", spreadPosition: number) => {
@@ -1824,8 +1844,19 @@ export function CoverScreen({
   };
 
   const onInteractionStart = useCallback((key: string) => {
+    interactionCheckpointRef.current = { cover: layoutRef.current.cover, history: historyRef.current, future: futureRef.current };
+    lastHistoryKeyRef.current = "";
     pushHistory(layoutRef.current.cover, key);
   }, [pushHistory]);
+
+  const onInteractionEnd = useCallback(() => { interactionCheckpointRef.current = null; lastHistoryKeyRef.current = ""; }, []);
+  const onInteractionCancel = useCallback(() => {
+    const checkpoint = interactionCheckpointRef.current;
+    if (!checkpoint) return;
+    applyLayout({ ...layoutRef.current, cover: checkpoint.cover }, { history: false });
+    setHistory(checkpoint.history); setFuture(checkpoint.future);
+    interactionCheckpointRef.current = null; lastHistoryKeyRef.current = "";
+  }, []);
 
   const requestEditText = (id: string) => {
     setSelectedLayerId(id);
@@ -2361,7 +2392,8 @@ export function CoverScreen({
             onFit={() => setAutoFit(true)}
             onLayersChange={updateLayers}
             onInteractionStart={onInteractionStart}
-            onInteractionEnd={NOOP}
+            onInteractionEnd={onInteractionEnd}
+            onInteractionCancel={onInteractionCancel}
             onEditText={requestEditText}
             onSample={(x, y) => void sampleCoverColour(x, y)}
             onContextMenu={openLayerMenu}
@@ -2401,6 +2433,7 @@ export function CoverScreen({
               metrics={metrics}
               selected={selected}
               selectedCount={selectedIds.length}
+              selectionInspector={selectedIds.length > 1 ? <CoverSelectionInspector doc={doc} ids={selectedIds} metrics={metrics} reference={arrangeReference} onReference={setArrangeReference} spacing={arrangeSpacing} onSpacing={setArrangeSpacing} onAlign={alignSelection} onDistribute={distributeSelection} onTransform={transformSelection} onGroup={groupSelection} onDuplicate={duplicateSelection} /> : undefined}
               pageEstimate={pageEstimate}
               onSelect={selectLayer}
               onUpdateLayer={updateLayer}
@@ -3331,11 +3364,11 @@ function LayerContextMenu({
 
 /* ========================================================================== */
 
-function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, eraser, handTool, zoomTool, imagePanMode, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onEditText, onDropImage, onAddText, onAddImage, onOpenTemplates, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
+function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, eraser, handTool, zoomTool, imagePanMode, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onInteractionCancel, onEditText, onDropImage, onAddText, onAddImage, onOpenTemplates, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [interaction, setInteraction] = useState<{
-    mode: "move" | "resize" | "rotate" | "pan" | "erase";
+    mode: "move" | "resize" | "rotate" | "pan" | "erase" | "selection-resize" | "selection-rotate";
     layerId: string;
     handle?: string;
     startClientX: number;
@@ -3351,6 +3384,8 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
     startFocusY?: number;
     overflowX?: number;
     overflowY?: number;
+    startDoc?: BookCoverDocument;
+    startBounds?: CoverRect;
   } | null>(null);
   const [guideDraft, setGuideDraft] = useState<{ id: string; axis: "x" | "y"; spread: number } | null>(null);
   const [guideInteraction, setGuideInteraction] = useState<{ mode: "new" | "move"; id: string; axis: "x" | "y"; startClientX: number; startClientY: number } | null>(null);
@@ -3372,6 +3407,9 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   const contentHeight = viewRect.height * 96 * effectiveZoom;
   const stageRef = useRef<HTMLDivElement>(null);
   const currentDesignPanel: Exclude<CoverPanel, "wrap"> = panel === "wrap" ? "front" : panel;
+  const selectionLayers = cover.doc.layers.filter((layer) => selectedIds.includes(layer.id));
+  const selectionBounds = selectionLayers.length > 1 ? coverSelectionBounds(metrics, selectionLayers) : null;
+  const selectionLocked = selectionLayers.some((layer) => coverLayerLocked(cover.doc, layer));
   const eraserActive = Boolean(eraser);
   const eraserRef = useRef<CoverEraserSettings | null>(eraser);
   eraserRef.current = eraser;
@@ -3631,6 +3669,24 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
         onInteractionStart(`${interaction.mode}:${interaction.layerId}${interaction.handle ? `:${interaction.handle}` : ""}`);
       }
       if (!movedRef.current) return;
+      if ((interaction.mode === "selection-resize" || interaction.mode === "selection-rotate") && interaction.startBounds && interaction.startDoc) {
+        const bounds = interaction.startBounds;
+        let change: CoverSelectionTransform;
+        if (interaction.mode === "selection-resize") {
+          const west = interaction.handle?.includes("w"), north = interaction.handle?.includes("n");
+          const vx = west ? -bounds.width : bounds.width, vy = north ? -bounds.height : bounds.height;
+          const scale = Math.max(0.001, (vx * (vx + dx) + vy * (vy + dy)) / (vx * vx + vy * vy));
+          change = { scale, anchor: { x: west ? bounds.x + bounds.width : bounds.x, y: north ? bounds.y + bounds.height : bounds.y } };
+        } else {
+          const angle = Math.atan2(event.clientY - interaction.centerY!, event.clientX - interaction.centerX!) * 180 / Math.PI;
+          let rotation = angle - interaction.startAngle!;
+          if (event.shiftKey) rotation = Math.round(rotation / 15) * 15;
+          change = { rotation };
+        }
+        const updates = transformCoverSelection(metrics, interaction.startDoc, interaction.startLayers.map((item) => item.id), change);
+        if (updates.length) onLayersChange(updates, { history: false });
+        return;
+      }
       if (interaction.mode === "pan") {
         const rotation = (-layer.rotation * Math.PI) / 180;
         const localX = dx * Math.cos(rotation) - dy * Math.sin(rotation);
@@ -3657,12 +3713,13 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
             for (let gridX = 0.25; gridX < stageWidth; gridX += 0.25) targetsX.push(gridX);
             for (let gridY = 0.25; gridY < stageHeight; gridY += 0.25) targetsY.push(gridY);
           }
+          const origin = layer.panel === "wrap" ? { x: 0, y: 0 } : metrics.panelOrigins[layer.panel];
           const otherLayers = cover.doc.layers.filter((item) => item.id !== layer.id && coverLayerVisible(cover.doc, item) && item.panel === layer.panel && !selectedIds.includes(item.id));
           for (const other of otherLayers) {
-            targetsX.push(other.x, other.x + other.width / 2, other.x + other.width);
-            targetsY.push(other.y, other.y + other.height / 2, other.y + other.height);
+            const rect = coverSelectionBounds(metrics, [other])!;
+            targetsX.push(rect.x - origin.x, rect.x - origin.x + rect.width / 2, rect.x - origin.x + rect.width);
+            targetsY.push(rect.y - origin.y, rect.y - origin.y + rect.height / 2, rect.y - origin.y + rect.height);
           }
-          const origin = layer.panel === "wrap" ? { x: 0, y: 0 } : metrics.panelOrigins[layer.panel];
           for (const guide of cover.doc.guides) {
             let position = guide.position;
             if (guide.panel !== layer.panel && layer.panel !== "wrap" && guide.panel === "wrap") position -= guide.axis === "x" ? origin.x : origin.y;
@@ -3671,19 +3728,19 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
             if (guide.axis === "x") targetsX.push(position);
             else targetsY.push(position);
           }
-          const snapped = snapCoverRect({ x, y, width: layer.width, height: layer.height }, targetsX, targetsY);
-          x = snapped.x;
-          y = snapped.y;
-          vertical.push(...snapped.vertical);
-          horizontal.push(...snapped.horizontal);
+          const bounds = coverSelectionBounds(metrics, interaction.startLayers)!;
+          const moving = { x: bounds.x - origin.x + dx, y: bounds.y - origin.y + dy, width: bounds.width, height: bounds.height };
+          const snapped = snapCoverRect(moving, targetsX, targetsY);
+          x += snapped.x - moving.x;
+          y += snapped.y - moving.y;
+          vertical.push(...snapped.vertical.map((position) => position + origin.x));
+          horizontal.push(...snapped.horizontal.map((position) => position + origin.y));
         }
         setSnapGuides({ vertical, horizontal });
         const moveX = x - layer.x;
         const moveY = y - layer.y;
-        onLayersChange(interaction.startLayers.map((item) => ({
-          id: item.id,
-          patch: { x: Math.round((item.x + moveX) * 1000) / 1000, y: Math.round((item.y + moveY) * 1000) / 1000 },
-        })), { history: false });
+        const updates = transformCoverSelection(metrics, { ...cover.doc, layers: interaction.startLayers }, interaction.startLayers.map((item) => item.id), { dx: moveX, dy: moveY });
+        if (updates.length) onLayersChange(updates, { history: false });
         return;
       }
       if (interaction.mode === "resize") {
@@ -3703,9 +3760,10 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           if (handle.includes("w")) x -= 0.08 - width;
           width = 0.08;
         }
-        if (height < 0.04) {
-          if (handle.includes("n")) y -= 0.04 - height;
-          height = 0.04;
+        const minimumHeight = coverLayerMinimumHeight(layer.type);
+        if (height < minimumHeight) {
+          if (handle.includes("n")) y -= minimumHeight - height;
+          height = minimumHeight;
         }
         onLayersChange([{ id: layer.id, patch: { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000, width: Math.round(width * 1000) / 1000, height: Math.round(height * 1000) / 1000 } }], { history: false });
         return;
@@ -3727,15 +3785,25 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
       setSnapGuides({ vertical: [], horizontal: [] });
       onInteractionEnd();
     };
+    const cancel = () => {
+      maskEditorRef.current = null;
+      movedRef.current = false; setInteraction(null); setSnapGuides({ vertical: [], horizontal: [] });
+      onInteractionCancel();
+    };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); cancel(); } };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", key, true);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", key, true);
     };
-  }, [interaction, cover.doc.guides, metrics, onLayersChange, onInteractionEnd, onInteractionStart, selectedIds, flushMaskEditor, eraserPointFor]);
+  }, [interaction, cover.doc.guides, metrics, onLayersChange, onInteractionEnd, onInteractionCancel, onInteractionStart, selectedIds, flushMaskEditor, eraserPointFor]);
 
   const beginErase = (event: ReactPointerEvent<HTMLDivElement>, layer: CoverImageLayer) => {
     const settings = eraserRef.current;
@@ -3765,6 +3833,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   };
 
   const beginMove = (event: ReactPointerEvent<HTMLDivElement>, layer: CoverLayer) => {
+    if (event.button !== 0) return;
     if (previewing) return;
     if (handTool || zoomTool) return;
     if (eraser) {
@@ -3820,7 +3889,8 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
     const wasSelected = selectedIds.includes(layer.id);
     if (!wasSelected) onSelect(layer.id);
     const ids = wasSelected ? selectedIds : [layer.id];
-    const startLayers = cover.doc.layers.filter((item) => ids.includes(item.id) && !item.locked && item.visible);
+    const startLayers = cover.doc.layers.filter((item) => ids.includes(item.id));
+    if (startLayers.some((item) => coverLayerLocked(cover.doc, item))) return;
     const sheet = (event.currentTarget.closest("[data-cover-sheet]") as HTMLElement | null) ?? stageRef.current;
     if (!sheet) return;
     const rect = sheet.getBoundingClientRect();
@@ -3838,7 +3908,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   };
 
   const beginResize = (event: ReactPointerEvent<HTMLButtonElement>, layer: CoverLayer, handle: string) => {
-    if (previewing || coverLayerLocked(cover.doc, layer)) return;
+    if (event.button !== 0 || previewing || coverLayerLocked(cover.doc, layer)) return;
     event.stopPropagation();
     event.preventDefault();
     const sheet = event.currentTarget.closest("[data-cover-sheet]") as HTMLElement | null;
@@ -3859,7 +3929,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   };
 
   const beginRotate = (event: ReactPointerEvent<HTMLButtonElement>, layer: CoverLayer) => {
-    if (previewing || coverLayerLocked(cover.doc, layer)) return;
+    if (event.button !== 0 || previewing || coverLayerLocked(cover.doc, layer)) return;
     event.stopPropagation();
     event.preventDefault();
     const sheet = event.currentTarget.closest("[data-cover-sheet]") as HTMLElement | null;
@@ -3884,6 +3954,21 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
       centerX,
       centerY,
     });
+  };
+
+  const beginSelectionTransform = (event: ReactPointerEvent<HTMLButtonElement>, mode: "selection-resize" | "selection-rotate", handle?: string) => {
+    if (event.button !== 0 || !selectionBounds || selectionLocked || previewing || eraser || handTool || zoomTool) return;
+    event.preventDefault(); event.stopPropagation();
+    const sheet = sheetRef.current;
+    if (!sheet) return;
+    const rect = sheet.getBoundingClientRect();
+    const scale = rect.width / metrics.fullWidth;
+    const centerX = rect.left + (selectionBounds.x + selectionBounds.width / 2) * scale;
+    const centerY = rect.top + (selectionBounds.y + selectionBounds.height / 2) * scale;
+    movedRef.current = false;
+    setInteraction({ mode, handle, layerId: selectedId!, startClientX: event.clientX, startClientY: event.clientY, startScale: scale,
+      startLayer: selectionLayers[0], startLayers: selectionLayers, startDoc: cover.doc, startBounds: selectionBounds,
+      centerX, centerY, startAngle: Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180 / Math.PI });
   };
 
   const spreadRectFor = (layer: CoverLayer) => coverSpreadRect(metrics, layer);
@@ -3944,17 +4029,17 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
         <div className="cover-selection-bar" role="toolbar" aria-label="Selection tools">
           <span className="cover-selection-count">{selectedIds.length} layers</span>
           <span className="cover-selection-sep" />
-          <button type="button" title="Align left edges" aria-label="Align left edges" onClick={() => onAlignSelection("left")}><AlignLeft size={14} /></button>
-          <button type="button" title="Align horizontal centres" aria-label="Align horizontal centres" onClick={() => onAlignSelection("center-x")}><AlignCenter size={14} /></button>
-          <button type="button" title="Align right edges" aria-label="Align right edges" onClick={() => onAlignSelection("right")}><AlignRight size={14} /></button>
-          <button type="button" title="Align top edges" aria-label="Align top edges" onClick={() => onAlignSelection("top")}><AlignStartVertical size={14} /></button>
-          <button type="button" title="Align vertical centres" aria-label="Align vertical centres" onClick={() => onAlignSelection("middle")}><AlignCenter size={14} /></button>
-          <button type="button" title="Align bottom edges" aria-label="Align bottom edges" onClick={() => onAlignSelection("bottom")}><AlignEndVertical size={14} /></button>
+          <button type="button" title="Align left edges" aria-label="Align left edges" disabled={selectionLocked} onClick={() => onAlignSelection("left")}><AlignLeft size={14} /></button>
+          <button type="button" title="Align horizontal centres" aria-label="Align horizontal centres" disabled={selectionLocked} onClick={() => onAlignSelection("center-x")}><AlignCenter size={14} /></button>
+          <button type="button" title="Align right edges" aria-label="Align right edges" disabled={selectionLocked} onClick={() => onAlignSelection("right")}><AlignRight size={14} /></button>
+          <button type="button" title="Align top edges" aria-label="Align top edges" disabled={selectionLocked} onClick={() => onAlignSelection("top")}><AlignStartVertical size={14} /></button>
+          <button type="button" title="Align vertical centres" aria-label="Align vertical centres" disabled={selectionLocked} onClick={() => onAlignSelection("middle")}><AlignCenter size={14} /></button>
+          <button type="button" title="Align bottom edges" aria-label="Align bottom edges" disabled={selectionLocked} onClick={() => onAlignSelection("bottom")}><AlignEndVertical size={14} /></button>
           <span className="cover-selection-sep" />
-          <button type="button" title="Distribute horizontally" aria-label="Distribute horizontally" disabled={selectedIds.length < 3} onClick={() => onDistributeSelection("horizontal")}><AlignHorizontalDistributeCenter size={14} /></button>
-          <button type="button" title="Distribute vertically" aria-label="Distribute vertically" disabled={selectedIds.length < 3} onClick={() => onDistributeSelection("vertical")}><AlignVerticalDistributeCenter size={14} /></button>
+          <button type="button" title="Distribute horizontally" aria-label="Distribute horizontally" disabled={selectionLocked || selectedIds.length < 3} onClick={() => onDistributeSelection("horizontal")}><AlignHorizontalDistributeCenter size={14} /></button>
+          <button type="button" title="Distribute vertically" aria-label="Distribute vertically" disabled={selectionLocked || selectedIds.length < 3} onClick={() => onDistributeSelection("vertical")}><AlignVerticalDistributeCenter size={14} /></button>
           <span className="cover-selection-sep" />
-          <button type="button" title="Group selected layers" aria-label="Group selected layers" onClick={onGroupSelection}><FolderPlus size={14} /></button>
+          <button type="button" title="Group selected layers" aria-label="Group selected layers" disabled={selectionLocked} onClick={onGroupSelection}><FolderPlus size={14} /></button>
           <button type="button" title="Duplicate selected layers" aria-label="Duplicate selected layers" onClick={onDuplicateSelection}><Copy size={14} /></button>
           <button type="button" className="danger" title="Delete selected layers" aria-label="Delete selected layers" onClick={onDeleteSelection}><Trash2 size={14} /></button>
           <button type="button" title="Deselect all" aria-label="Deselect all" onClick={() => onSelect(null)}><X size={14} /></button>
@@ -4034,7 +4119,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
                   {isSelected && (
                     <>
                       <span className="cover-selection-outline" />
-                      {isPrimary && !locked && !eraser && !handTool && !zoomTool && (
+                      {isPrimary && selectedIds.length === 1 && !locked && !eraser && !handTool && !zoomTool && (
                         <>
                           {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const).map((handle) => (
                             <button key={handle} type="button" className={`cover-selection-handle handle-${handle}`} onPointerDown={(event) => beginResize(event, layer, handle)} aria-label={`Resize ${handle}`} />
@@ -4047,6 +4132,13 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
                 </div>
               );
             })}
+            {selectionBounds && !previewing && <div className="cover-selection-box" aria-label="Selection bounds" style={{ left: `${selectionBounds.x}in`, top: `${selectionBounds.y}in`, width: `${selectionBounds.width}in`, height: `${selectionBounds.height}in` }}>
+              <span className="cover-selection-outline" />
+              {!selectionLocked && !eraser && !handTool && !zoomTool && <>
+                {(["nw", "ne", "se", "sw"] as const).map((handle) => <button key={handle} type="button" className={`cover-selection-handle handle-${handle}`} aria-label={`Resize selection ${handle}`} onPointerDown={(event) => beginSelectionTransform(event, "selection-resize", handle)} />)}
+                <button type="button" className="cover-rotate-handle" aria-label="Rotate selection" onPointerDown={(event) => beginSelectionTransform(event, "selection-rotate")}><RotateCw size={11} /></button>
+              </>}
+            </div>}
             {showGrid && <span className="cover-grid-overlay" />}
             {showBleed && (
               <span className="cover-bleed-guide" style={{ left: `${metrics.bleed}in`, top: `${metrics.bleed}in`, width: `${metrics.trimWidthTotal}in`, height: `${metrics.trimHeight}in` }} />
@@ -4110,12 +4202,10 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
               </>
             )}
             {snapGuides.vertical.map((position, index) => {
-              const origin = panel === "wrap" ? 0 : metrics.panelOrigins[panel as Exclude<CoverPanel, "wrap">].x;
-              return <span key={`v-${index}`} className="cover-snap-guide vertical" style={{ left: `${origin + position}in`, top: 0, height: `${metrics.fullHeight}in` }} />;
+              return <span key={`v-${index}`} className="cover-snap-guide vertical" style={{ left: `${position}in`, top: 0, height: `${metrics.fullHeight}in` }} />;
             })}
             {snapGuides.horizontal.map((position, index) => {
-              const origin = panel === "wrap" ? 0 : metrics.panelOrigins[panel as Exclude<CoverPanel, "wrap">].y;
-              return <span key={`h-${index}`} className="cover-snap-guide horizontal" style={{ top: `${origin + position}in`, left: 0, width: `${metrics.fullWidth}in` }} />;
+              return <span key={`h-${index}`} className="cover-snap-guide horizontal" style={{ top: `${position}in`, left: 0, width: `${metrics.fullWidth}in` }} />;
             })}
           </div>
         </div>
@@ -4139,7 +4229,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           <button type="button" onClick={() => onZoom(Math.min(3, effectiveZoom + 0.1))} aria-label="Zoom in"><ZoomIn size={14} /></button>
           <button type="button" className={autoFit ? "active" : ""} onClick={onFit}><Maximize2 size={13} /> Fit</button>
         </div>
-        <span className="cover-stage-hint">{eraser ? <><Eraser size={12} /> Drag on an image to {eraser.mode === "erase" ? "erase" : "restore"} · Shift for a straight stroke · Esc to finish</> : handTool ? <><Hand size={12} /> Drag to pan the canvas · Esc to finish</> : zoomTool ? <><ZoomIn size={12} /> Click to zoom in · Alt-click to zoom out · Esc to finish</> : eyedropper ? <><Pipette size={12} /> Click the cover to sample a colour · press Esc or V to exit</> : imagePanMode ? <><Hand size={12} /> Drag the photo to reposition it inside its frame · Esc to finish</> : <><Move size={12} /> Drag to move · Shift-click multi-select · Alt-drag a photo to reposition it · Drag from rulers for guides</>}</span>
+        <span className="cover-stage-hint">{eraser ? <><Eraser size={12} /> Drag on an image to {eraser.mode === "erase" ? "erase" : "restore"} · Shift for a straight stroke · Esc cancels stroke or exits</> : handTool ? <><Hand size={12} /> Drag to pan the canvas · Esc to finish</> : zoomTool ? <><ZoomIn size={12} /> Click to zoom in · Alt-click to zoom out · Esc to finish</> : eyedropper ? <><Pipette size={12} /> Click the cover to sample a colour · press Esc or V to exit</> : imagePanMode ? <><Hand size={12} /> Drag the photo to reposition it inside its frame · Esc to finish</> : selectedIds.length > 1 ? <><Move size={12} /> Drag selection to move · corners resize · use the rotation handle to turn · Esc cancels a drag</> : <><Move size={12} /> Drag to move · Shift-click multi-select · Alt-drag a photo to reposition it · Drag from rulers for guides</>}</span>
       </div>
     </main>
   );
@@ -4147,7 +4237,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, onOpenImageLibrary, imageLibrary, onUseLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, selectionInspector, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, onOpenImageLibrary, imageLibrary, onUseLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
   const eraserActive = tool === "eraser";
   const eraserTarget = selected?.type === "image" ? selected : null;
   const imageLayers = cover.doc.layers.filter((layer): layer is CoverImageLayer => layer.type === "image");
@@ -4156,7 +4246,7 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
       <div className="cover-inspector-head">
         <div>
           <span className="cover-panel-eyebrow">{eraserActive ? "Eraser tool" : selected ? layerLabel(selected.type) : "Cover"}{selectedCount > 1 ? ` · ${selectedCount} selected` : ""}</span>
-          <strong>{eraserActive ? eraserTarget?.name || "Select an image layer" : selectedLayerName(selected)}</strong>
+          <strong>{eraserActive ? eraserTarget?.name || "Select an image layer" : selectedCount > 1 ? `${selectedCount} layers selected` : selectedLayerName(selected)}</strong>
         </div>
         {selected ? <button type="button" onClick={() => onSelect(null)} title="Document settings" aria-label="Document settings"><SlidersHorizontal size={15} /></button> : <span className="cover-inspector-badge">Document</span>}
       </div>
@@ -4172,7 +4262,7 @@ function Inspector({ book, cover, metrics, selected, selectedCount, pageEstimate
             onEraseBackground={cover.doc.backgroundImage?.src ? () => onLiftBackground("eraser") : undefined}
           />
         )}
-        {selected ? (
+        {selectionInspector && !eraserActive ? selectionInspector : selected ? (
           <LayerInspector
             book={book}
             cover={cover}
@@ -4552,7 +4642,7 @@ function LayerInspector({
           <NumberField label="X" value={layer.x} onChange={(x) => onUpdate({ x }, { key: `x:${layer.id}` })} />
           <NumberField label="Y" value={layer.y} onChange={(y) => onUpdate({ y }, { key: `y:${layer.id}` })} />
           <NumberField label="W" value={layer.width} onChange={(width) => onUpdate({ width: Math.max(0.02, width) }, { key: `w:${layer.id}` })} min={0.02} />
-          <NumberField label="H" value={layer.height} onChange={(height) => onUpdate({ height: Math.max(0.02, height) }, { key: `h:${layer.id}` })} min={0.02} />
+          <NumberField label="H" value={layer.height} onChange={(height) => onUpdate({ height: Math.max(coverLayerMinimumHeight(layer.type), height) }, { key: `h:${layer.id}` })} min={coverLayerMinimumHeight(layer.type)} />
           <NumberField label="Rotate" value={layer.rotation} onChange={(rotation) => onUpdate({ rotation }, { key: `rot:${layer.id}` })} step={1} suffix="°" />
           <label className="cover-select-field"><span>Panel</span><select value={layer.panel} onChange={(event) => onUpdate({ panel: event.target.value as CoverPanel }, { key: `panel:${layer.id}` })}><option value="front">Front</option><option value="spine">Spine</option><option value="back">Back</option><option value="wrap">Whole wrap</option></select></label>
         </div>

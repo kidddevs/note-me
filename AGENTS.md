@@ -4,6 +4,7 @@ Read `README.md` and `docs/ARCHITECTURE.md` before changing code. For Books Stud
 cover work, also read `docs/COVER_DESIGNER.md` and the relevant part of
 `docs/BOOKS_STUDIO_AUDIT.md`. For shared artwork, image placement or publishing,
 also read `docs/STUDIO_IMAGES.md`.
+For canvas selection, transforms, arrangement or undo, read `docs/STUDIO_SELECTION.md`.
 
 ## Conventions
 
