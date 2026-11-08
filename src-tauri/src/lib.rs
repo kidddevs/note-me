@@ -1,3 +1,4 @@
+mod book_workflow;
 mod commands;
 mod db;
 mod models;
@@ -348,6 +349,7 @@ pub fn run() {
             create_chapter,
             update_chapter,
             update_chapter_layout,
+            update_chapter_workflow,
             delete_chapter,
             reorder_chapters,
             list_chapter_snapshots,

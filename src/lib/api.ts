@@ -7,6 +7,7 @@ import type {
   Chapter,
   ChapterKind,
   ChapterInput,
+  ChapterWorkflow,
   ChapterSnapshot,
   ChapterSnapshotInput,
   ClipboardItem,
@@ -112,6 +113,8 @@ export const api = {
     invoke<void>("update_chapter", { id, chapterKind, title, content, tocInclude, tocHeadingExclusions }),
   updateChapterLayout: (id: number, layoutJson: string) =>
     invoke<void>("update_chapter_layout", { id, layoutJson }),
+  updateChapterWorkflow: (id: number, workflow: ChapterWorkflow) =>
+    invoke<Chapter>("update_chapter_workflow", { id, workflowJson: JSON.stringify(workflow) }),
   deleteChapter: (id: number) => invoke<void>("delete_chapter", { id }),
   reorderChapters: (bookId: number, chapterIds: number[]) =>
     invoke<void>("reorder_chapters", { bookId, chapterIds }),

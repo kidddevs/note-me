@@ -44,6 +44,12 @@ test("export preflight stays clear for a complete reader package", () => {
   assert.deepEqual(bookExportChecks(book(), chapters), []);
 });
 
+test("section plans do not appear in reader-facing exports", () => {
+  const { bookMarkdown, bookHtml, bookText } = require("./.compiled/src/lib/bookPublishing.js");
+  const chapters = [{ ...chapter(1, "The Arrival", "A complete opening chapter."), workflow_json: JSON.stringify({ status: "revising", wordGoal: 123456, dueDate: "2027-07-19" }) }];
+  for (const render of [bookMarkdown, bookHtml, bookText]) assert.doesNotMatch(render(book(), chapters), /2027-07-19|workflow_json|"wordGoal"/);
+});
+
 test("export preflight identifies actionable metadata and structure gaps", () => {
   const checks = bookExportChecks(
     book({ title: "Untitled manuscript", author: "", description: "" }),

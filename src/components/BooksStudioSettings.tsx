@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Baseline, BookOpen, Check, FileText, LayoutList, NotebookPen, Ruler, Settings2, Sparkles } from "lucide-react";
 import type { Book, BookInput, Chapter } from "../lib/types";
 import { BOOK_PAPER_PRESETS, layoutForBook, layoutSectionKey, pageRuleFor, paperPresetLayout, serializeBookLayout, type BookLayout, type BookPageNumberStyle, type BookTextRole } from "../lib/bookLayout";
 import { MEASUREMENT_UNITS, measurementRange, measurementToInches, measurementUnitShort, measurementValue, trimSizeLabel } from "../lib/measurements";
 import { orderBookChapters } from "../lib/bookToc";
+import { registerBookStudioCloseTask } from "../lib/bookStudioClose";
 import { chapterKindLabel, chapterPageBand, FONT_OPTIONS, PAGE_NUMBER_STYLE_OPTIONS, PAGE_START_OPTIONS, STATUS_OPTIONS, TRIM_SIZES, type PageBand } from "../lib/bookPublishing";
 import { useBooks } from "../store/books";
 import { useTheme } from "../store/theme";
@@ -34,7 +34,9 @@ export function SettingsScreen({ book, chapters, focus }: { book: Book; chapters
   const savingRef = useRef(false);
   const draftVersionRef = useRef(0);
   const savedVersionRef = useRef(0);
-  const closingRef = useRef(false);
+  const pendingSaveRef = useRef<Promise<void> | null>(null);
+  const editingBookRef = useRef(book.id);
+  editingBookRef.current = book.id;
   useEffect(() => {
     const nextDraft = { title: book.title, subtitle: book.subtitle, author: book.author, description: book.description, genre: book.genre, status: book.status, trimSize: book.trim_size, fontFamily: book.font_family, fontSize: book.font_size, lineHeight: book.line_height, paragraphSpacing: book.paragraph_spacing, margin: book.margin, wordGoal: book.word_goal, coverColor: book.cover_color, dedication: book.dedication, epigraph: book.epigraph, copyrightText: book.copyright_text, acknowledgements: book.acknowledgements, tocEnabled: book.toc_enabled, tocTitle: book.toc_title, tocDepth: book.toc_depth, tocIncludeFrontMatter: book.toc_include_front_matter, tocIncludeBackMatter: book.toc_include_back_matter, layoutJson: book.layout_json };
     draftRef.current = nextDraft;
@@ -42,6 +44,7 @@ export function SettingsScreen({ book, chapters, focus }: { book: Book; chapters
     savingRef.current = false;
     draftVersionRef.current = 0;
     savedVersionRef.current = 0;
+    pendingSaveRef.current = null;
     setDraft(nextDraft);
     setSaved(true);
     setSaving(false);
@@ -137,14 +140,21 @@ export function SettingsScreen({ book, chapters, focus }: { book: Book; chapters
       </div>
     );
   };
-  const persist = useCallback(async (announce = false) => {
-    if (savingRef.current) return;
+  const persist = useCallback(async (announce = false, propagateError = false) => {
+    if (pendingSaveRef.current) {
+      try { await pendingSaveRef.current; }
+      catch (error) { if (propagateError) throw error; }
+      return;
+    }
     const version = draftVersionRef.current;
     const snapshot = draftRef.current;
     savingRef.current = true;
     setSaving(true);
+    const pending = updateBook(book.id, snapshot);
+    pendingSaveRef.current = pending;
     try {
-      await updateBook(book.id, snapshot);
+      await pending;
+      if (editingBookRef.current !== book.id) return;
       savedVersionRef.current = Math.max(savedVersionRef.current, version);
       if (draftVersionRef.current === version) {
         savedRef.current = true;
@@ -152,11 +162,15 @@ export function SettingsScreen({ book, chapters, focus }: { book: Book; chapters
       }
       if (announce) notify("success", "Book settings saved");
     } catch (error) {
-      savedRef.current = false;
+      if (editingBookRef.current === book.id) savedRef.current = false;
       notify("error", "Book settings could not be saved", String(error));
+      if (propagateError) throw error;
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      if (pendingSaveRef.current === pending) {
+        pendingSaveRef.current = null;
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
   }, [book.id, updateBook]);
   useEffect(() => {
@@ -164,30 +178,10 @@ export function SettingsScreen({ book, chapters, focus }: { book: Book; chapters
     const timer = window.setTimeout(() => void persist(false), 900);
     return () => window.clearTimeout(timer);
   }, [draft, persist, saved, saving]);
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    void getCurrentWindow().onCloseRequested(async (event) => {
-      if (closingRef.current || draftVersionRef.current <= savedVersionRef.current) return;
-      event.preventDefault();
-      closingRef.current = true;
-      try {
-        await updateBook(book.id, draftRef.current);
-        savedVersionRef.current = draftVersionRef.current;
-        await getCurrentWindow().destroy();
-      } catch (error) {
-        closingRef.current = false;
-        notify("error", "Close paused: settings were not saved", String(error));
-      }
-    }).then((dispose) => {
-      if (cancelled) dispose();
-      else unlisten = dispose;
-    });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [book.id, updateBook]);
+  useEffect(() => registerBookStudioCloseTask({
+    hasChanges: () => draftVersionRef.current > savedVersionRef.current,
+    save: () => persist(false, true),
+  }), [persist]);
   return (
     <div className="books-screen books-settings-screen">
        <div className="books-screen-heading"><div><span className="books-eyebrow"><Settings2 size={13} /> Editorial controls</span><h1>Book settings</h1><p>Set the identity and page language of this manuscript. Changes save automatically.</p></div><button className="books-primary-action" onClick={() => void persist(true)} disabled={saved || saving}><Check size={15} /> {saving ? "Saving…" : saved ? "Saved" : "Save now"}</button></div>

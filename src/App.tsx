@@ -9,6 +9,7 @@ import { ClipboardPanel } from "./components/ClipboardPanel";
 import { QuickCapture } from "./components/QuickCapture";
 import { Palette } from "./components/Palette";
 import { Toasts } from "./components/Toasts";
+import { BookStudioWriteGuard } from "./components/BookStudioWriteGuard";
 import { SettingsModal } from "./components/Modals";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
@@ -230,6 +231,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <BookStudioWriteGuard />
       <TitleBar />
       <div className="app-body">
         {workspace === "books" ? (

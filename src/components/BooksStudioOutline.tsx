@@ -37,6 +37,7 @@ import {
   hasManuscriptContent,
 } from "../lib/bookPublishing";
 import { handleMenuKeyDown, useConfirmationDialog } from "./BooksStudio";
+import { ChapterWorkflowBadge } from "./BookWorkflowControls";
 import type { MatterFocus } from "./BooksStudio";
 
 const SECTION_GROUP_LABELS: Record<"front" | "story" | "back", string> = {
@@ -448,6 +449,7 @@ export function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOp
                       <button className="books-outline-main" onClick={() => onOpenChapter(chapter.id)}>
                         <span className="books-outline-copy">
                           <strong>{chapter.title || "Untitled section"}</strong>
+                          <ChapterWorkflowBadge chapter={chapter} />
                           <span className="books-outline-meta">{chapterKindLabel(chapter.chapter_kind)} <i /> {words.toLocaleString()} words <i /> {Math.max(1, Math.ceil(words / 250))} min</span>
                           <span className="books-outline-progress" aria-hidden="true"><span style={{ width: `${Math.max(3, Math.round((words / maxStoryWords) * 100))}%` }} /></span>
                         </span>

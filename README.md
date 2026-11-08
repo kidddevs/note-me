@@ -70,6 +70,7 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 - Distraction-reduced writing surface with H1–H6 formatting, focus mode, section statistics, find and replace, writing sprints, and automatic local saves.
 - Section-level undo and redo, plus automatic and manual version checkpoints you can preview, restore, or delete.
 - Reader metadata for title, subtitle, author, genre, description, status, cover color, trim size, and word goal.
+- **Section plan** with Draft/Revising/Ready status, individual word budgets and local-calendar due dates. Search and filter the manuscript, sort deadlines, open a section directly for writing, and edit its plan from the manuscript status button. Planning persists separately from writing/page design and stays out of reader exports; the outline and Export Studio reflect saved readiness.
 
 ### Design canvas
 
@@ -148,6 +149,7 @@ Installers are written to `src-tauri/target/release/bundle/`.
 | `Cmd+Shift+T` | Toggle appearance |
 | `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous tab |
 | `Cmd+F` | Find in the current Books Studio section |
+| `Cmd+7` | Open the Books Studio section plan |
 | `Cmd+Alt+F` | Find and replace in a Books Studio section |
 | `Cmd++` / `Cmd+-` | Zoom the Books Studio canvas in / out |
 | `Cmd+0` | Reset canvas zoom to 100% |

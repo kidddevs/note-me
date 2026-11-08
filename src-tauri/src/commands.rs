@@ -581,7 +581,7 @@ fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
 
 const CHAPTER_SELECT: &str = r#"
     SELECT id, book_id, chapter_kind, title, content, position, toc_include,
-           toc_heading_exclusions, layout_json, created_at, updated_at
+           toc_heading_exclusions, layout_json, created_at, updated_at, workflow_json
     FROM book_chapters
 "#;
 
@@ -606,6 +606,7 @@ fn row_to_chapter(row: &rusqlite::Row) -> rusqlite::Result<Chapter> {
         layout_json: row.get(8)?,
         created_at: row.get(9)?,
         updated_at: row.get(10)?,
+        workflow_json: row.get(11)?,
     })
 }
 
@@ -997,6 +998,18 @@ pub fn update_chapter_layout(state: State<Db>, id: i64, layout_json: String) -> 
         .map_err(|e| e.to_string())?;
         Ok(())
     })
+}
+
+#[tauri::command]
+pub fn update_chapter_workflow(
+    state: State<Db>,
+    id: i64,
+    workflow_json: String,
+) -> Result<Chapter, String> {
+    with_conn(&state, |conn| {
+        crate::book_workflow::save_chapter_workflow(conn, id, &workflow_json)
+    })?;
+    get_chapter(&state, id)?.ok_or_else(|| "chapter not found after planning update".to_string())
 }
 
 #[tauri::command]
@@ -1669,8 +1682,23 @@ mod tests {
     #[test]
     fn accepts_magazine_trim_sizes() {
         let result = validate_book_fields(
-            "Field Notes", "", "", "", "", "draft", "7.5x9.75", "serif", 10.5, 1.45, 0.35, 0.55,
-            12_000, "#b04a31", "In this issue", 3, "{}",
+            "Field Notes",
+            "",
+            "",
+            "",
+            "",
+            "draft",
+            "7.5x9.75",
+            "serif",
+            10.5,
+            1.45,
+            0.35,
+            0.55,
+            12_000,
+            "#b04a31",
+            "In this issue",
+            3,
+            "{}",
         );
         assert_eq!(result, Ok(()));
     }
@@ -1709,5 +1737,24 @@ mod tests {
             normalize_heading_exclusions(vec!["b".into(), "".into(), "a".into(), "b".into()]),
             Ok(vec!["a".into(), "b".into()]),
         );
+    }
+
+    #[test]
+    fn chapter_response_keeps_workflow_and_manuscript_fields_separate() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE book_chapters(id INTEGER,book_id INTEGER,chapter_kind TEXT,title TEXT,content TEXT,position INTEGER,toc_include INTEGER,toc_heading_exclusions TEXT,layout_json TEXT,created_at TEXT,updated_at TEXT,workflow_json TEXT);
+            INSERT INTO book_chapters VALUES(2,1,'feature','North','Keep this writing',0,1,'[]','{}','created','updated','{\"status\":\"ready\"}');").unwrap();
+        let chapter = conn
+            .query_row(
+                &format!("{} WHERE id=2", super::CHAPTER_SELECT),
+                [],
+                super::row_to_chapter,
+            )
+            .unwrap();
+        let serialized = serde_json::to_value(chapter).unwrap();
+        assert_eq!(serialized["content"], "Keep this writing");
+        assert_eq!(serialized["layout_json"], "{}");
+        assert_eq!(serialized["updated_at"], "updated");
+        assert_eq!(serialized["workflow_json"], r#"{"status":"ready"}"#);
     }
 }

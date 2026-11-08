@@ -11,6 +11,8 @@ capacity without eviction, save-source controls and production image credits.
 Multi-layer selection has shared resize/rotate handles and a geometry/arrange
 inspector. See [Studio selection](STUDIO_SELECTION.md) for transform, locking,
 snapping, cancellation and history contracts shared with the page editor.
+The development fixture also supports the section planner and outline; see
+[Studio planning](STUDIO_PLANNING.md) for its reserved ids and chapter API adapters.
 
 ## Source map
 
@@ -174,7 +176,7 @@ fixture. It defaults to dark appearance; add `?theme=light` for light appearance
 The page is excluded from the production Vite entry and its script rejects
 production execution. It does not open the native database.
 
-The fixture uses book `-701`, chapter `-702`, and the separate IndexedDB database
+The fixture uses book `-701`, reserved chapter ids `-702` through `-799`, and the separate IndexedDB database
 `noteme-cover-preview` (`books` store). Its persistence adapter maps the
 camelCase `BookInput` contract back to snake_case `Book` fields, so reload tests
 exercise saved documents instead of retaining an unchanged initial layout.
@@ -186,9 +188,12 @@ for QA; importing the page bootstrap again would mount another React root.
 History and image-library utilities also use browser IndexedDB. Use a disposable
 browser profile for QA; do not clear another user's library or storage.
 
-The fixture includes real cover and manuscript editors with a development
-navigation strip. Chapter `-702` is stored alongside book `-701` in the isolated
-preview store; `?screen=manuscript` opens the page canvas. It does not prove native
+The fixture includes real cover, manuscript, outline and section-plan surfaces with
+a development navigation strip. A fresh fixture seeds three sections, starting at
+`-702`, alongside book `-701`; an intentionally empty saved book stays empty.
+`?screen=manuscript` opens the page canvas and `?screen=plan` opens planning. See
+[Studio planning](STUDIO_PLANNING.md) for chapter adapters and safe reset helpers.
+It does not prove native
 navigation, SQLite persistence, checkpoint behavior or native save dialogs. Test
 those through the Tauri app when changing their contracts.
 

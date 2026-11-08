@@ -145,7 +145,7 @@ export async function imageFileToMarkdown(file: File) {
   return `![${imageAltText(file.name)}](${imageDataUri(mime, new Uint8Array(await file.arrayBuffer()))})\n`;
 }
 
-function plainTextContent(value: string) {
+export function plainTextContent(value: string) {
   return value
     .replace(/\u200B/g, "")
     .replace(/:::\s*(chart|graph)\s*\n([\s\S]*?)\n:::/gi, (_match, _kind: string, body: string) => {

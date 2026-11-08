@@ -116,8 +116,16 @@ export interface Chapter {
   toc_include: boolean;
   toc_heading_exclusions: string[];
   layout_json: string;
+  workflow_json?: string;
   created_at: string;
   updated_at: string;
+}
+
+export type ChapterWorkflowStatus = "draft" | "revising" | "ready";
+export interface ChapterWorkflow {
+  status: ChapterWorkflowStatus;
+  wordGoal: number;
+  dueDate: string;
 }
 
 export interface ChapterInput {

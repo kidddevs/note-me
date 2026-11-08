@@ -2,7 +2,9 @@ import { create } from "zustand";
 import { api } from "../lib/api";
 import { DEFAULT_BOOK_LAYOUT, serializeBookLayout } from "../lib/bookLayout";
 import { activeChapterSetting, LEGACY_ACTIVE_CHAPTER_SETTING, rememberedChapterId, SELECTED_BOOK_SETTING, storedEntityId } from "../lib/bookSession";
-import type { Book, BookInput, Chapter, ChapterKind } from "../lib/types";
+import type { Book, BookInput, Chapter, ChapterKind, ChapterWorkflow } from "../lib/types";
+import { serializeChapterWorkflow } from "../lib/bookWorkflow";
+import { queueChapterWorkflowWrite } from "../lib/bookWorkflowWrites";
 
 let selectionPersistence = Promise.resolve();
 
@@ -65,6 +67,7 @@ interface BooksState {
   createChapter: (bookId: number, title?: string, chapterKind?: ChapterKind, content?: string) => Promise<Chapter>;
   updateChapter: (id: number, title: string, content: string, chapterKind?: ChapterKind, tocInclude?: boolean, tocHeadingExclusions?: string[]) => Promise<void>;
   updateChapterLayout: (id: number, layoutJson: string) => Promise<void>;
+  updateChapterWorkflow: (id: number, workflow: ChapterWorkflow) => Promise<void>;
   deleteChapter: (id: number) => Promise<void>;
   reorderChapters: (ids: number[]) => Promise<void>;
 }
@@ -216,7 +219,7 @@ export const useBooks = create<BooksState>((set, get) => ({
       ),
     }));
     try {
-      await api.updateChapter(id, title, content, chapterKind, tocInclude, tocHeadingExclusions);
+      await api.updateChapter(id, title, content, chapterKind ?? previousChapter?.chapter_kind, tocInclude ?? previousChapter?.toc_include, tocHeadingExclusions ?? previousChapter?.toc_heading_exclusions);
     } catch (error) {
       if (nextChapter && previousChapter) {
         set((state) => ({
@@ -227,7 +230,9 @@ export const useBooks = create<BooksState>((set, get) => ({
               && chapter.chapter_kind === nextChapter.chapter_kind
               && chapter.toc_include === nextChapter.toc_include
               && chapter.toc_heading_exclusions.join("\u0000") === nextChapter.toc_heading_exclusions.join("\u0000");
-            return stillOptimistic ? previousChapter : chapter;
+            return stillOptimistic ? { ...chapter, title: previousChapter.title, content: previousChapter.content,
+              chapter_kind: previousChapter.chapter_kind, toc_include: previousChapter.toc_include,
+              toc_heading_exclusions: previousChapter.toc_heading_exclusions } : chapter;
           }),
         }));
       }
@@ -245,17 +250,30 @@ export const useBooks = create<BooksState>((set, get) => ({
     } catch (error) {
       if (previousChapter) {
         set((state) => ({
-          chapters: state.chapters.map((chapter) => chapter.id === id && chapter.layout_json === layoutJson ? previousChapter : chapter),
+          chapters: state.chapters.map((chapter) => chapter.id === id && chapter.layout_json === layoutJson ? { ...chapter, layout_json: previousChapter.layout_json } : chapter),
         }));
       }
       throw error;
     }
   },
 
+  updateChapterWorkflow: async (id, workflow) => {
+    const input = JSON.parse(serializeChapterWorkflow(workflow)) as ChapterWorkflow;
+    const saved = await queueChapterWorkflowWrite(id, () => api.updateChapterWorkflow(id, input));
+    set((state) => ({
+      chapters: state.chapters.map((chapter) => chapter.id === id && chapter.book_id === saved.book_id
+        ? { ...chapter, workflow_json: saved.workflow_json, updated_at: saved.updated_at } : chapter),
+      books: state.books.map((book) => book.id === saved.book_id ? { ...book, updated_at: saved.updated_at } : book),
+    }));
+  },
+
   deleteChapter: async (id) => {
     const previousChapters = get().chapters;
     const previousActiveChapterId = get().activeChapterId;
+    const previousBookId = get().selectedBookId;
+    const removed = previousChapters.find((chapter) => chapter.id === id);
     const remaining = get().chapters.filter((chapter) => chapter.id !== id);
+    const optimisticActiveId = previousActiveChapterId === id ? remaining[0]?.id ?? null : previousActiveChapterId;
     set((state) => ({
       chapters: remaining,
       activeChapterId: state.activeChapterId === id ? remaining[0]?.id ?? null : state.activeChapterId,
@@ -264,7 +282,12 @@ export const useBooks = create<BooksState>((set, get) => ({
       await api.deleteChapter(id);
       persistSelection(get().selectedBookId, get().activeChapterId);
     } catch (error) {
-      set({ chapters: previousChapters, activeChapterId: previousActiveChapterId });
+      set((state) => {
+        if (!removed || state.selectedBookId !== previousBookId || state.chapters.some((chapter) => chapter.id === id)) return state;
+        const index = Math.min(previousChapters.indexOf(removed), state.chapters.length);
+        return { chapters: [...state.chapters.slice(0, index), removed, ...state.chapters.slice(index)],
+          activeChapterId: state.activeChapterId === optimisticActiveId ? previousActiveChapterId : state.activeChapterId };
+      });
       throw error;
     }
   },
@@ -278,7 +301,13 @@ export const useBooks = create<BooksState>((set, get) => ({
       try {
         await api.reorderChapters(bookId, ids);
       } catch (error) {
-        set({ chapters: previousChapters });
+        set((state) => {
+          const stillOptimistic = state.selectedBookId === bookId && state.chapters.length === ids.length
+            && state.chapters.every((chapter, index) => chapter.id === ids[index] && chapter.position === index);
+          if (!stillOptimistic) return state;
+          const current = new Map(state.chapters.map((chapter) => [chapter.id, chapter]));
+          return { chapters: previousChapters.map((chapter) => ({ ...current.get(chapter.id)!, position: chapter.position })) };
+        });
         throw error;
       }
     }

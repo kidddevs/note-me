@@ -40,6 +40,15 @@ and equal-gap/equal-center distribution. Page arrange actions have individual un
 boundaries and retain selection through undo/redo and Flow/Free handoff. See
 [Studio selection](STUDIO_SELECTION.md) for contracts and verification boundaries.
 
+## Editorial planning — November 8, 2026
+
+The Section plan workspace adds persistent section stages, word budgets and local
+due dates, with search, manuscript-band/status/overdue filters and document/deadline
+sorting. Writing-surface plan controls, outline badges and Export Studio readiness
+navigation use the same saved metadata. A dedicated native transaction saves plans
+without writing manuscript text or layout. Chapter-save rollbacks preserve
+independent metadata updates. See [Studio planning](STUDIO_PLANNING.md).
+
 ## What is already strong
 
 - **Content model**: books and sections are first-class SQLite records, not serialized notes. Section kinds carry semantic meaning and reorder within front/story/back bands.
@@ -64,7 +73,7 @@ boundaries and retain selection through undo/redo and Flow/Free handoff. See
 
 ### P2 — newsroom and studio workflow
 
-6. **Issue planning.** Story status, assignee, due date, word budget, and a flat-plan view across pages.
+6. **Issue planning.** Section status, due dates, word budgets and a searchable section plan are implemented. Assignees, facing-page flat plans and print pagination remain.
 7. **Editorial review.** Comments, tracked changes, and compare-two-checkpoints views.
 8. **Asset library.** Shared photo storage, search, favorites, alt text, credits and source notes are implemented. Cross-document usage tracking and larger archival collections remain.
 

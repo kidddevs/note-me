@@ -1,6 +1,4 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isTauri } from "@tauri-apps/api/core";
 import {
   ArrowDown,
   ArrowLeft,
@@ -64,6 +62,8 @@ import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVar
 import { api } from "../lib/api";
 import { readBookImageFile, readBookImageSource, saveCoverImageAsset } from "../lib/bookImageLibrary";
 import { BookImageLibrary } from "./BookImageLibrary";
+import { ChapterWorkflowPopover } from "./BookWorkflowControls";
+import { registerBookStudioCloseTask } from "../lib/bookStudioClose";
 import { htmlToMarkdown } from "../lib/richtext";
 import { useBooks } from "../store/books";
 import { useTheme } from "../store/theme";
@@ -1013,7 +1013,6 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   selectedStartsRef.current = selectedStarts;
   const lastSnapshotRef = useRef<{ chapterId: number; content: string; title: string } | null>(null);
   const draftVersionRef = useRef(0);
-  const closingRef = useRef(false);
   const bookLayoutRef = useRef(bookLayout);
   const inspectorLayoutRef = useRef(inspectorLayout);
   const sprintStartWordsRef = useRef(0);
@@ -1251,34 +1250,25 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
 
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    void getCurrentWindow().onCloseRequested(async (event) => {
+  useEffect(() => registerBookStudioCloseTask({
+    hasChanges: () => draftRef.current.id !== null && draftRef.current.dirty,
+    save: async () => {
       const draft = draftRef.current;
-      if (closingRef.current || draft.id === null || !draft.dirty) return;
-      event.preventDefault();
-      closingRef.current = true;
+      if (draft.id === null || !draft.dirty) return;
+      const version = draftVersionRef.current;
       if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
       try {
         await updateChapter(draft.id, draft.title.trim() || "Untitled chapter", draft.content, draft.chapterKind, draft.tocInclude, draft.tocHeadingExclusions);
-        draftRef.current.dirty = false;
-        await getCurrentWindow().destroy();
+        if (draftVersionRef.current === version && draftRef.current.id === draft.id) {
+          draftRef.current.dirty = false;
+          setSaveState("saved");
+        }
       } catch (error) {
-        closingRef.current = false;
         setSaveState("dirty");
-        notify("error", "Close paused: chapter was not saved", String(error));
+        throw error;
       }
-    }).then((dispose) => {
-      if (cancelled) dispose();
-      else unlisten = dispose;
-    });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [updateChapter]);
+    },
+  }), [updateChapter]);
 
   useEffect(() => {
     if (!activeChapter) return;
@@ -2633,6 +2623,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       <div className="books-editor-toolbar">
           <div className="books-editor-context"><span>{chapterDisplayLabel(activeChapter, chapters.findIndex((chapter) => chapter.id === activeChapter.id), chapters)}</span><ChevronRight size={13} /><strong>{title || "Untitled chapter"}</strong></div>
         <div className="books-editor-actions">
+           <ChapterWorkflowPopover key={activeChapter.id} chapter={activeChapter} />
            <span className={`books-save-state ${saveState}`} aria-live="polite">{saveState === "saving" ? "Saving…" : saveState === "dirty" ? "Unsaved changes" : "Saved locally"}</span>
             <div className="books-undo-group" role="group" aria-label="Editing history">
               <button className="books-quiet-button" onClick={undo} disabled={!undoState.canUndo} title="Undo (⌘Z)" aria-label="Undo"><Undo2 size={15} /></button>

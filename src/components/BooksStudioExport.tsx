@@ -4,6 +4,7 @@ import {
   BookOpen,
   Check,
   ChevronRight,
+  ClipboardList,
   Download,
   FileCode2,
   FileText,
@@ -18,6 +19,7 @@ import { coverMetrics, hasCoverDocument } from "../lib/bookCoverDoc";
 import { backMatterSections, buildBookToc, frontMatterSections, matterAnchorId, orderBookChapters, sectionAnchorId, type TocEntry } from "../lib/bookToc";
 import { chapterBandOrdinal, chapterDisplayLabel, chapterHasDistinctTitle, chapterIsOpeningPage, chapterPageBand, chapterTitleHeading, EXPORT_OPTIONS, markdownToHtml, paragraphStylesCss, tocTitle, trimCssSize, TRIM_SIZES, wordCount } from "../lib/bookPublishing";
 import { notify } from "../store/toast";
+import { parseChapterWorkflow } from "../lib/bookWorkflow";
 import {
   BooksPageChrome,
   exportBook,
@@ -66,6 +68,7 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: { bo
   const toc = useMemo(() => buildBookToc(book, chapters), [book, chapters]);
   const preflight = useMemo(() => bookExportChecks(book, chapters), [book, chapters]);
   const attentionCount = preflight.filter((check) => check.severity !== "info").length;
+  const readySections = chapters.filter((chapter) => parseChapterWorkflow(chapter.workflow_json).status === "ready").length;
   const interiorChapters = orderBookChapters(chapters).filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind));
   const coverChapter = orderBookChapters(chapters).find((chapter) => chapter.chapter_kind === "cover") ?? null;
   const coverLayout = coverChapter ? layoutForChapter(book, coverChapter) : layout;
@@ -91,6 +94,7 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: { bo
            <section className={`books-export-preflight ${attentionCount ? "needs-attention" : "ready"}`} aria-labelledby="books-export-preflight-heading">
              <div className="books-export-preflight-heading"><div><span className="books-eyebrow">Package check</span><h2 id="books-export-preflight-heading">{attentionCount ? `${attentionCount} ${attentionCount === 1 ? "item" : "items"} need attention` : preflight.length ? `${preflight.length} finishing ${preflight.length === 1 ? "suggestion" : "suggestions"}` : "Ready for readers"}</h2></div><span className="books-export-preflight-count">{preflight.length || <Check size={14} />}</span></div>
              {preflight.length ? <div className="books-export-preflight-list">{preflight.map((check) => <button key={check.id} onClick={() => openPreflightItem(check)}><span className={`books-export-preflight-icon ${check.severity}`}>{check.severity === "info" ? <Info size={14} /> : <AlertTriangle size={14} />}</span><span><strong>{check.label}</strong><small>{check.detail}</small></span><ChevronRight size={13} /></button>)}</div> : <p>Core metadata, sections, and reader navigation look complete.</p>}
+             <button type="button" className="books-export-plan-link" onClick={() => onNavigate("plan")}><ClipboardList size={14} /><span>{readySections} / {chapters.length} sections marked ready</span><ChevronRight size={13} /></button>
              <div className="books-export-signals"><span className={book.toc_enabled ? "ready" : "muted"}>{book.toc_enabled ? "Contents included" : "Contents off"}</span><span>{layoutForBook(book).pageNumbering.enabled ? "Page numbers on" : "Page numbers off"}</span><span>{chapters.some((chapter) => chapter.content.includes("data:image/")) ? "Artwork embedded" : "No artwork"}</span></div>
            </section>
          </div>

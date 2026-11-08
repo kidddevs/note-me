@@ -89,6 +89,14 @@ fn migrate_book_chapters(conn: &Connection) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     }
 
+    if !columns.iter().any(|column| column == "workflow_json") {
+        conn.execute(
+            "ALTER TABLE book_chapters ADD COLUMN workflow_json TEXT NOT NULL DEFAULT '{}'",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -210,6 +218,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<(), String> {
             toc_include INTEGER NOT NULL DEFAULT 1,
             toc_heading_exclusions TEXT NOT NULL DEFAULT '[]',
             layout_json TEXT NOT NULL DEFAULT '{}',
+            workflow_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -259,7 +268,9 @@ mod tests {
                title TEXT NOT NULL DEFAULT '',
                content TEXT NOT NULL DEFAULT '',
                position INTEGER NOT NULL DEFAULT 0
-             );",
+             );
+             INSERT INTO books(id,title) VALUES(1,'Existing book');
+             INSERT INTO book_chapters(id,book_id,title,content) VALUES(2,1,'Existing section','Keep this manuscript');",
         )
         .expect("legacy schema should be created");
 
@@ -277,6 +288,29 @@ mod tests {
         assert!(chapter_columns.contains(&"toc_include".to_string()));
         assert!(chapter_columns.contains(&"toc_heading_exclusions".to_string()));
         assert!(chapter_columns.contains(&"layout_json".to_string()));
+        assert!(chapter_columns.contains(&"workflow_json".to_string()));
+        let preserved: (String, String) = conn
+            .query_row(
+                "SELECT content,workflow_json FROM book_chapters WHERE id=2",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(preserved, ("Keep this manuscript".into(), "{}".into()));
+        conn.execute(
+            "UPDATE book_chapters SET workflow_json = '{\"status\":\"ready\"}' WHERE id=2",
+            [],
+        )
+        .unwrap();
+        migrate_book_chapters(&conn).expect("repeated migration should be safe");
+        let workflow: String = conn
+            .query_row(
+                "SELECT workflow_json FROM book_chapters WHERE id=2",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(workflow, r#"{"status":"ready"}"#);
 
         let snapshot_columns = columns(&conn, "book_snapshots");
         assert!(snapshot_columns.contains(&"chapter_id".to_string()));

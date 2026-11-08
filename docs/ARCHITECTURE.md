@@ -6,6 +6,8 @@ For the shared photo library, page-image focal crops, source details and export
 contracts, see [Studio images](STUDIO_IMAGES.md).
 Shared selection geometry, cover transforms and page arrangement are documented
 in [Studio selection](STUDIO_SELECTION.md).
+Section planning, its native SQLite contract and independent chapter saves are
+documented in [Studio planning](STUDIO_PLANNING.md).
 
 ## Overview
 
