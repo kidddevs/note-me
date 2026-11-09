@@ -105,9 +105,9 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 
 ### macOS
 
-Download the latest Apple Silicon DMG from the [GitHub Releases](https://github.com/kidddevs/note-me/releases) page, open it, and drag NoteMe into Applications.
+Download the DMG for your Mac from the [GitHub Releases](https://github.com/kidddevs/note-me/releases) page, open it, and drag NoteMe into Applications. Choose the `aarch64` artifact for Apple Silicon or the `x64` artifact for Intel.
 
-Release artifacts follow the pattern `NoteMe_<version>_aarch64.dmg`. Intel and other platform installers can be produced from source with the Tauri build command below.
+macOS release artifacts are published for both architectures: `NoteMe_<version>_aarch64.dmg` for Apple Silicon and `NoteMe_<version>_x64.dmg` for Intel.
 
 To check for updates inside the app, use **NoteMe → Check for Updates…**. NoteMe only offers a download action when a GitHub release is newer than the installed version.
 
@@ -128,10 +128,11 @@ Create installers:
 
 ```bash
 npm run build
-npm run tauri build
+npm run tauri build -- --target aarch64-apple-darwin --bundles app,dmg
+npm run tauri build -- --target x86_64-apple-darwin --bundles app,dmg
 ```
 
-Installers are written to `src-tauri/target/release/bundle/`.
+Installers are written to `src-tauri/target/<target>/release/bundle/`.
 
 ## Keyboard shortcuts
 
