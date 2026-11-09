@@ -723,6 +723,9 @@ export function CoverArtwork({
   const [availableWidth, setAvailableWidth] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const usesDocument = hasCoverDocument(layout.cover);
+  const artwork = useMemo(() => usesDocument
+    ? coverDocMarkup(book, layout.cover, panel)
+    : coverMarkup(book, layout), [book, layout, panel, usesDocument]);
   useEffect(() => {
     if (!usesDocument || !fit) return;
     const element = containerRef.current;
@@ -743,13 +746,13 @@ export function CoverArtwork({
         {fit && scale === 0 ? null : (
           <div
             style={fit ? { width: rect.width * 96, height: rect.height * 96, transform: `scale(${scale})`, transformOrigin: "0 0" } : undefined}
-            dangerouslySetInnerHTML={{ __html: coverDocMarkup(book, layout.cover, panel) }}
+            dangerouslySetInnerHTML={{ __html: artwork }}
           />
         )}
       </div>
     );
   }
-  return <div className={`books-cover-art-frame ${className}`}><style>{COVER_CSS}</style><div dangerouslySetInnerHTML={{ __html: coverMarkup(book, layout) }} /></div>;
+  return <div className={`books-cover-art-frame ${className}`}><style>{COVER_CSS}</style><div dangerouslySetInnerHTML={{ __html: artwork }} /></div>;
 }
 
 /* ========================================================================== */

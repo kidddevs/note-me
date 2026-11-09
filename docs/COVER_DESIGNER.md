@@ -188,14 +188,15 @@ for QA; importing the page bootstrap again would mount another React root.
 History and image-library utilities also use browser IndexedDB. Use a disposable
 browser profile for QA; do not clear another user's library or storage.
 
-The fixture includes real cover, manuscript, outline and section-plan surfaces with
-a development navigation strip. A fresh fixture seeds three sections, starting at
-`-702`, alongside book `-701`; an intentionally empty saved book stays empty.
-`?screen=manuscript` opens the page canvas and `?screen=plan` opens planning. See
-[Studio planning](STUDIO_PLANNING.md) for chapter adapters and safe reset helpers.
-It does not prove native
-navigation, SQLite persistence, checkpoint behavior or native save dialogs. Test
-those through the Tauri app when changing their contracts.
+The fixture includes real cover, manuscript, outline, section-plan, library and
+export surfaces with a development navigation strip. A fresh fixture seeds three
+sections, starting at `-702`, alongside book `-701`; an intentionally empty saved
+book stays empty. `?screen=manuscript` opens the page canvas, `?screen=plan` opens
+planning, `?screen=library` opens the shelf, and `?screen=export` opens Export
+Studio. See [Studio planning](STUDIO_PLANNING.md) for chapter adapters and safe
+reset helpers. Use a Tauri build to check native navigation, SQLite persistence,
+checkpoints, and system dialogs. See [Studio publishing](STUDIO_PUBLISHING.md)
+for file and print checks.
 
 ## Validation checklist
 
@@ -228,6 +229,11 @@ For interactive changes, check:
    pixels with opacity and tint. Inspect print preflight and template round trips.
 6. Check dark/light appearance, header containment at 1440px and 1280px, the
    compact drawer at 1024px and 390px, and picker containment on short viewports.
+7. In the library, search by title, author, genre, or stage. Clear filters, sort,
+   open the card menu, and check that the entire saved spread fits the thumbnail.
+   Check a legacy front template and a colour fallback as well.
+8. In Export Studio, switch formats and change the cover and contents choices.
+   Check the preview, package summary, preflight links, and saved files.
 
 The November 7, 2026 pass ran 152 Node tests and 5 Rust tests successfully, built
 the production UI, and exercised the browser interactions and raster comparisons

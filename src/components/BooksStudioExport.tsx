@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { memo, useId, useMemo, useRef, useState } from "react";
+import { createPortal, flushSync } from "react-dom";
 import {
   AlertTriangle,
   BookOpen,
@@ -8,113 +9,356 @@ import {
   Download,
   FileCode2,
   FileText,
+  FolderOpen,
+  Images,
   Info,
+  Layers,
+  ListTree,
+  LoaderCircle,
   NotebookPen,
   Printer,
 } from "lucide-react";
 import type { Book, Chapter } from "../lib/types";
-import { bookExportChecks } from "../lib/bookExport";
+import {
+  BOOK_OUTPUT_OPTIONS,
+  bookExportChecks,
+  bookForExport,
+  bookPackageSummary,
+  groupBookExportChecks,
+  saveBookExport,
+  type BookExportCheck,
+  type BookExportChoices,
+  type BookExportReceipt,
+  type BookOutputFormat,
+} from "../lib/bookExport";
 import { layoutForBook, layoutForChapter, layoutSectionKey, serializeBookLayout } from "../lib/bookLayout";
-import { coverMetrics, hasCoverDocument } from "../lib/bookCoverDoc";
+import { coverMetrics, hasCoverDocument, renderCoverCanvas } from "../lib/bookCoverDoc";
+import { readBookImageSource } from "../lib/bookImageLibrary";
 import { backMatterSections, buildBookToc, frontMatterSections, matterAnchorId, orderBookChapters, sectionAnchorId, type TocEntry } from "../lib/bookToc";
-import { chapterBandOrdinal, chapterDisplayLabel, chapterHasDistinctTitle, chapterIsOpeningPage, chapterPageBand, chapterTitleHeading, EXPORT_OPTIONS, markdownToHtml, paragraphStylesCss, tocTitle, trimCssSize, TRIM_SIZES, wordCount } from "../lib/bookPublishing";
+import { chapterBandOrdinal, chapterDisplayLabel, chapterHasDistinctTitle, chapterIsOpeningPage, chapterPageBand, chapterTitleHeading, bookMarkdown, bookText, isDocxImageSource, markdownToHtml, parseImageLine, paragraphStylesCss, tocTitle, trimCssSize, TRIM_SIZES } from "../lib/bookPublishing";
 import { notify } from "../store/toast";
-import { parseChapterWorkflow } from "../lib/bookWorkflow";
 import {
   BooksPageChrome,
-  exportBook,
   handleTabListKeyDown,
   manuscriptStyle,
 } from "./BooksStudio";
 import { CoverArtwork } from "./BooksCoverStudio";
-import type { ExportFormat, StudioScreen } from "./BooksStudio";
+import type { StudioScreen } from "./BooksStudio";
 
-export function ContentsPreview({ book, entries }: { book: Book; entries: TocEntry[] }) {
+function ContentsPreview({ book, entries, epub }: { book: Book; entries: TocEntry[]; epub: boolean }) {
   return (
-    <div className="books-preview-contents">
-      <div className="books-preview-contents-heading"><span>{tocTitle(book)}</span><small>{entries.length} entries</small></div>
-      {entries.length === 0 ? (
-        <p className="books-preview-contents-empty">Enable contents or add headings to see the reader's map.</p>
+    <div className="books-preview-page books-preview-contents-page" style={manuscriptStyle(book)}>
+      <h2 className="book-heading-1">{tocTitle(book)}</h2>
+      {entries.length > 0 ? (
+        <ol className="books-preview-contents-list">
+          {entries.map((entry) => (
+            <li key={entry.id} style={{ marginInlineStart: Math.max(0, entry.level - 1) * 11 }}>{entry.label}</li>
+          ))}
+        </ol>
       ) : (
-        <div className="books-preview-contents-list">
-          {entries.slice(0, 10).map((entry) => <div key={entry.id} style={{ paddingLeft: `${Math.max(0, entry.level - 1) * 11}px` }} className={entry.source === "heading" ? "heading" : "section"}>{entry.label}</div>)}
-          {entries.length > 10 && <div className="books-preview-contents-more">+ {entries.length - 10} more entries</div>}
-        </div>
+        <p>{epub ? "Start reading opens the title page in the ebook reader." : "Include sections in Outline to build the contents."}</p>
       )}
     </div>
   );
 }
 
-export function InteriorPreview({ book, chapters, chapterId }: { book: Book; chapters: Chapter[]; chapterId: number | null }) {
-  const orderedChapters = orderBookChapters(chapters);
-  const chapter = orderedChapters.find((item) => item.id === chapterId && !chapterIsOpeningPage(item.chapter_kind)) ?? orderedChapters.find((item) => !chapterIsOpeningPage(item.chapter_kind)) ?? null;
-  if (!chapter) return <div className="books-preview-empty-state"><BookOpen size={20} /><strong>Add a section to preview the interior.</strong><span>The cover preview will use your book metadata.</span></div>;
-  const chapterIndex = orderedChapters.indexOf(chapter);
+function InteriorPreview({ book, chapters, chapterId, format }: {
+  book: Book;
+  chapters: Chapter[];
+  chapterId: number | null;
+  format: BookOutputFormat;
+}) {
+  const chapterIndex = chapters.findIndex((item) => item.id === chapterId);
+  const chapter = chapters[chapterIndex];
+  if (!chapter) {
+    return <div className="books-preview-empty-state"><BookOpen size={20} /><strong>Add a section to preview the interior.</strong></div>;
+  }
   const band = chapterPageBand(chapter);
-  const layout = layoutForChapter(book, chapter);
-  const label = chapterTitleHeading(chapter, chapterIndex, orderedChapters);
-  const showKicker = band === "story" && chapterHasDistinctTitle(chapter, chapterIndex, orderedChapters);
-  return <div className="books-interior-preview" style={{ ...manuscriptStyle({ ...book, layout_json: serializeBookLayout(layout) }), backgroundColor: layout.pageColor }}><BooksPageChrome book={book} layout={layout} keyName={layoutSectionKey(band, chapter.id)} section={label} band={band} ordinal={chapterBandOrdinal(orderedChapters, chapterIndex)} />{showKicker && <span className="books-preview-kicker">{chapterDisplayLabel(chapter, chapterIndex, orderedChapters)}</span>}<h2 className="book-heading-1">{label}</h2><article dangerouslySetInnerHTML={{ __html: markdownToHtml(chapter.content, sectionAnchorId(chapter.id), layout.typography, layout.paragraphStyles) }} /></div>;
-}
-
-export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: { book: Book; chapters: Chapter[]; onNavigate: (screen: StudioScreen) => void; onOpenChapter: (id: number) => void }) {
-  const [format, setFormat] = useState<ExportFormat>("epub");
-  const [previewMode, setPreviewMode] = useState<"cover" | "interior">("cover");
-  const [previewChapterId, setPreviewChapterId] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
-  const selected = EXPORT_OPTIONS.find((option) => option.value === format)!;
-  const layout = layoutForBook(book);
-  const totalWords = chapters.reduce((total, chapter) => total + wordCount(chapter.content), 0);
-  const toc = useMemo(() => buildBookToc(book, chapters), [book, chapters]);
-  const preflight = useMemo(() => bookExportChecks(book, chapters), [book, chapters]);
-  const attentionCount = preflight.filter((check) => check.severity !== "info").length;
-  const readySections = chapters.filter((chapter) => parseChapterWorkflow(chapter.workflow_json).status === "ready").length;
-  const interiorChapters = orderBookChapters(chapters).filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind));
-  const coverChapter = orderBookChapters(chapters).find((chapter) => chapter.chapter_kind === "cover") ?? null;
-  const coverLayout = coverChapter ? layoutForChapter(book, coverChapter) : layout;
-  const selectedPreviewChapterId = interiorChapters.some((chapter) => chapter.id === previewChapterId) ? previewChapterId : (interiorChapters[0]?.id ?? null);
-  const handleExport = async () => { setBusy(true); try { await exportBook(book, chapters, format); } catch (error) { notify("error", "Export failed", String(error)); } finally { setBusy(false); } };
-  const openPreflightItem = (check: (typeof preflight)[number]) => {
-    if (check.chapterId !== undefined) {
-      onOpenChapter(check.chapterId);
-    } else {
-      onNavigate(check.target === "manuscript" ? "manuscript" : check.target);
-    }
-  };
+  const layout = format === "docx" ? layoutForBook(book) : layoutForChapter(book, chapter);
+  const label = chapterTitleHeading(chapter, chapterIndex, chapters);
+  const showKicker = band === "story" && chapterHasDistinctTitle(chapter, chapterIndex, chapters);
+  const content = format === "docx" ? chapter.content.split(/\r?\n/).map((line) => {
+    const image = parseImageLine(line);
+    if (!image || isDocxImageSource(image.source)) return line;
+    return [image.alt || "Artwork", image.presentation.caption, image.presentation.credit].filter(Boolean).join(" — ");
+  }).join("\n") : chapter.content;
   return (
-    <div className="books-screen books-export-screen">
-      <div className="books-screen-heading"><div><span className="books-eyebrow"><Download size={13} /> Soft copy desk</span><h1>Export studio</h1><p>Build a beautiful copy for the reader, editor, or archive.</p></div><button className="books-primary-action" onClick={() => void handleExport()} disabled={busy || chapters.length === 0}><Download size={15} /> {busy ? "Preparing…" : `Export ${selected.label}`}</button></div>
-       <div className="books-export-layout">
-         <div className="books-export-options">
-           <span className="books-eyebrow">Choose a format</span>
-           <div className="books-export-format-list" role="radiogroup" aria-label="Export format">
-             {EXPORT_OPTIONS.map((option) => <button key={option.value} role="radio" aria-checked={format === option.value} className={`books-export-option ${format === option.value ? "active" : ""}`} onClick={() => setFormat(option.value)}><span className="books-export-option-icon">{option.value === "epub" ? <BookOpen size={17} /> : option.value === "docx" ? <FileText size={17} /> : option.value === "html" ? <FileCode2 size={17} /> : <NotebookPen size={17} />}</span><span><strong>{option.label}</strong><small>{option.description}</small></span>{format === option.value && <Check size={15} />}</button>)}
-           </div>
-           <button className="books-print-option" onClick={() => window.print()}><Printer size={15} /><span><strong>Print / Save as PDF</strong><small>Uses your trim size and page styling</small></span></button>
-           <section className={`books-export-preflight ${attentionCount ? "needs-attention" : "ready"}`} aria-labelledby="books-export-preflight-heading">
-             <div className="books-export-preflight-heading"><div><span className="books-eyebrow">Package check</span><h2 id="books-export-preflight-heading">{attentionCount ? `${attentionCount} ${attentionCount === 1 ? "item" : "items"} need attention` : preflight.length ? `${preflight.length} finishing ${preflight.length === 1 ? "suggestion" : "suggestions"}` : "Ready for readers"}</h2></div><span className="books-export-preflight-count">{preflight.length || <Check size={14} />}</span></div>
-             {preflight.length ? <div className="books-export-preflight-list">{preflight.map((check) => <button key={check.id} onClick={() => openPreflightItem(check)}><span className={`books-export-preflight-icon ${check.severity}`}>{check.severity === "info" ? <Info size={14} /> : <AlertTriangle size={14} />}</span><span><strong>{check.label}</strong><small>{check.detail}</small></span><ChevronRight size={13} /></button>)}</div> : <p>Core metadata, sections, and reader navigation look complete.</p>}
-             <button type="button" className="books-export-plan-link" onClick={() => onNavigate("plan")}><ClipboardList size={14} /><span>{readySections} / {chapters.length} sections marked ready</span><ChevronRight size={13} /></button>
-             <div className="books-export-signals"><span className={book.toc_enabled ? "ready" : "muted"}>{book.toc_enabled ? "Contents included" : "Contents off"}</span><span>{layoutForBook(book).pageNumbering.enabled ? "Page numbers on" : "Page numbers off"}</span><span>{chapters.some((chapter) => chapter.content.includes("data:image/")) ? "Artwork embedded" : "No artwork"}</span></div>
-           </section>
-         </div>
-         <div className="books-export-preview">
-            <div className="books-preview-toolbar"><span>Output preview</span><div className="books-preview-toolbar-actions"><div className="books-preview-mode" role="tablist" aria-label="Preview page" onKeyDown={handleTabListKeyDown}><button className={previewMode === "cover" ? "active" : ""} onClick={() => setPreviewMode("cover")} role="tab" aria-selected={previewMode === "cover"} tabIndex={previewMode === "cover" ? 0 : -1}>Cover</button><button className={previewMode === "interior" ? "active" : ""} onClick={() => setPreviewMode("interior")} role="tab" aria-selected={previewMode === "interior"} tabIndex={previewMode === "interior" ? 0 : -1}>Interior</button></div>{previewMode === "interior" && interiorChapters.length > 0 && <label className="books-preview-section-picker"><span>Section</span><select aria-label="Preview section" value={selectedPreviewChapterId ?? ""} onChange={(event) => setPreviewChapterId(Number(event.target.value))}>{interiorChapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.title || chapterDisplayLabel(chapter, interiorChapters.indexOf(chapter), interiorChapters)}</option>)}</select></label>}<span>{TRIM_SIZES.find((size) => size.value === book.trim_size)?.label ?? book.trim_size} / {totalWords.toLocaleString()} words</span></div></div>
-            {previewMode === "cover" ? (layout.cover.enabled ? <div className="books-preview-cover-art"><CoverArtwork book={book} layout={layout} /></div> : coverChapter ? <div className="books-preview-page books-preview-cover-chapter" style={{ ...manuscriptStyle({ ...book, layout_json: serializeBookLayout(coverLayout) }), backgroundColor: coverLayout.pageColor }}><BooksPageChrome book={book} layout={coverLayout} keyName="opening" section={coverChapter.title || "Cover"} band="opening" ordinal={0} /><span className="books-preview-kicker">{book.genre || "Magazine"}</span><h2 className="book-title">{coverChapter.title || book.title || "Untitled magazine"}</h2><article dangerouslySetInnerHTML={{ __html: markdownToHtml(coverChapter.content, sectionAnchorId(coverChapter.id), coverLayout.typography, coverLayout.paragraphStyles) }} /></div> : <div className="books-preview-page" style={manuscriptStyle(book)}><BooksPageChrome book={book} layout={layout} keyName="story" section="Chapter 1" band="story" ordinal={0} /><span className="books-preview-kicker">{book.genre || "Manuscript"}</span><h2 className="book-title">{book.title || "Untitled manuscript"}</h2>{book.subtitle && <p className="books-preview-subtitle">{book.subtitle}</p>}<span className="books-preview-author">{book.author || "Author"}</span><div className="books-preview-rule" /><p>{book.description || "Your book description will appear in the front matter and metadata of exported copies."}</p><ContentsPreview book={book} entries={toc} /></div>) : <InteriorPreview book={book} chapters={chapters} chapterId={selectedPreviewChapterId} />}
-         </div>
-       </div>
+    <div className="books-interior-preview" style={manuscriptStyle({ ...book, layout_json: serializeBookLayout(layout) })}>
+      <BooksPageChrome book={book} layout={layout} keyName={layoutSectionKey(band, chapter.id)} section={label} band={band} ordinal={chapterBandOrdinal(chapters, chapterIndex)} />
+      {showKicker && <span className="books-preview-kicker">{chapterDisplayLabel(chapter, chapterIndex, chapters)}</span>}
+      <h2 className="book-heading-1">{label}</h2>
+      <article dangerouslySetInnerHTML={{ __html: markdownToHtml(content, sectionAnchorId(chapter.id), layout.typography, layout.paragraphStyles) }} />
     </div>
   );
 }
 
-export function PrintBook({ book, chapters, toc }: { book: Book; chapters: Chapter[]; toc: TocEntry[] }) {
+const OUTPUT_ICONS = {
+  epub: BookOpen,
+  docx: FileText,
+  html: FileCode2,
+  markdown: NotebookPen,
+  txt: FileText,
+  print: Printer,
+};
+
+type PreviewMode = "cover" | "interior" | "contents";
+const PREVIEW_LABELS: Record<PreviewMode, string> = { cover: "Cover", interior: "Interior", contents: "Contents" };
+const SOURCE_PREVIEW_LIMIT = 16000;
+
+export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: {
+  book: Book;
+  chapters: Chapter[];
+  onNavigate: (screen: StudioScreen) => void;
+  onOpenChapter: (id: number) => void;
+}) {
+  const [format, setFormat] = useState<BookOutputFormat>("epub");
+  const [choices, setChoices] = useState<BookExportChoices>({});
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("cover");
+  const [previewChapterId, setPreviewChapterId] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [receipt, setReceipt] = useState<BookExportReceipt | null>(null);
+  const [exportError, setExportError] = useState("");
+  const [printCover, setPrintCover] = useState<{ book: Book; source: string } | null>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+  const saving = useRef(false);
+  const formatName = useId();
+
+  const selected = BOOK_OUTPUT_OPTIONS.find((option) => option.value === format)!;
+  const sourceLayout = useMemo(() => layoutForBook(book), [book]);
+  const edition = useMemo(() => bookForExport(book, format, choices), [book, format, choices]);
+  const layout = useMemo(() => layoutForBook(edition), [edition]);
+  const summary = useMemo(() => bookPackageSummary(edition, chapters, format), [edition, chapters, format]);
+  const toc = useMemo(() => buildBookToc(edition, chapters), [edition, chapters]);
+  const preflight = useMemo(() => bookExportChecks(edition, chapters), [edition, chapters]);
+  const groups = useMemo(() => groupBookExportChecks(preflight), [preflight]);
+  const attentionCount = groups.attention.length;
+  const orderedChapters = useMemo(() => orderBookChapters(chapters), [chapters]);
+  const selectedChapterId = orderedChapters.find((chapter) => chapter.id === previewChapterId)?.id ?? orderedChapters[0]?.id ?? null;
+  const trimLabel = TRIM_SIZES.find((size) => size.value === book.trim_size)?.label ?? book.trim_size;
+  const coverAvailable = sourceLayout.cover.enabled || hasCoverDocument(sourceLayout.cover);
+  const showCover = Boolean(selected.coverPanel && layout.cover.enabled);
+  const modes: PreviewMode[] = [
+    ...(showCover ? ["cover" as const] : []),
+    "interior",
+    ...(toc.length > 0 || format === "epub" ? ["contents" as const] : []),
+  ];
+  const mode = modes.includes(previewMode) ? previewMode : modes[0];
+  const sourcePreview = useMemo(() => {
+    if (format === "txt") return bookText(edition, chapters);
+    if (format === "markdown") {
+      return bookMarkdown(edition, chapters).replace(/(data:image\/[\w+.-]+;base64,)[A-Za-z0-9+/=]+/gi, "$1[embedded image]");
+    }
+    return null;
+  }, [format, edition, chapters]);
+  const printEdition = format === "print" ? edition : book;
+  const printToc = useMemo(() => buildBookToc(printEdition, chapters), [printEdition, chapters]);
+  const blocked = preflight.some((check) => check.severity === "error");
+  const ActionIcon = busy ? LoaderCircle : format === "print" ? Printer : Download;
+
+  const handleExport = async () => {
+    if (saving.current || blocked) return;
+    setExportError("");
+    saving.current = true;
+    setBusy(true);
+    try {
+      if (format === "print") {
+        if (layout.cover.enabled && hasCoverDocument(layout.cover) && printCover?.book !== book) {
+          // A flattened cover keeps its blend effects without rasterizing the interior.
+          const metrics = coverMetrics(edition.trim_size, layout.cover);
+          const dpi = Math.min(300, Math.floor(Math.sqrt(12_000_000 / (metrics.fullWidth * metrics.fullHeight))));
+          const canvas = await renderCoverCanvas(edition, layout.cover, "wrap", { dpi, bleed: true });
+          const source = canvas.toDataURL("image/png");
+          await readBookImageSource(source);
+          if (!screenRef.current) return;
+          flushSync(() => setPrintCover({ book, source }));
+        }
+        await window.print();
+        return;
+      }
+      const saved = await saveBookExport(edition, chapters, format);
+      if (saved) setReceipt(saved);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      saving.current = false;
+      setBusy(false);
+    }
+  };
+  const revealExport = async () => {
+    if (!receipt?.path) return;
+    try {
+      const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+      await revealItemInDir(receipt.path);
+    } catch (error) {
+      notify("error", "Exported file could not be shown", String(error));
+    }
+  };
+  const openPreflightItem = (check: BookExportCheck) => {
+    if (check.chapterId !== undefined) onOpenChapter(check.chapterId);
+    else onNavigate(check.target);
+  };
+  const renderCheck = (check: BookExportCheck) => (
+    <button key={check.id} type="button" onClick={() => openPreflightItem(check)}>
+      <span className={"books-export-preflight-icon " + check.severity}>{check.severity === "info" ? <Info size={14} /> : <AlertTriangle size={14} />}</span>
+      <span><strong>{check.label}</strong><small>{check.detail}</small></span>
+      <ChevronRight size={13} />
+    </button>
+  );
+
+  return (
+    <>
+      <div ref={screenRef} className="books-screen books-export-screen">
+        <header className="books-screen-heading">
+          <div>
+            <span className="books-eyebrow"><Download size={13} /> Publishing desk</span>
+            <h1>Export studio</h1>
+            <p>{book.title || "Untitled manuscript"} · {trimLabel} · {summary.words.toLocaleString()} words</p>
+          </div>
+          <button type="button" className="books-primary-action" onClick={() => void handleExport()} disabled={busy || blocked} aria-busy={busy}>
+            <ActionIcon size={15} className={busy ? "cover-tool-busy" : undefined} />
+            {busy ? (format === "print" ? "Preparing print…" : "Saving export…") : format === "print" ? "Print / Save as PDF" : "Export " + selected.label}
+          </button>
+        </header>
+        {(receipt || exportError) && <div className="books-export-feedback">
+          {exportError && <div className="books-export-feedback-row error" role="alert">
+            <AlertTriangle size={16} />
+            <span><strong>{format === "print" ? "Print could not be prepared" : "Export could not be saved"}</strong><small>{exportError}</small></span>
+          </div>}
+          {receipt && <div className="books-export-feedback-row">
+            <Check size={16} />
+            <span role="status"><strong>{receipt.filename}</strong><small>Last export · {(receipt.bytes / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KB</small></span>
+            {receipt.path && <button type="button" onClick={() => void revealExport()}><FolderOpen size={15} /> Show file</button>}
+          </div>}
+        </div>}
+        <div className="books-export-layout">
+          <div className="books-export-options">
+            <fieldset className="books-export-format-list" disabled={busy}>
+              <legend className="books-eyebrow">Output format</legend>
+              {BOOK_OUTPUT_OPTIONS.map((option) => {
+                const Icon = OUTPUT_ICONS[option.value];
+                return (
+                  <label key={option.value} className={"books-export-option" + (format === option.value ? " active" : "")}>
+                    <input type="radio" name={formatName} checked={format === option.value} onChange={() => { setFormat(option.value); setExportError(""); }} />
+                    <span className="books-export-option-icon"><Icon size={16} /></span>
+                    <span><strong>{option.label}</strong><small>{option.description}</small></span>
+                    {format === option.value && <Check size={14} />}
+                  </label>
+                );
+              })}
+            </fieldset>
+            <fieldset className="books-export-choices" disabled={busy}>
+              <legend className="books-eyebrow">Include in this export</legend>
+              <div className="books-export-choice-card">
+                {selected.coverPanel && (coverAvailable ? (
+                  <label>
+                    <input type="checkbox" checked={layout.cover.enabled} onChange={(event) => setChoices((current) => ({ ...current, includeCover: event.target.checked }))} />
+                    <span><strong>{selected.coverPanel === "wrap" && hasCoverDocument(layout.cover) ? "Full cover spread" : "Front cover"}</strong><small>Use your saved cover artwork</small></span>
+                  </label>
+                ) : (
+                  <button type="button" className="books-export-setting-link" onClick={() => onNavigate("cover")}><Layers size={14} /> Design a cover <ChevronRight size={13} /></button>
+                ))}
+                <label>
+                  <input type="checkbox" checked={edition.toc_enabled} onChange={(event) => setChoices((current) => ({ ...current, includeContents: event.target.checked }))} />
+                  <span><strong>Generated contents</strong><small>Use the sections and headings included in Outline</small></span>
+                </label>
+                {(choices.includeCover !== undefined || choices.includeContents !== undefined) && (
+                  <button type="button" className="books-export-setting-link" onClick={() => setChoices({})}>Use manuscript defaults</button>
+                )}
+              </div>
+            </fieldset>
+            <section className="books-export-package" aria-labelledby="books-export-package-heading">
+              <div className="books-export-package-heading">
+                <div><span className="books-eyebrow">Package summary</span><h2 id="books-export-package-heading">{selected.label}</h2></div>
+                <span className="books-export-package-extension">{selected.extension}</span>
+              </div>
+              <div className="books-export-metrics">
+                <div><strong>{summary.sections}</strong><span>sections</span></div>
+                <div><strong>{summary.words.toLocaleString()}</strong><span>words</span></div>
+                <div><strong>{summary.readingMinutes ? summary.readingMinutes + " min" : "—"}</strong><span>estimated read</span></div>
+                <div><strong>{summary.readySections} / {summary.sections}</strong><span>marked ready</span></div>
+              </div>
+              <div className="books-export-includes">
+                {showCover && <span className="ready"><Layers size={13} />{summary.cover === "layered" && selected.coverPanel === "wrap" ? "Full cover spread" : "Front cover"}</span>}
+                <span className={summary.contentsEntries ? "ready" : "muted"}>
+                  <ListTree size={13} />
+                  {summary.contentsEntries ? summary.contentsEntries + (summary.contentsEntries === 1 ? " contents entry" : " contents entries") : format === "epub" ? "Reader start link" : "Generated contents omitted"}
+                </span>
+                {summary.images > 0 && <span className="ready"><Images size={13} />{summary.images} manuscript {summary.images === 1 ? "image" : "images"}{summary.imageCredits ? " · credits included" : ""}</span>}
+                {summary.imageReferences > 0 && <span className="ready"><Images size={13} />{summary.imageReferences} image {summary.imageReferences === 1 ? "reference" : "references"}</span>}
+                {summary.imageDescriptions > 0 && <span><Info size={13} />{summary.imageDescriptions} {summary.imageDescriptions === 1 ? "image described" : "images described"} in text</span>}
+              </div>
+              <p className="books-export-format-note">{selected.note}</p>
+            </section>
+            <section className={"books-export-preflight " + (attentionCount ? "needs-attention" : "ready")} aria-labelledby="books-export-preflight-heading">
+              <div className="books-export-preflight-heading">
+                <div>
+                  <span className="books-eyebrow">Package check</span>
+                  <h2 id="books-export-preflight-heading">{attentionCount ? attentionCount + " " + (attentionCount === 1 ? "item needs attention" : "items need attention") : groups.suggestions.length ? "Finishing touches" : "Ready for readers"}</h2>
+                </div>
+                <span className="books-export-preflight-count">{preflight.length || <Check size={14} />}</span>
+              </div>
+              {preflight.length > 0 ? <div className="books-export-preflight-list">
+                {groups.attention.length > 0 && <div className="books-export-preflight-group"><span>Needs attention</span><small>{groups.attention.length}</small></div>}
+                {groups.attention.map(renderCheck)}
+                {groups.suggestions.length > 0 && <div className="books-export-preflight-group"><span>Finishing touches</span><small>{groups.suggestions.length}</small></div>}
+                {groups.suggestions.map(renderCheck)}
+              </div> : <p>Core metadata, sections and reader navigation look complete.</p>}
+              <button type="button" className="books-export-plan-link" onClick={() => onNavigate("plan")}>
+                <ClipboardList size={14} /><span>{summary.readySections} / {summary.sections} sections marked ready</span><ChevronRight size={13} />
+              </button>
+            </section>
+          </div>
+          <section className="books-export-preview" aria-label="Output preview">
+            <div className="books-preview-toolbar">
+              <span>{sourcePreview === null ? "Output preview" : selected.label + " preview"}</span>
+              {sourcePreview === null && <div className="books-preview-mode" role="tablist" aria-label="Preview page" onKeyDown={handleTabListKeyDown}>
+                {modes.map((item) => <button type="button" key={item} role="tab" className={mode === item ? "active" : ""} aria-selected={mode === item} tabIndex={mode === item ? 0 : -1} onClick={() => setPreviewMode(item)}>{PREVIEW_LABELS[item]}</button>)}
+              </div>}
+            </div>
+            {sourcePreview !== null ? (
+              <div className="books-source-preview">
+                <pre>{sourcePreview.slice(0, SOURCE_PREVIEW_LIMIT)}</pre>
+                {(format === "markdown" || sourcePreview.length > SOURCE_PREVIEW_LIMIT) && <p>
+                  {sourcePreview.length > SOURCE_PREVIEW_LIMIT ? "Showing the first 16,000 preview characters. " : ""}
+                  {format === "markdown" ? "The saved file contains the full image data." : "The saved file contains the full text."}
+                </p>}
+              </div>
+            ) : mode === "cover" ? (
+              <div className={"books-preview-cover-art " + (selected.coverPanel === "wrap" && summary.cover === "layered" ? "spread" : "front")}>
+                <CoverArtwork book={edition} layout={layout} panel={selected.coverPanel ?? "front"} />
+              </div>
+            ) : mode === "contents" ? (
+              <ContentsPreview book={edition} entries={toc} epub={format === "epub"} />
+            ) : (
+              <>
+                {selectedChapterId !== null && <div className="books-preview-section-bar">
+                  <label className="books-preview-section-picker">
+                    <span>Section</span>
+                    <select aria-label="Preview section" value={selectedChapterId} onChange={(event) => setPreviewChapterId(Number(event.target.value))}>
+                      {orderedChapters.map((chapter, index) => <option key={chapter.id} value={chapter.id}>{chapterTitleHeading(chapter, index, orderedChapters)}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" onClick={() => onOpenChapter(selectedChapterId)}>Edit section <ChevronRight size={13} /></button>
+                </div>}
+                <InteriorPreview book={edition} chapters={orderedChapters} chapterId={selectedChapterId} format={format} />
+              </>
+            )}
+          </section>
+        </div>
+      </div>
+      <PrintBook book={printEdition} chapters={chapters} toc={printToc} coverImage={format === "print" && printCover?.book === book ? printCover.source : undefined} />
+    </>
+  );
+}
+
+export const PrintBook = memo(function PrintBook({ book, chapters, toc, coverImage }: { book: Book; chapters: Chapter[]; toc: TocEntry[]; coverImage?: string }) {
   const layout = layoutForBook(book);
   const orderedChapters = orderBookChapters(chapters);
   const chapterLayouts = new Map(orderedChapters.map((chapter) => [chapter.id, layoutForChapter(book, chapter)]));
   const titlePage = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   const titleLayout = titlePage ? chapterLayouts.get(titlePage.id) ?? layout : layout;
   const front = frontMatterSections(book, chapters);
-  const contentChapters = orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind));
+  const contentChapters = orderedChapters.filter((chapter) => chapter.id !== titlePage?.id);
   const back = backMatterSections(book, chapters);
   const namedPageCss = orderedChapters.map((chapter) => {
     const page = chapterLayouts.get(chapter.id) ?? layout;
@@ -125,12 +369,15 @@ export function PrintBook({ book, chapters, toc }: { book: Book; chapters: Chapt
   const coverPageSize = hasCoverDocument(layout.cover) ? `${coverMetricsForPrint.fullWidth}in ${coverMetricsForPrint.fullHeight}in` : trimCssSize(book.trim_size);
   const printCss = `@page{size:${trimCssSize(book.trim_size)};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;}@page book-cover{size:${coverPageSize};margin:0;}.book-print-cover{page:book-cover;}.book-print-cover .cover-doc{box-shadow:none!important;}@media print{.book-print-cover .cover-doc{width:${coverMetricsForPrint.fullWidth}in!important;height:${coverMetricsForPrint.fullHeight}in!important;}}${namedPageCss}${paragraphStylesCss(layout, ".book-print-content")}`;
   const pageStyle = (page: typeof layout, background = page.pageColor) => ({ ...manuscriptStyle({ ...book, layout_json: serializeBookLayout(page) }), backgroundColor: background });
-  return (
+  return createPortal(
     <div className="book-print-root" style={manuscriptStyle(book)}>
       <style dangerouslySetInnerHTML={{ __html: printCss }} />
       <div className="book-print-content">
-        <section className={`book-print-cover ${layout.cover.enabled ? "cover-included" : "cover-disabled"}`}><CoverArtwork book={book} layout={layout} fit={false} /></section>
-        <section className={titlePage ? `book-page-${titlePage.id}` : undefined} style={pageStyle(titleLayout)}>
+        <section className={`book-print-cover ${layout.cover.enabled ? "cover-included" : "cover-disabled"}`}>
+          {coverImage ? <img className="book-print-cover-image" src={coverImage} alt={`${book.title || "Manuscript"} cover spread`} style={{ width: `${coverMetricsForPrint.fullWidth}in` }} />
+            : <CoverArtwork book={book} layout={layout} fit={false} />}
+        </section>
+        <section id={titlePage ? sectionAnchorId(titlePage.id) : undefined} className={"print-title-page " + (titlePage ? `book-page-${titlePage.id}` : "")} style={pageStyle(titleLayout)}>
           <BooksPageChrome book={book} layout={titleLayout} keyName={titlePage ? layoutSectionKey("opening", titlePage.id) : layoutSectionKey("opening")} section={titlePage?.title || "Title page"} band="opening" ordinal={0} />
           <h1 className="book-title">{titlePage?.title || book.title}</h1>
           {!titlePage && book.subtitle && <p className="print-subtitle">{book.subtitle}</p>}
@@ -149,6 +396,7 @@ export function PrintBook({ book, chapters, toc }: { book: Book; chapters: Chapt
         })}
         {back.map((section, index) => <section key={section.title} className="print-matter print-page-break" style={pageStyle(layout)}><BooksPageChrome book={book} layout={layout} keyName="closing" section={section.title} band="closing" ordinal={index} /><h2 className="book-heading-1">{section.title}</h2><div dangerouslySetInnerHTML={{ __html: markdownToHtml(section.content, matterAnchorId(section.key), layout.typography, layout.paragraphStyles) }} /></section>)}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
-}
+});

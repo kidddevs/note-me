@@ -4476,7 +4476,7 @@ export function coverExportFilename(book: Book, target: ExportTarget, extension:
   return `${title}-cover-${label}.${extension}`;
 }
 
-function downloadBlob(blob: Blob, filename: string) {
+export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

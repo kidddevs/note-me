@@ -1,9 +1,47 @@
-import { buildBookToc } from "./bookToc";
-import { hasManuscriptContent } from "./bookPublishing";
+import { backMatterSections, buildBookToc, frontMatterSections } from "./bookToc";
+import { layoutForBook, serializeBookLayout } from "./bookLayout";
+import { downloadBlob, hasCoverDocument } from "./bookCoverDoc";
+import { bookExportPayload, EXPORT_OPTIONS, filenameFor, hasManuscriptContent, isDocxImageSource, parseImageLine, wordCount, type BookExportFormat } from "./bookPublishing";
+import { parseChapterWorkflow } from "./bookWorkflow";
 import type { Book, Chapter } from "./types";
 
 export type BookExportCheckSeverity = "error" | "warning" | "info";
 export type BookExportCheckTarget = "settings" | "outline" | "manuscript";
+
+export type BookOutputFormat = BookExportFormat | "print";
+
+interface BookOutputOption extends Omit<(typeof EXPORT_OPTIONS)[number], "value"> {
+  value: BookOutputFormat;
+  coverPanel: "front" | "wrap" | null;
+}
+
+export const BOOK_OUTPUT_OPTIONS: BookOutputOption[] = [
+  ...EXPORT_OPTIONS.map((option): BookOutputOption => ({
+    ...option,
+    coverPanel: option.value === "epub" || option.value === "html" ? "front" : null,
+  })),
+  { value: "print", label: "Print / PDF", description: "Paginated proof with an optional cover", extension: ".pdf", mime: "application/pdf", coverPanel: "wrap", note: "Choose Save as PDF in the print dialog. On macOS, the selected paper size sets the dimensions of every page." },
+];
+
+export interface BookExportChoices {
+  includeCover?: boolean;
+  includeContents?: boolean;
+}
+
+/** Resolve one edition without writing the manuscript's publication settings. */
+export function bookForExport(book: Book, format: BookOutputFormat, choices: BookExportChoices = {}): Book {
+  const layout = layoutForBook(book);
+  const supportsCover = Boolean(BOOK_OUTPUT_OPTIONS.find((option) => option.value === format)?.coverPanel);
+  const coverAvailable = layout.cover.enabled || hasCoverDocument(layout.cover);
+  const coverEnabled = supportsCover && coverAvailable && (choices.includeCover ?? layout.cover.enabled);
+  const tocEnabled = choices.includeContents ?? book.toc_enabled;
+  if (coverEnabled === layout.cover.enabled && tocEnabled === book.toc_enabled) return book;
+  return {
+    ...book,
+    toc_enabled: tocEnabled,
+    layout_json: coverEnabled === layout.cover.enabled ? book.layout_json : serializeBookLayout({ ...layout, cover: { ...layout.cover, enabled: coverEnabled } }),
+  };
+}
 
 export interface BookExportCheck {
   id: string;
@@ -24,7 +62,7 @@ export function bookExportChecks(book: Book, chapters: Chapter[]): BookExportChe
     checks.push({ id: "title", label: "Name the manuscript", detail: "Replace the working title before sharing a reader copy.", severity: "warning", target: "settings" });
   }
   if (!book.author.trim()) {
-    checks.push({ id: "author", label: "Add the author name", detail: "EPUB and Word metadata currently use an anonymous fallback.", severity: "warning", target: "settings" });
+    checks.push({ id: "author", label: "Add the author name", detail: "Set the author credited on the reader copy.", severity: "warning", target: "settings" });
   }
   if (!book.description.trim()) {
     checks.push({ id: "description", label: "Add a book description", detail: "A short description improves ebook metadata and the exported cover page.", severity: "info", target: "settings" });
@@ -61,4 +99,87 @@ export function bookExportChecks(book: Book, chapters: Chapter[]): BookExportChe
   }
 
   return checks;
+}
+
+export type BookPackageCover = "layered" | "template" | "off";
+
+export interface BookPackageSummary {
+  sections: number;
+  words: number;
+  readingMinutes: number;
+  readySections: number;
+  cover: BookPackageCover;
+  contentsEntries: number;
+  images: number;
+  imageReferences: number;
+  imageDescriptions: number;
+  imageCredits: boolean;
+}
+
+/** Describe the selected edition using the same artwork rules as its builder. */
+export function bookPackageSummary(book: Book, chapters: Chapter[], format: BookOutputFormat = "html"): BookPackageSummary {
+  const layout = layoutForBook(book);
+  const words = chapters.reduce((total, chapter) => total + wordCount(chapter.content), 0);
+  const sections = [...chapters, ...frontMatterSections(book, chapters), ...backMatterSections(book, chapters)];
+  const artwork = sections.flatMap((section) => section.content.split(/\r?\n/).map(parseImageLine).filter((image) => image !== null));
+  const placedArtwork = format === "docx" ? artwork.filter((image) => isDocxImageSource(image.source))
+    : format === "txt" || format === "markdown" ? [] : artwork;
+  const supportsCover = Boolean(BOOK_OUTPUT_OPTIONS.find((option) => option.value === format)?.coverPanel);
+  return {
+    sections: chapters.length,
+    words,
+    readingMinutes: words > 0 ? Math.max(1, Math.round(words / 250)) : 0,
+    readySections: chapters.filter((chapter) => parseChapterWorkflow(chapter.workflow_json).status === "ready").length,
+    cover: !supportsCover || !layout.cover.enabled ? "off" : hasCoverDocument(layout.cover) ? "layered" : "template",
+    contentsEntries: buildBookToc(book, chapters).length,
+    images: placedArtwork.length,
+    imageReferences: format === "markdown" ? artwork.length : 0,
+    imageDescriptions: format === "txt" || format === "docx" ? artwork.length - placedArtwork.length : 0,
+    imageCredits: (format === "txt" ? [] : artwork).some((image) => Boolean(image.presentation.credit)),
+  };
+}
+
+export interface BookExportCheckGroups {
+  attention: BookExportCheck[];
+  suggestions: BookExportCheck[];
+}
+
+/** Errors and warnings stay together above the optional finishing suggestions. */
+export function groupBookExportChecks(checks: BookExportCheck[]): BookExportCheckGroups {
+  return {
+    attention: checks.filter((check) => check.severity !== "info"),
+    suggestions: checks.filter((check) => check.severity === "info"),
+  };
+}
+
+export interface BookExportReceipt {
+  filename: string;
+  path: string | null;
+  bytes: number;
+}
+
+/** Save the resolved edition using the system dialog or the browser downloader. */
+export async function saveBookExport(book: Book, chapters: Chapter[], format: BookExportFormat): Promise<BookExportReceipt | null> {
+  const option = EXPORT_OPTIONS.find((item) => item.value === format);
+  if (!option) throw new Error(`Unsupported book export format: ${format}`);
+  const filename = filenameFor(book, option.extension);
+  if (!("__TAURI_INTERNALS__" in window)) {
+    const payload = await bookExportPayload(book, chapters, format);
+    const blob = new Blob([typeof payload === "string" ? payload : new Uint8Array(payload)], { type: option.mime });
+    downloadBlob(blob, filename);
+    return { filename, path: null, bytes: blob.size };
+  }
+
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ defaultPath: filename, filters: [{ name: option.label, extensions: [option.extension.slice(1)] }] });
+  if (!path) return null;
+  const payload = await bookExportPayload(book, chapters, format);
+  const { writeFile, writeTextFile } = await import("@tauri-apps/plugin-fs");
+  if (typeof payload === "string") await writeTextFile(path, payload);
+  else await writeFile(path, payload);
+  return {
+    filename: path.split(/[\\/]/).pop() || filename,
+    path,
+    bytes: typeof payload === "string" ? new TextEncoder().encode(payload).length : payload.byteLength,
+  };
 }

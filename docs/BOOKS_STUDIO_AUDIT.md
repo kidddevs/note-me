@@ -49,6 +49,25 @@ navigation use the same saved metadata. A dedicated native transaction saves pla
 without writing manuscript text or layout. Chapter-save rollbacks preserve
 independent metadata updates. See [Studio planning](STUDIO_PLANNING.md).
 
+## Library & Export Studio — November 9, 2026
+
+Search and filter the shelf by saved manuscript metadata and sort by recency,
+publishing stage, title, or creation date. Cards fit the full spread when a
+layered cover is saved and show the stage, trim, and word goal. Card actions open
+writing, cover design, Export Studio, or book settings.
+
+Export Studio previews the selected format and lets writers choose cover and
+contents for the current export. The package summary shows readiness, contents,
+and artwork handling. Preflight links to the manuscript, Outline, and settings.
+File exports report the saved file and offer Show file. The system print proof
+keeps the spread on its own sheet and the interior text selectable. See
+[Studio publishing](STUDIO_PUBLISHING.md).
+
+### Follow-ons for these surfaces
+
+- Saved library views, series grouping and cross-book manuscript search.
+- Export history and batch export.
+
 ## What is already strong
 
 - **Content model**: books and sections are first-class SQLite records, not serialized notes. Section kinds carry semantic meaning and reorder within front/story/back bands.
@@ -92,7 +111,16 @@ independent metadata updates. See [Studio planning](STUDIO_PLANNING.md).
 
 ## Recommended next slices
 
-1. **Spread proof + flat plan** — facing-page view, gutter preview, and an issue outline with word budgets.
-2. **Print packaging** — bleed/crop marks, PDF preflight, and parity warnings between canvas and print.
-3. **Image craft** — focal-point crop, caption placement, credits, and reusable asset library.
-4. **More page masters** — photo essay, recipe, advertisement, and opening-spread systems.
+1. **Spread proof + flat plan** — the P0 production gap. Add a facing-page proof
+   with gutter treatment, a page-map/flat-plan view that reads section order and
+   readiness, and one predictable page-break model shared by canvas, proof, HTML
+   and print.
+2. **Print packaging** — bleed and crop/registration marks, PDF preflight, embedded
+   font checks, and page-count parity between the canvas and print output.
+3. **More page masters** — photo essay, recipe, advertisement, and opening-spread
+   systems on top of the current feature, department, contents, cover, full-bleed
+   and colophon masters.
+4. **Editorial review** — comments, tracked changes, and compare-two-checkpoints
+   views for collaborator handoff.
+5. **Library & export follow-ons** — saved shelf views, export history, and batch
+   export.

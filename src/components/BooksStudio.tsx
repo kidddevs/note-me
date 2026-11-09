@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   BookOpen,
   Camera,
+  Check,
   ClipboardList,
   ChefHat,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
   MoreHorizontal,
   Newspaper,
   NotebookPen,
+  Palette,
   Plus,
   Search,
   Settings2,
@@ -28,16 +30,16 @@ import {
   orderBookChapters,
 } from "../lib/bookToc";
 import {
-  EXPORT_OPTIONS,
+  STATUS_OPTIONS,
   bookChromeValues,
-  bookExportPayload,
   chapterKindLabel,
   defaultChapterTitle,
-  filenameFor,
   formatUpdated,
   fontCss,
   TRIM_SIZES,
 } from "../lib/bookPublishing";
+import { coverMetrics, coverPanelRect, hasCoverDocument } from "../lib/bookCoverDoc";
+import { filterLibraryBooks, libraryStatusCounts, libraryStatusLabel, LIBRARY_SORT_OPTIONS, type LibrarySort, type LibraryStatusFilter } from "../lib/bookLibrary";
 export * from "../lib/bookPublishing";
 import type { BookExportFormat, PageBand } from "../lib/bookPublishing";
 import { useBooks } from "../store/books";
@@ -47,7 +49,7 @@ import { notify } from "../store/toast";
 import { createNewBook } from "../lib/actions";
 import { BOOK_TEMPLATES, bookTemplate, type BookTemplate, type BookTemplateIcon, type BookTemplateId } from "../lib/bookTemplates";
 import { ManuscriptScreen } from "./BooksStudioEditor";
-import { CoverScreen } from "./BooksCoverStudio";
+import { CoverArtwork, CoverScreen } from "./BooksCoverStudio";
 import { OutlineScreen, SectionsRail } from "./BooksStudioOutline";
 import { ExportScreen, PrintBook } from "./BooksStudioExport";
 import { PlanScreen } from "./BooksStudioPlan";
@@ -180,23 +182,6 @@ export function handleMenuKeyDown(event: React.KeyboardEvent<HTMLElement>, onClo
       : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
   event.preventDefault();
   items[next].focus();
-}
-
-export async function exportBook(book: Book, chapters: Chapter[], format: ExportFormat) {
-  const [{ save }, { writeFile, writeTextFile }] = await Promise.all([
-    import("@tauri-apps/plugin-dialog"),
-    import("@tauri-apps/plugin-fs"),
-  ]);
-  const option = EXPORT_OPTIONS.find((item) => item.value === format)!;
-  const path = await save({
-    defaultPath: filenameFor(book, option.extension),
-    filters: [{ name: option.label, extensions: [option.extension.slice(1)] }],
-  });
-  if (!path) return;
-  const payload = await bookExportPayload(book, chapters, format);
-  if (typeof payload === "string") await writeTextFile(path, payload);
-  else await writeFile(path, payload);
-  notify("success", "Book exported", path);
 }
 
 function hexChannels(value: string) {
@@ -461,9 +446,31 @@ function NewManuscriptDialog({ open, creating, onClose, onCreate }: { open: bool
   );
 }
 
-function LibraryScreen({ books, selectedBookId, creating, deletingBookId, onNew, onOpen, onDelete }: { books: Book[]; selectedBookId: number | null; creating: boolean; deletingBookId: number | null; onNew: () => void; onOpen: (id: number) => void; onDelete: (book: Book) => void }) {
+function LibraryCover({ book }: { book: Book }) {
+  const layout = useMemo(() => layoutForBook(book), [book]);
+  const panel = hasCoverDocument(layout.cover) ? "wrap" : "front";
+  const hasArtwork = panel === "wrap" || layout.cover.enabled;
+  const rect = coverPanelRect(coverMetrics(book.trim_size, layout.cover), panel);
+  const style = hasArtwork
+    ? { "--card-cover-ratio": rect.width / rect.height } as CSSProperties
+    : { background: book.cover_color || undefined };
+  return (
+    <div className={`book-card-cover ${hasArtwork ? "designed" : "fallback"}`} style={style} aria-hidden="true">
+      {hasArtwork ? <CoverArtwork book={book} layout={layout} panel={panel} /> : <><BookOpen size={25} /><span>{book.genre || "MANUSCRIPT"}</span></>}
+    </div>
+  );
+}
+
+export function LibraryScreen({ books, selectedBookId, creating, deletingBookId, onNew, onOpen, onOpenScreen, onDelete }: { books: Book[]; selectedBookId: number | null; creating: boolean; deletingBookId: number | null; onNew: () => void; onOpen: (id: number) => void; onOpenScreen: (id: number, screen: StudioScreen) => void; onDelete: (book: Book) => void }) {
   const [menuBookId, setMenuBookId] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<LibraryStatusFilter>("all");
+  const [sort, setSort] = useState<LibrarySort>("recent");
   const menuRef = useRef<HTMLDivElement>(null);
+  const filtered = useMemo(() => filterLibraryBooks(books, { query, status, sort }), [books, query, status, sort]);
+  const counts = useMemo(() => libraryStatusCounts(books), [books]);
+  const hasFilters = Boolean(query.trim()) || status !== "all";
+  const clearFilters = () => { setQuery(""); setStatus("all"); setSort("recent"); };
 
   const closeMenu = (restoreFocus = false) => {
     const closingBookId = menuBookId;
@@ -502,8 +509,20 @@ function LibraryScreen({ books, selectedBookId, creating, deletingBookId, onNew,
       </div>
       <div className="books-section-heading">
         <div><span className="books-eyebrow">Your shelf</span><h2>Manuscripts</h2></div>
-        <span className="books-count">{books.length} {books.length === 1 ? "book" : "books"}</span>
+        <span className="books-count">{counts.all} {counts.all === 1 ? "book" : "books"}</span>
       </div>
+      {books.length > 0 && <div className="books-library-toolbar">
+        <label className="books-plan-search books-library-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search manuscripts" placeholder="Search title, author, genre or stage" />{query && <button type="button" onClick={() => setQuery("")} aria-label="Clear manuscript search"><X size={13} /></button>}</label>
+        <select aria-label="Filter manuscripts by stage" value={status} onChange={(event) => setStatus(event.target.value as LibraryStatusFilter)}>
+          <option value="all">All stages · {counts.all}</option>
+          {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label} · {counts[option.value as Exclude<LibraryStatusFilter, "all">]}</option>)}
+        </select>
+        <select aria-label="Sort manuscripts" value={sort} onChange={(event) => setSort(event.target.value as LibrarySort)}>
+          {LIBRARY_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        {hasFilters && <button type="button" className="books-plan-reset" onClick={clearFilters}><X size={14} /> Clear filters</button>}
+        <span className="books-library-results" aria-live="polite">{filtered.length} of {books.length}</span>
+      </div>}
       {books.length === 0 ? (
         <button className="books-empty-card" onClick={onNew}>
           <div className="books-empty-icon"><BookOpen size={24} /></div>
@@ -511,26 +530,43 @@ function LibraryScreen({ books, selectedBookId, creating, deletingBookId, onNew,
           <span>Set the voice, build the outline, and write without distraction.</span>
           <span className="books-empty-link">Create a book <ChevronRight size={13} /></span>
         </button>
+      ) : filtered.length === 0 ? (
+        <div className="books-library-empty">
+          <Search size={26} />
+          <h3>No manuscripts match</h3>
+          <p>Try another title, author, genre or stage.</p>
+          <button type="button" className="books-primary-action" onClick={clearFilters}>Clear filters</button>
+        </div>
       ) : (
         <div className="books-library-grid">
-          {books.map((book) => (
-            <article key={book.id} className={`book-library-card ${book.id === selectedBookId ? "active" : ""}`}>
-              <button className="book-library-card-main" onClick={() => { setMenuBookId(null); onOpen(book.id); }}>
-                <div className="book-card-topline">{book.status.replace("revising", "in revision")}</div>
-                <div className="book-card-cover" style={{ background: book.cover_color || undefined }}><BookOpen size={25} /><span>{book.genre || "MANUSCRIPT"}</span></div>
-                <h3>{book.title || "Untitled manuscript"}</h3>
-                <p>{book.author || "Author not set"}</p>
-              </button>
-              <div className="book-card-footer">
-                <span>Edited {formatUpdated(book.updated_at)}</span>
-                <button data-book-menu-trigger={book.id} onClick={() => setMenuBookId((current) => current === book.id ? null : book.id)} aria-label={`Actions for ${book.title || "untitled manuscript"}`} aria-expanded={menuBookId === book.id} aria-haspopup="menu"><MoreHorizontal size={15} /></button>
-              </div>
-              {menuBookId === book.id && <div ref={menuRef} className="book-library-menu" role="menu" aria-label={`Actions for ${book.title || "untitled manuscript"}`} onKeyDown={(event) => handleMenuKeyDown(event, () => closeMenu(true))}>
-                <button role="menuitem" onClick={() => { setMenuBookId(null); onOpen(book.id); }}><BookOpen size={13} /> Open manuscript</button>
-                <button role="menuitem" className="danger" disabled={deletingBookId === book.id} onClick={() => { setMenuBookId(null); onDelete(book); }}><Trash2 size={13} /> {deletingBookId === book.id ? "Deleting…" : "Delete manuscript"}</button>
-              </div>}
-            </article>
-          ))}
+          {filtered.map((book) => {
+            const trimLabel = TRIM_SIZES.find((size) => size.value === book.trim_size)?.label ?? book.trim_size;
+            return (
+              <article key={book.id} className={`book-library-card ${book.id === selectedBookId ? "active" : ""}`}>
+                <button className="book-library-card-main" onClick={() => { setMenuBookId(null); onOpen(book.id); }}>
+                  <div className="book-card-topline">
+                    <span className={`book-status-pill ${book.status}`}>{libraryStatusLabel(book.status)}</span>
+                    {book.id === selectedBookId && <span className="book-card-open"><Check size={11} /> Open</span>}
+                  </div>
+                  <LibraryCover book={book} />
+                  <h3>{book.title || "Untitled manuscript"}</h3>
+                  <p>{book.author || "Author not set"}</p>
+                  <div className="book-card-meta"><span>{book.genre || "Manuscript"}</span><span>{trimLabel}</span>{book.word_goal > 0 && <span>{book.word_goal.toLocaleString()} word goal</span>}</div>
+                </button>
+                <div className="book-card-footer">
+                  <span>Edited {formatUpdated(book.updated_at)}</span>
+                  <button data-book-menu-trigger={book.id} onClick={() => setMenuBookId((current) => current === book.id ? null : book.id)} aria-label={`Actions for ${book.title || "untitled manuscript"}`} aria-expanded={menuBookId === book.id} aria-haspopup="menu"><MoreHorizontal size={15} /></button>
+                </div>
+                {menuBookId === book.id && <div ref={menuRef} className="book-library-menu" role="menu" aria-label={`Actions for ${book.title || "untitled manuscript"}`} onKeyDown={(event) => handleMenuKeyDown(event, () => closeMenu(true))}>
+                  <button role="menuitem" onClick={() => { setMenuBookId(null); onOpenScreen(book.id, "manuscript"); }}><BookOpen size={13} /> Open manuscript</button>
+                  <button role="menuitem" onClick={() => { setMenuBookId(null); onOpenScreen(book.id, "cover"); }}><Palette size={13} /> Cover design</button>
+                  <button role="menuitem" onClick={() => { setMenuBookId(null); onOpenScreen(book.id, "export"); }}><Download size={13} /> Export studio</button>
+                  <button role="menuitem" onClick={() => { setMenuBookId(null); onOpenScreen(book.id, "settings"); }}><Settings2 size={13} /> Book settings</button>
+                  <button role="menuitem" className="danger" disabled={deletingBookId === book.id} onClick={() => { setMenuBookId(null); onDelete(book); }}><Trash2 size={13} /> {deletingBookId === book.id ? "Deleting…" : "Delete manuscript"}</button>
+                </div>}
+              </article>
+            );
+          })}
         </div>
       )}
     </div>
@@ -658,6 +694,22 @@ export function BooksStudio() {
       notify("error", "Manuscript could not be opened", String(error));
     }
   };
+  const openBookScreen = async (id: number, nextScreen: StudioScreen) => {
+    if (nextScreen === "library") {
+      useBookTabs.getState().openLibrary();
+      return;
+    }
+    try {
+      await selectBook(id);
+      const book = books.find((item) => item.id === id);
+      const state = useBookTabs.getState();
+      const tab = state.openBook(id, book?.title || "Untitled manuscript");
+      state.setScreen(tab.id, nextScreen);
+      setScreen(nextScreen);
+    } catch (error) {
+      notify("error", "Manuscript could not be opened", String(error));
+    }
+  };
   const newChapter = async (kind: ChapterKind = "chapter") => {
     if (selectedBookId !== null) {
       try {
@@ -744,9 +796,9 @@ export function BooksStudio() {
        </aside>
        <main className="books-main">
          {screen !== "manuscript" && screen !== "cover" && <div className="books-main-header"><div className="books-breadcrumb"><button onClick={() => switchScreen("library")}>Books Studio</button>{selectedBook && <><ChevronRight size={13} /><strong>{selectedBook.title || "Untitled manuscript"}</strong></>}</div>{selectedBook && <div className="books-header-actions"><span className={`book-status-pill ${selectedBook.status}`}>{selectedBook.status.replace("revising", "in revision")}</span><button className="books-header-icon" onClick={() => switchScreen("settings")} title="Book settings" aria-label="Book settings"><Settings2 size={15} /></button></div>}</div>}
-            {!selectedBook && screen !== "library" ? <div className="books-no-selection"><ArrowLeft size={20} /><h2>Choose a manuscript first.</h2><button className="books-primary-action" onClick={() => switchScreen("library")}>Back to library</button></div> : screen === "library" ? <LibraryScreen books={books} selectedBookId={selectedBookId} creating={creatingBook} deletingBookId={deletingBookId} onNew={() => void newBook()} onOpen={(id) => void openBook(id)} onDelete={(book) => void removeBook(book)} /> : selectedBook && screen === "manuscript" ? <ManuscriptScreen book={selectedBook} chapters={orderedChapters} activeChapter={activeChapter} focusMode={editorFocusMode} onFocusModeChange={setEditorFocusMode} onOpenOutline={() => switchScreen("outline")} onOpenSettings={() => switchScreen("settings")} onNewChapter={() => void newChapter()} onNavigateSection={navigateSection} /> : selectedBook && screen === "cover" ? <CoverScreen book={selectedBook} chapters={orderedChapters} onOpenChapter={openChapter} onNavigate={switchScreen} /> : selectedBook && screen === "outline" ? <OutlineScreen book={selectedBook} chapters={chapters} onNewChapter={(kind) => void newChapter(kind)} onOpenMatter={openMatter} onOpenChapter={openChapter} /> : selectedBook && screen === "plan" ? <PlanScreen book={selectedBook} chapters={chapters} activeChapterId={activeChapterId} onNewChapter={() => void newChapter()} onOpenChapter={openChapter} /> : selectedBook && screen === "settings" ? <SettingsScreen book={selectedBook} chapters={chapters} focus={settingsFocus} /> : selectedBook ? <ExportScreen book={selectedBook} chapters={chapters} onNavigate={switchScreen} onOpenChapter={openChapter} /> : null}
+            {!selectedBook && screen !== "library" ? <div className="books-no-selection"><ArrowLeft size={20} /><h2>Choose a manuscript first.</h2><button className="books-primary-action" onClick={() => switchScreen("library")}>Back to library</button></div> : screen === "library" ? <LibraryScreen books={books} selectedBookId={selectedBookId} creating={creatingBook} deletingBookId={deletingBookId} onNew={() => void newBook()} onOpen={(id) => void openBook(id)} onOpenScreen={(id, next) => void openBookScreen(id, next)} onDelete={(book) => void removeBook(book)} /> : selectedBook && screen === "manuscript" ? <ManuscriptScreen book={selectedBook} chapters={orderedChapters} activeChapter={activeChapter} focusMode={editorFocusMode} onFocusModeChange={setEditorFocusMode} onOpenOutline={() => switchScreen("outline")} onOpenSettings={() => switchScreen("settings")} onNewChapter={() => void newChapter()} onNavigateSection={navigateSection} /> : selectedBook && screen === "cover" ? <CoverScreen book={selectedBook} chapters={orderedChapters} onOpenChapter={openChapter} onNavigate={switchScreen} /> : selectedBook && screen === "outline" ? <OutlineScreen book={selectedBook} chapters={chapters} onNewChapter={(kind) => void newChapter(kind)} onOpenMatter={openMatter} onOpenChapter={openChapter} /> : selectedBook && screen === "plan" ? <PlanScreen book={selectedBook} chapters={chapters} activeChapterId={activeChapterId} onNewChapter={() => void newChapter()} onOpenChapter={openChapter} /> : selectedBook && screen === "settings" ? <SettingsScreen book={selectedBook} chapters={chapters} focus={settingsFocus} /> : selectedBook ? <ExportScreen key={selectedBook.id} book={selectedBook} chapters={chapters} onNavigate={switchScreen} onOpenChapter={openChapter} /> : null}
           </main>
-          {selectedBook && <PrintBook book={selectedBook} chapters={chapters} toc={selectedToc} />}
+          {selectedBook && screen !== "export" && <PrintBook book={selectedBook} chapters={chapters} toc={selectedToc} />}
            <BooksCommandPalette open={commandOpen} bookTitle={selectedBook ? (selectedBook.title || "Untitled manuscript") : undefined} chapters={orderedChapters} onClose={() => setCommandOpen(false)} onNavigate={switchScreen} onNewChapter={(kind) => void newChapter(kind)} onOpenChapter={openChapter} />
            <NewManuscriptDialog open={newBookOpen} creating={creatingBook} onClose={() => setNewBookOpen(false)} onCreate={(template, title) => void createBook(template, title)} />
            {confirmation.dialog}

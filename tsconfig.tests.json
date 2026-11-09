@@ -32,6 +32,7 @@
     "src/lib/bookCover.ts",
     "src/lib/bookPublishing.ts",
     "src/lib/bookExport.ts",
+    "src/lib/bookLibrary.ts",
     "src/lib/bookSession.ts",
     "src/lib/bookWorkflow.ts",
     "src/lib/bookWorkflowWrites.ts",

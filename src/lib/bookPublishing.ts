@@ -62,12 +62,12 @@ export const STATUS_OPTIONS = [
 
 export { CHAPTER_KIND_OPTIONS, chapterGroup, chapterKindLabel, chapterIsOpeningPage } from "./chapterKinds";
 
-export const EXPORT_OPTIONS: { value: ExportFormat; label: string; description: string; extension: string }[] = [
-  { value: "epub", label: "EPUB 3", description: "Reflowable ebook for Kindle apps, Apple Books, Kobo, and readers", extension: ".epub" },
-  { value: "docx", label: "Word document", description: "Editable manuscript for editors, agents, and collaborators", extension: ".docx" },
-  { value: "html", label: "Styled HTML", description: "A polished web-ready soft copy with print dimensions", extension: ".html" },
-  { value: "markdown", label: "Markdown", description: "Portable source with front matter and chapter structure", extension: ".md" },
-  { value: "txt", label: "Plain text", description: "Clean submission copy without styling", extension: ".txt" },
+export const EXPORT_OPTIONS: { value: ExportFormat; label: string; description: string; extension: string; mime: string; note: string }[] = [
+  { value: "epub", label: "EPUB 3", description: "Reflowable ebook with reader navigation", extension: ".epub", mime: "application/epub+zip", note: "Readers can adjust the text to fit their device. The front cover and manuscript styling travel with the ebook." },
+  { value: "docx", label: "Word document", description: "Editable manuscript for collaborators", extension: ".docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", note: "Word uses the book's page settings and keeps editable text, headings, tables and compatible artwork." },
+  { value: "html", label: "Styled HTML", description: "Web edition with linked contents", extension: ".html", mime: "text/html;charset=utf-8", note: "HTML carries the front cover, section styles and running furniture into a single file." },
+  { value: "markdown", label: "Markdown", description: "Portable source with front matter", extension: ".md", mime: "text/markdown;charset=utf-8", note: "Markdown keeps the source, section headings, image references and portable layout attributes." },
+  { value: "txt", label: "Plain text", description: "Text for submissions and review", extension: ".txt", mime: "text/plain;charset=utf-8", note: "Plain text keeps the writing, section order and text descriptions of artwork." },
 ];
 
 export const PAGE_NUMBER_STYLE_OPTIONS: { value: BookPageNumberStyle; label: string }[] = [
@@ -162,7 +162,7 @@ export function plainTextContent(value: string) {
       const lines = body.split(/\r?\n/).filter((_line, index) => index !== parsed.index);
       return lines.join(" ").trim();
     })
-    .replace(/!\[([^\]]*)\]\((?:data:image\/|https?:\/\/)[^)]+\)(?:\{[^}]*\})?/gi, (_match, alt: string) => alt ? `[Image: ${alt}]` : "[Image]")
+    .replace(/!\[([^\]]*)\]\([^)]+\)(?:\{[^}]*\})?/g, (_match, alt: string) => alt ? `[Image: ${alt}]` : "[Image]")
     .replace(/\[([^\]]+)\]\((?:https?:\/\/|mailto:)[^)]+\)/gi, "$1")
     .replace(/\s*<!--\s*note-me:layout\s+[^>]*?-->/gi, "")
     .replace(/<!--\s*note-me:free-layout\s*-->/gi, "");
@@ -225,7 +225,7 @@ export function defaultChapterTitle(kind: ChapterKind, chapterNumber: number) {
 }
 
 export function formatUpdated(value: string) {
-  const date = new Date(value.replace(" ", "T") + "Z");
+  const date = new Date(value.includes("T") ? value : `${value.replace(" ", "T")}Z`);
   if (Number.isNaN(date.getTime())) return "Recently edited";
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
 }
@@ -502,7 +502,7 @@ function imageFrameCss(presentation: ImagePresentation) {
   return styles.length ? ` style="${styles.join(";")}"` : "";
 }
 
-function parseImageLine(line: string) {
+export function parseImageLine(line: string) {
   const match = /^(\s*)!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}]*)\})?\s*$/.exec(line);
   if (!match) return null;
   return { indent: match[1], alt: match[2], source: match[3], presentation: parseImageAttributes(match[4]) };
@@ -1409,10 +1409,10 @@ function chapterNumberFor(chapters: Chapter[], index: number) {
 export function bookMarkdown(book: Book, chapters: Chapter[]) {
   const frontMatter = [
     "---",
-    `title: \"${book.title.replace(/\"/g, "\\\"")}\"`,
-    `subtitle: \"${book.subtitle.replace(/\"/g, "\\\"")}\"`,
-    `author: \"${book.author.replace(/\"/g, "\\\"")}\"`,
-    `genre: \"${book.genre.replace(/\"/g, "\\\"")}\"`,
+    `title: ${JSON.stringify(book.title)}`,
+    `subtitle: ${JSON.stringify(book.subtitle)}`,
+    `author: ${JSON.stringify(book.author)}`,
+    `genre: ${JSON.stringify(book.genre)}`,
     `trim_size: \"${book.trim_size}\"`,
     `word_goal: ${book.word_goal}`,
     "---",
@@ -1456,7 +1456,7 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
   const subtitle = book.subtitle ? `<p class="subtitle">${escapeHtml(book.subtitle)}</p>` : "";
   const author = book.author ? `<p class="author">${escapeHtml(book.author)}</p>` : "";
   const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
-  const contentChapters = orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind));
+  const contentChapters = orderedChapters.filter((chapter) => chapter.id !== titlePageChapter?.id);
   const titlePageHtml = titlePageChapter
      ? (() => {
          const titleLayout = chapterLayouts.get(titlePageChapter.id) ?? layout;
@@ -1636,21 +1636,28 @@ function docxDrawingParagraph(label: string, bytes: Uint8Array, extension: strin
   return `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${width}" cy="${height}"/><wp:docPr id="${assets.imageCount}" name="${safeLabel}" descr="${safeLabel}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${assets.imageCount}" name="${safeLabel}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width}" cy="${height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
 }
 
+const DOCX_IMAGE_SOURCE = /^data:(image\/(?:png|jpeg|jpg|gif|svg\+xml));base64,([A-Za-z0-9+/=]+)$/i;
+
+export function isDocxImageSource(source: string) {
+  return DOCX_IMAGE_SOURCE.test(source);
+}
+
 function docxImageParagraph(line: string, assets: DocxAssetState) {
-  const match = /^!\[([^\]]*)\]\(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+)\)(?:\{([^}]*)\})?$/.exec(line.trim());
-  if (!match) return null;
-  const captionXml = (() => {
-    const presentation = parseImageAttributes(match[4]);
-    const caption = [presentation.caption, presentation.credit].filter(Boolean).join(" — ");
-    return caption ? `<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>${docxXml(caption)}</w:t></w:r></w:p>` : "";
-  })();
-  if (match[2] === "image/webp") return `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>${docxXml(match[1] || "Embedded image")}</w:t></w:r></w:p>${captionXml}`;
+  const image = parseImageLine(line);
+  if (!image) return null;
+  const caption = [image.presentation.caption, image.presentation.credit].filter(Boolean).join(" — ");
+  const captionXml = caption ? `<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>${docxXml(caption)}</w:t></w:r></w:p>` : "";
+  const label = image.alt || "Artwork";
+  const placeholder = `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>${docxXml(label)}</w:t></w:r></w:p>${captionXml}`;
+  const match = DOCX_IMAGE_SOURCE.exec(image.source);
+  if (!match) return placeholder;
   try {
-    const bytes = Uint8Array.from(atob(match[3]), (value) => value.charCodeAt(0));
-    const extension = match[2] === "image/jpeg" || match[2] === "image/jpg" ? "jpg" : match[2] === "image/svg+xml" ? "svg" : match[2] === "image/gif" ? "gif" : "png";
-    return `${docxDrawingParagraph(match[1] || "Embedded image", bytes, extension, assets)}${captionXml}`;
+    const mime = match[1].toLowerCase();
+    const bytes = Uint8Array.from(atob(match[2]), (value) => value.charCodeAt(0));
+    const extension = mime === "image/jpeg" || mime === "image/jpg" ? "jpg" : mime === "image/svg+xml" ? "svg" : mime === "image/gif" ? "gif" : "png";
+    return `${docxDrawingParagraph(label, bytes, extension, assets)}${captionXml}`;
   } catch {
-    return `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>${docxXml(match[1] || "Embedded image")}</w:t></w:r></w:p>${captionXml}`;
+    return placeholder;
   }
 }
 
@@ -1762,19 +1769,19 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
     ...titleParagraphs,
     ...tocParagraphs,
     ...frontMatterSections(book, chapters).flatMap((section) => [
-      `<w:p><w:pPr><w:pageBreakBefore/><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>${docxXml(section.title)}</w:t></w:r></w:p>`,
+      `<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:pageBreakBefore/></w:pPr><w:r><w:t>${docxXml(section.title)}</w:t></w:r></w:p>`,
         ...docxContentParagraphs(section.content, assets, layout),
     ]),
-     ...orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind)).flatMap((chapter) => [
+     ...orderedChapters.filter((chapter) => chapter.id !== titlePageChapter?.id).flatMap((chapter) => [
        (() => {
          const index = orderedChapters.indexOf(chapter);
          const pageBreak = "<w:pageBreakBefore/>";
-         return `<w:p><w:pPr>${pageBreak}<w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>${docxXml(chapterHeading(chapter, index, orderedChapters))}</w:t></w:r></w:p>`;
+         return `<w:p><w:pPr><w:pStyle w:val="Heading1"/>${pageBreak}</w:pPr><w:r><w:t>${docxXml(chapterHeading(chapter, index, orderedChapters))}</w:t></w:r></w:p>`;
        })(),
          ...docxContentParagraphs(chapter.content, assets, layout),
     ]),
     ...backMatterSections(book, chapters).flatMap((section) => [
-      `<w:p><w:pPr><w:pageBreakBefore/><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>${docxXml(section.title)}</w:t></w:r></w:p>`,
+      `<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:pageBreakBefore/></w:pPr><w:r><w:t>${docxXml(section.title)}</w:t></w:r></w:p>`,
          ...docxContentParagraphs(section.content, assets, layout),
     ]),
   ].join("");
@@ -1786,7 +1793,7 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
   return zipSync({
      "[Content_Types].xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Default Extension="svg" ContentType="image/svg+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`),
     "_rels/.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`),
-    "word/_rels/document.xml.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>${assets.relationships.join("")}</Relationships>`),
+    "word/_rels/document.xml.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>${assets.relationships.join("")}</Relationships>`),
     "word/document.xml": strToU8(documentXml),
     "word/styles.xml": strToU8(stylesXml),
     "word/header1.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${docxChromeXml(book, layout, "header")}</w:hdr>`),
@@ -1795,11 +1802,31 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
   });
 }
 
+/** A saved edition must carry the bundled template photos it displays. */
+async function embedBundledCoverImages(markup: string) {
+  const references = /(src="|url\(')(\/cover-templates\/[a-z0-9-]+\.jpg)(?="|'\))/gi;
+  const sources = [...new Set(Array.from(markup.matchAll(references), (match) => match[2]))];
+  if (sources.length === 0) return markup;
+  const images = new Map(await Promise.all(sources.map(async (source) => {
+    try {
+      const response = await fetch(source);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.length < 3 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) throw new Error("Invalid JPEG");
+      return [source, imageDataUri("image/jpeg", bytes)] as const;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Could not include ${source.split("/").pop()} in the export. ${detail}`);
+    }
+  })));
+  return markup.replace(references, (match, prefix: string, source: string) => images.has(source) ? `${prefix}${images.get(source)}` : match);
+}
+
 export async function bookEpub(book: Book, chapters: Chapter[]) {
   const { zipSync, strToU8 } = await import("fflate");
   const bookId = `noteme-book-${book.id}`;
   const layout = layoutForBook(book);
-  const coverPage = layout.cover.enabled ? coverPageHtml(book, layout) : "";
+  const coverPage = layout.cover.enabled ? await embedBundledCoverImages(coverPageHtml(book, layout)) : "";
   const orderedChapters = orderBookChapters(chapters);
   const chapterLayouts = new Map(orderedChapters.map((chapter) => [chapter.id, layoutForChapter(book, chapter)]));
   const renderMarkdown = (value: string, prefix?: string, pageLayout: BookLayout = layout) => markdownToHtml(value, prefix, pageLayout.typography, pageLayout.paragraphStyles);
@@ -1808,20 +1835,21 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   const manifest: string[] = [];
   const spine: string[] = [];
   const epubCss = `body{--document-accent:${layout.accentColor};font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;background-color:${layout.pageColor};${pagePatternBackgroundCss(layout)}}${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}${coverCss()}`;
-  const embedImages = (body: string) => body.replace(/src="(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+))"/gi, (_match, dataUri: string, mime: string, encoded: string) => {
+  const embedImages = (body: string) => body.replace(/(src="|url\(')(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+))(?="|'\))/gi, (_match, prefix: string, dataUri: string, mime: string, encoded: string) => {
     const existingPath = epubImages.get(dataUri);
-    if (existingPath) return `src="${existingPath}"`;
+    if (existingPath) return `${prefix}${existingPath}`;
     const extension = mime === "image/jpeg" || mime === "image/jpg" ? "jpg" : mime === "image/svg+xml" ? "svg" : mime === "image/gif" ? "gif" : mime === "image/webp" ? "webp" : "png";
     const imageNumber = epubImages.size + 1;
     const imagePath = `images/image${imageNumber}.${extension}`;
     epubImages.set(dataUri, imagePath);
     chapterFiles[`OEBPS/${imagePath}`] = Uint8Array.from(atob(encoded), (value) => value.charCodeAt(0));
     manifest.push(`<item id="image-${imageNumber}" href="${imagePath}" media-type="${mime}"/>`);
-    return `src="${imagePath}"`;
+    return `${prefix}${imagePath}`;
   });
   const addSection = (id: string, title: string, body: string, pageLayout: BookLayout = layout) => {
     const file = `OEBPS/${id}.xhtml`;
-    manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
+    const properties = /<svg\b/i.test(body) ? ' properties="svg"' : "";
+    manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"${properties}/>`);
     spine.push(`<itemref idref="${id}"/>`);
     const bodyStyle = `margin:${pageLayout.pageMargins.top}in ${pageLayout.pageMargins.right}in ${pageLayout.pageMargins.bottom}in ${pageLayout.pageMargins.left}in;background-color:${pageLayout.pageColor};--document-accent:${pageLayout.accentColor};${pagePatternBackgroundCss(pageLayout)}`;
     chapterFiles[file] = strToU8(`<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${escapeHtml(title)}</title><style>${epubCss}</style></head><body style="${bodyStyle}">${embedImages(body)}</body></html>`);
@@ -1836,7 +1864,7 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   }
   const front = frontMatterSections(book, chapters);
    if (front.length) addSection("front-matter", "Front matter", `<section class="matter">${front.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "opening", section.title, "opening", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${renderMarkdown(section.content, matterAnchorId(section.key))}</section>`).join("")}</section>`);
-  orderedChapters.filter((chapter) => !chapterIsOpeningPage(chapter.chapter_kind)).forEach((chapter) => {
+  orderedChapters.filter((chapter) => chapter.id !== titlePageChapter?.id).forEach((chapter) => {
     const index = orderedChapters.indexOf(chapter);
     const id = `chapter-${chapter.id}`;
     const band = chapterPageBand(chapter);
@@ -1849,11 +1877,14 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
    if (back.length) addSection("back-matter", "Back matter", `<section class="matter">${back.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "closing", section.title, "closing", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${renderMarkdown(section.content, matterAnchorId(section.key))}</section>`).join("")}</section>`);
   const toc = buildBookToc(book, chapters);
   const tocHref = (entry: TocEntry) => {
-    if (entry.chapterId === titlePageChapter?.id) return `title-page.xhtml#${entry.id}`;
+    if (titlePageChapter && entry.chapterId === titlePageChapter.id) return `title-page.xhtml#${entry.id}`;
     if (entry.chapterId !== undefined) return `chapter-${entry.chapterId}.xhtml#${entry.id}`;
     return `${entry.matterKey && front.some((section) => section.key === entry.matterKey) ? "front-matter" : "back-matter"}.xhtml#${entry.id}`;
   };
-  const navItems = toc.map((entry) => `<li style="--toc-indent: ${Math.max(0, entry.level - 1)}"><a href="${tocHref(entry)}">${escapeHtml(entry.label)}</a></li>`).join("");
+  // EPUB navigation requires a destination even when the generated contents are off.
+  const navItems = toc.length > 0
+    ? toc.map((entry) => `<li style="--toc-indent: ${Math.max(0, entry.level - 1)}"><a href="${tocHref(entry)}">${escapeHtml(entry.label)}</a></li>`).join("")
+    : '<li><a href="title-page.xhtml">Start reading</a></li>';
   const modified = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   const opf = `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="book-id" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">${bookId}</dc:identifier><dc:title>${escapeHtml(book.title || "Untitled manuscript")}</dc:title><dc:creator>${escapeHtml(book.author || "Unknown author")}</dc:creator><dc:language>en</dc:language>${book.genre ? `<dc:subject>${escapeHtml(book.genre)}</dc:subject>` : ""}${book.description ? `<dc:description>${escapeHtml(book.description)}</dc:description>` : ""}<meta property="dcterms:modified">${modified}</meta></metadata><manifest><item id="nav" properties="nav" href="nav.xhtml" media-type="application/xhtml+xml"/>${manifest.join("")}</manifest><spine>${spine.join("")}</spine></package>`;
   const nav = `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeHtml(book.title)}</title></head><body><nav epub:type="toc"><h1>${escapeHtml(tocTitle(book))}</h1><ol>${navItems}</ol></nav></body></html>`;
@@ -1873,7 +1904,7 @@ export function filenameFor(book: Book, extension: string) {
 
 export async function bookExportPayload(book: Book, chapters: Chapter[], format: BookExportFormat): Promise<string | Uint8Array> {
   if (format === "markdown") return bookMarkdown(book, chapters);
-  if (format === "html") return bookHtml(book, chapters);
+  if (format === "html") return embedBundledCoverImages(bookHtml(book, chapters));
   if (format === "txt") return bookText(book, chapters);
   if (format === "epub") return bookEpub(book, chapters);
   if (format === "docx") return bookDocx(book, chapters);

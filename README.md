@@ -63,7 +63,7 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 
 ### Structure and writing
 
-- Dedicated library, shelf, section rail, outline, book settings, and export screens.
+- Search the library by title, author, genre, or stage. Filter by publishing stage with live counts and sort by recency, progress, title, or creation date. Cards show the full saved cover spread and link directly to the manuscript, cover designer, book settings, and Export Studio.
 - Starter templates for novels, nonfiction, magazine issues, newsletters, photo books, and recipe collections, each with a real section sequence and page system.
 - Typed manuscript sections — title page, cover, masthead, contents page, editor's letter, feature, department, column, profile, interview, review, photo essay, recipe, listing, advertisement, colophon, and traditional book matter.
 - Front matter, story, and closing pages can be reordered, hidden from the table of contents, and managed from the rail or context menu.
@@ -98,8 +98,8 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 - Running headers and footers with `{{title}}`, `{{author}}`, `{{section}}`, `{{page}}`, `{{volume}}`, `{{issue}}`, `{{season}}`, `{{year}}`, and `{{issueLine}}` tokens, with per-section slots and previews in the canvas and export studio.
 - Flexible page numbering with automatic sequences or manual range starts, Arabic or Roman styles, custom formats, placement, and per-section overrides.
 - Generated contents with configurable title, H1–H6 depth, matter inclusion, and per-heading visibility.
-- Export to **EPUB 3, DOCX, styled HTML, Markdown, and plain text**, or print / save as PDF with the selected trim size and page styling. Named paragraph styles, drop caps, nested openings, rules, shading, and custom widths travel into HTML, EPUB, and print output. Section page masters carry their paper color, accent, margins, and running furniture into HTML, EPUB, and named print pages. An enabled layered cover leads the print wrap, HTML, and EPUB editions, with individual PNG downloads for production handoff.
-- Export preview with separate cover and interior views plus a preflight for metadata, empty sections, contents, repeated titles, page numbering, and artwork.
+- Export to **EPUB 3, DOCX, styled HTML, Markdown, and plain text**, or use the system print dialog for a PDF proof. Named paragraph styles and section page masters travel into HTML, EPUB, and print. EPUB and HTML can include the front cover, while print can include the full spread.
+- Choose cover and contents for each export, preview the cover, interior, contents or source, and review the package summary before saving. Preflight links back to settings, sections, and Outline. File exports show a receipt and a shortcut to the saved file.
 
 ## Install
 
@@ -185,6 +185,8 @@ For cover designer development, shared color tools, image backgrounds, layer/gro
 interactions, and the browser QA preview, see [docs/COVER_DESIGNER.md](docs/COVER_DESIGNER.md).
 Shared artwork, page crops and image publishing contracts are documented in
 [docs/STUDIO_IMAGES.md](docs/STUDIO_IMAGES.md).
+See [docs/STUDIO_PUBLISHING.md](docs/STUDIO_PUBLISHING.md) for library thumbnails,
+export formats, and print verification.
 
 ## Project map
 

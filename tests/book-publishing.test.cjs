@@ -15,6 +15,7 @@ const {
   bookText,
   canvasBlocks,
   canvasTextSource,
+  formatUpdated,
   imageMarkdown,
   markdownToHtml,
   paragraphStylesCss,
@@ -334,6 +335,77 @@ test("DOCX export is a readable Word package with styles, chrome, and media", as
   assert.match(files["word/styles.xml"], /Heading1/);
   assert.match(files["word/footer1.xml"], /A\. Writer/);
   assert.match(files["word/_rels/document.xml.rels"], /relationships\/image/);
+  assert.match(files["word/_rels/document.xml.rels"], /relationships\/styles" Target="styles\.xml"/);
+});
+
+test("formatted exports retain both a cover section and a separate title section", async () => {
+  const sections = [chapter(30, "Jacket", "Opening jacket copy.", "cover"), ...chapters()];
+  const manuscript = book();
+  const html = bookHtml(manuscript, sections);
+  assert.match(html, /id="section-30"/);
+  assert.match(html, /id="section-1"/);
+  assert.match(visibleText(bookPrintHtml(manuscript, sections)), /By A\. Writer/);
+  const epub = textFiles(await bookEpub(manuscript, sections));
+  assert.match(visibleText(epub["OEBPS/title-page.xhtml"]), /Opening jacket copy/);
+  assert.match(visibleText(epub["OEBPS/chapter-1.xhtml"]), /By A\. Writer/);
+  for (const [, filename, id] of epub["OEBPS/nav.xhtml"].matchAll(/href="([^"#]+)#([^"]+)"/g)) {
+    assert.ok(epub["OEBPS/" + filename]?.includes('id="' + id + '"'), filename + "#" + id);
+  }
+  const word = textFiles(await bookDocx(manuscript, sections));
+  const readerText = visibleText(word["word/document.xml"]);
+  assert.match(readerText, /Opening jacket copy/);
+  assert.match(readerText, /By A\. Writer/);
+});
+
+test("EPUB links reach legacy matter when the title page is generated", async () => {
+  const files = textFiles(await bookEpub(book(), chapters().filter((section) => section.chapter_kind !== "title_page")));
+  const nav = files["OEBPS/nav.xhtml"];
+  assert.match(nav, /href="front-matter\.xhtml#matter-dedication"/);
+  assert.match(nav, /href="back-matter\.xhtml#matter-acknowledgements"/);
+  for (const [, filename, id] of nav.matchAll(/href="([^"#]+)#([^"]+)"/g)) {
+    assert.ok(files["OEBPS/" + filename]?.includes('id="' + id + '"'), filename + "#" + id);
+  }
+});
+
+test("an EPUB with generated contents disabled still has a valid start destination", async () => {
+  const files = textFiles(await bookEpub(book({ toc_enabled: false }), chapters()));
+  assert.match(files["OEBPS/nav.xhtml"], /<ol><li><a href="title-page\.xhtml">Start reading<\/a><\/li><\/ol>/);
+  assert.ok(files["OEBPS/title-page.xhtml"]);
+  assert.doesNotMatch(files["OEBPS/nav.xhtml"], /The Arrival/);
+});
+
+test("standalone HTML and EPUB carry bundled template artwork with the edition", async (t) => {
+  const photo = fs.readFileSync(path.join(__dirname, "..", "public", "cover-templates", "coast.jpg"));
+  const fetchPhoto = t.mock.method(globalThis, "fetch", async (source) => {
+    assert.equal(source, "/cover-templates/coast.jpg");
+    return new Response(photo);
+  });
+  const manuscript = book({
+    layout_json: JSON.stringify({ cover: { enabled: true, image: "/cover-templates/coast.jpg" } }),
+  });
+  const html = await bookExportPayload(manuscript, chapters(), "html");
+  assert.ok(html.includes("data:image/jpeg;base64," + photo.toString("base64")));
+  assert.doesNotMatch(html, /\/cover-templates\//);
+  const files = unzipSync(await bookExportPayload(manuscript, chapters(), "epub"));
+  assert.deepEqual(Buffer.from(files["OEBPS/images/image1.jpg"]), photo);
+  assert.match(strFromU8(files["OEBPS/cover.xhtml"]), /url\('images\/image1\.jpg'\)/);
+  assert.equal(fetchPhoto.mock.callCount(), 2);
+});
+
+test("Word describes unsupported artwork with its credit rather than emitting a source URL", async () => {
+  const source = "![Coastal portrait](https://example.com/photo.webp){credit=Coastal%20Archive}";
+  const files = textFiles(await bookDocx(book(), [chapter(1, "Art", source)]));
+  assert.match(files["word/document.xml"], /Coastal portrait/);
+  assert.match(files["word/document.xml"], /Coastal Archive/);
+  assert.doesNotMatch(files["word/document.xml"], /example\.com|data:image/);
+  assert.match(bookText(book(), [chapter(1, "Art", "![Relative photo](art/photo.jpg)")]), /\[Image: Relative photo\]/);
+});
+
+test("Markdown front matter keeps quotes and line breaks inside metadata strings", () => {
+  const title = 'The "coast" \\ archival notes\nVolume Two';
+  const metadata = bookMarkdown(book({ title }), chapters()).split("\n");
+  assert.equal(JSON.parse(metadata[1].slice("title: ".length)), title);
+  assert.ok(metadata[2].startsWith("subtitle: "));
 });
 
 test("export dispatcher writes every file-level reader format", async () => {
@@ -699,6 +771,12 @@ test("Word exports retain photo credits below embedded artwork", async () => {
   const files = textFiles(await bookDocx(book(), [chapter(1, "Photo story", imageMarkdownFromAsset(photo))]));
   assert.match(files["word/document.xml"], /Photo: Amelia &amp; Hart/);
   assert.doesNotMatch(files["word/document.xml"], /Private archive/);
+});
+
+test("shelf dates accept SQLite and ISO timestamps without double-normalizing", () => {
+  assert.notEqual(formatUpdated("2026-01-01 12:00:00"), "Recently edited");
+  assert.notEqual(formatUpdated("2026-01-01T12:00:00.000Z"), "Recently edited");
+  assert.equal(formatUpdated("not a date"), "Recently edited");
 });
 
 test("photo attributes remain literal and XML-safe when they contain Markdown punctuation", () => {

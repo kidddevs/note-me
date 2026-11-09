@@ -1,12 +1,15 @@
 import React, { useMemo, useState } from "react";
-import { BookOpen, ClipboardList, FlaskConical, LayoutList, Paintbrush } from "lucide-react";
+import { BookOpen, ClipboardList, Download, FlaskConical, LayoutList, Library as LibraryIcon, Paintbrush } from "lucide-react";
 import ReactDOM from "react-dom/client";
 import "./styles.css";
 import { Toasts } from "./components/Toasts";
 import { ManuscriptScreen } from "./components/BooksStudioEditor";
 import { CoverScreen } from "./components/BooksCoverStudio";
+import { ExportScreen } from "./components/BooksStudioExport";
 import { PlanScreen } from "./components/BooksStudioPlan";
 import { OutlineScreen } from "./components/BooksStudioOutline";
+import { SettingsScreen } from "./components/BooksStudioSettings";
+import { LibraryScreen, type StudioScreen } from "./components/BooksStudio";
 import { api } from "./lib/api";
 import { orderBookChapters } from "./lib/bookToc";
 import { serializeChapterWorkflow } from "./lib/bookWorkflow";
@@ -20,6 +23,7 @@ import type { Book, Chapter } from "./lib/types";
 // Development fixture only. It never opens a native database or uses real book ids.
 if (!import.meta.env.DEV) throw new Error("The cover preview is available only in development.");
 const PREVIEW_BOOK_ID = -701;
+const PREVIEW_SCREENS: readonly string[] = ["library", "manuscript", "cover", "plan", "outline", "export", "settings"];
 document.documentElement.dataset.theme = new URLSearchParams(window.location.search).get("theme") === "light" ? "light" : "dark";
 const baseBook: Book = {
   id: PREVIEW_BOOK_ID, title: "The Salt Archive", subtitle: "A novel", author: "Amelia Hart",
@@ -47,7 +51,7 @@ function Preview() {
   const activeChapterId = useBooks((state) => state.activeChapterId);
   const activeChapter = chapters.find((chapter) => chapter.id === activeChapterId) ?? chapters[0];
   const requested = new URLSearchParams(window.location.search).get("screen");
-  const [screen, setScreen] = useState(requested && ["manuscript", "plan", "outline"].includes(requested) ? requested : "cover");
+  const [screen, setScreen] = useState<StudioScreen>(requested && PREVIEW_SCREENS.includes(requested) ? requested as StudioScreen : "cover");
   const openChapter = (id: number) => { useBooks.setState({ activeChapterId: id }); setScreen("manuscript"); };
   const newChapter = () => void useBooks.getState().createChapter(PREVIEW_BOOK_ID, "New section")
     .then((chapter) => openChapter(chapter.id))
@@ -56,13 +60,16 @@ function Preview() {
   return (
     <div className="app" style={{ height: "100%" }}>
       <nav className="studio-preview-nav" aria-label="Studio development preview"><span><FlaskConical size={14} /> Development preview</span>{([
-        ["manuscript", "Manuscript", BookOpen], ["cover", "Cover designer", Paintbrush], ["plan", "Section plan", ClipboardList], ["outline", "Outline", LayoutList],
+        ["library", "Library", LibraryIcon], ["manuscript", "Manuscript", BookOpen], ["cover", "Cover designer", Paintbrush], ["plan", "Section plan", ClipboardList], ["outline", "Outline", LayoutList], ["export", "Export studio", Download],
       ] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={screen === value} onClick={() => setScreen(value)}><Icon size={14} />{label}</button>)}</nav>
       <div className="app-body books-studio">
-        {screen === "manuscript" ? <ManuscriptScreen book={currentBook} chapters={chapters} activeChapter={activeChapter} focusMode={focusMode} onFocusModeChange={setFocusMode} onOpenOutline={() => setScreen("outline")} onOpenSettings={() => undefined} onNewChapter={newChapter} onNavigateSection={(direction) => { const index = chapters.findIndex((chapter) => chapter.id === activeChapterId); const next = chapters[index + direction]; if (next) openChapter(next.id); }} />
+        {screen === "library" ? <LibraryScreen books={[currentBook]} selectedBookId={PREVIEW_BOOK_ID} creating={false} deletingBookId={null} onNew={() => undefined} onOpen={() => { const id = activeChapterId ?? chapters[0]?.id; if (id !== undefined) openChapter(id); }} onOpenScreen={(_id, next) => setScreen(next)} onDelete={() => undefined} />
+          : screen === "manuscript" ? <ManuscriptScreen book={currentBook} chapters={chapters} activeChapter={activeChapter} focusMode={focusMode} onFocusModeChange={setFocusMode} onOpenOutline={() => setScreen("outline")} onOpenSettings={() => setScreen("settings")} onNewChapter={newChapter} onNavigateSection={(direction) => { const index = chapters.findIndex((chapter) => chapter.id === activeChapterId); const next = chapters[index + direction]; if (next) openChapter(next.id); }} />
           : screen === "plan" ? <PlanScreen book={currentBook} chapters={chapters} activeChapterId={activeChapterId} onNewChapter={newChapter} onOpenChapter={openChapter} />
-          : screen === "outline" ? <OutlineScreen book={currentBook} chapters={chapters} onNewChapter={newChapter} onOpenChapter={openChapter} onOpenMatter={() => undefined} />
-          : <CoverScreen book={currentBook} chapters={chapters} onOpenChapter={openChapter} onNavigate={(next) => { if (["manuscript", "plan", "outline", "cover"].includes(next)) setScreen(next); }} />}
+          : screen === "outline" ? <OutlineScreen book={currentBook} chapters={chapters} onNewChapter={newChapter} onOpenChapter={openChapter} onOpenMatter={() => setScreen("settings")} />
+          : screen === "settings" ? <SettingsScreen book={currentBook} chapters={chapters} />
+          : screen === "export" ? <main className="books-main"><ExportScreen book={currentBook} chapters={chapters} onNavigate={setScreen} onOpenChapter={openChapter} /></main>
+          : <CoverScreen book={currentBook} chapters={chapters} onOpenChapter={openChapter} onNavigate={setScreen} />}
       </div>
       <Toasts />
     </div>
