@@ -2,8 +2,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   MAX_SAVED_COVER_STYLE_NAME,
+  MAX_SAVED_COVER_STYLES,
   SAVED_COVER_STYLES_KEY,
   applyLayerStyle,
+  styleCoverSelection,
   createLayerStylePreset,
   deleteLayerStylePreset,
   parseLayerStylePresets,
@@ -19,6 +21,7 @@ const {
   shapeLayer,
   textLayer,
   coverFill,
+  emptyCoverDocument,
 } = require("./.compiled/src/lib/bookCoverDoc");
 
 function richTextLayer() {
@@ -94,6 +97,58 @@ test("styles apply shared appearance everywhere and type settings only where the
   assert.equal("fontSize" in linePatch, false);
 });
 
+test("style scopes isolate typography, fills, shared effects and photo grading", () => {
+  const values = styleValuesFromLayer(richTextLayer());
+  const target = richTextLayer();
+  const typography = applyLayerStyle(target, values, "typography");
+  assert.equal(typography.fontSize, 42);
+  assert.equal(typography.customFont, "Bodoni 72 Smallcaps");
+  assert.equal("color" in typography, false);
+  assert.equal("opacity" in typography, false);
+  assert.equal("highlight" in typography, false);
+  assert.deepEqual(applyLayerStyle(target, values, "colors"), { color: "#f5efe4", effectColor: "#1f3a2d" });
+  assert.deepEqual(Object.keys(applyLayerStyle(target, values, "effects")).sort(), ["blendMode", "fade", "glow", "opacity", "shadow"]);
+  assert.deepEqual(applyLayerStyle(target, values, "grading"), {});
+
+  const shape = shapeLayer({ id: "shape", name: "Shape", panel: "front", x: 0, y: 0, width: 2, height: 2, fill: coverFill("#eb7304"), strokeColor: "#00ff00", strokeWidth: 0.06 });
+  const fill = applyLayerStyle(shape, styleValuesFromLayer(shape), "colors");
+  assert.deepEqual(Object.keys(fill).sort(), ["fill", "strokeColor"]);
+  assert.equal("strokeWidth" in fill, false);
+  const photo = imageLayer({ id: "photo", name: "Photo", panel: "front", x: 0, y: 0, width: 2, height: 2, src: "original", fit: "contain", focusX: 0.1, brightness: 120, mask: "arch", radius: 0.2 });
+  const grading = applyLayerStyle(photo, styleValuesFromLayer(photo), "grading");
+  assert.equal(grading.brightness, 120);
+  assert.equal("fit" in grading, false);
+  assert.equal("mask" in grading, false);
+  assert.equal("radius" in grading, false);
+  assert.equal("focusX" in grading, false);
+});
+
+test("styling a mixed selection is atomic, skips matching or incompatible layers and preserves their content", () => {
+  const title = richTextLayer();
+  const other = textLayer({ id: "other", name: "Other", panel: "back", x: 2, y: 3, width: 1, height: 1, text: "Keep me" });
+  const image = imageLayer({ id: "photo", name: "Photo", panel: "front", x: 0, y: 0, width: 2, height: 2, src: "original" });
+  const doc = { ...emptyCoverDocument(), layers: [title, other, image] };
+  const snapshot = JSON.stringify(doc);
+  const values = styleValuesFromLayer(title);
+  const patches = styleCoverSelection(doc, ["title", "other", "photo", "other"], values, "typography");
+  assert.deepEqual(patches.map((entry) => entry.id), ["other"]);
+  const result = { ...other, ...patches[0].patch };
+  assert.equal(result.text, "Keep me");
+  assert.equal(result.x, 2);
+  assert.equal(result.color, other.color);
+  assert.equal(JSON.stringify(doc), snapshot);
+  patches[0].patch.fontSize = 99;
+  assert.equal(title.fontSize, 42);
+
+  assert.deepEqual(styleCoverSelection(doc, ["title", "deleted"], values), []);
+  other.locked = true;
+  assert.deepEqual(styleCoverSelection(doc, ["title", "other", "photo"], values), []);
+  other.locked = false;
+  other.groupId = "locked-group";
+  doc.groups = [{ id: "locked-group", name: "Locked", visible: true, locked: true, collapsed: false }];
+  assert.deepEqual(styleCoverSelection(doc, ["title", "other"], values, "colors"), []);
+});
+
 test("shape and image style values carry fills, strokes, grading, and masks", () => {
   const shape = shapeLayer({ id: "shape", name: "Shape", panel: "front", x: 0, y: 0, width: 2, height: 2, shape: "arch", fill: { ...coverFill("#c96b3b"), type: "pattern" }, radius: 0.2, strokeColor: "#ffffff", strokeWidth: 0.03, dash: "dotted" });
   const shapeValues = styleValuesFromLayer(shape);
@@ -150,6 +205,12 @@ test("style presets persist, rename, delete, and repair corrupted values", () =>
     const renamed = renameLayerStylePreset(saved.presets[0].id, "Renamed title", readLayerStylePresets());
     assert.equal(renamed.ok, true);
     assert.equal(readLayerStylePresets()[0].name, "Renamed title");
+    const fullLibrary = Array.from({ length: MAX_SAVED_COVER_STYLES }, (_, index) => ({ ...saved.presets[0], id: `saved-${index}` }));
+    map.set(SAVED_COVER_STYLES_KEY, serializeLayerStylePresets(fullLibrary));
+    const rejected = saveLayerStylePreset("One too many", layer, fullLibrary);
+    assert.equal(rejected.ok, false);
+    assert.deepEqual(readLayerStylePresets(), fullLibrary);
+    map.set(SAVED_COVER_STYLES_KEY, serializeLayerStylePresets(saved.presets));
     const deleted = deleteLayerStylePreset(saved.presets[0].id, readLayerStylePresets());
     assert.equal(deleted.ok, true);
     assert.equal(readLayerStylePresets().length, 0);

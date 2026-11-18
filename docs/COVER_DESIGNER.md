@@ -21,6 +21,8 @@ The development fixture also supports the section planner and outline; see
 | `src/components/BooksCoverStudio.tsx` | Editor, selection, groups, inspector, autosave, undo/redo, canvas interactions |
 | `src/components/CoverImageFocus.tsx` | Shared pointer/keyboard crop-focus preview |
 | `src/components/CoverColorPicker.tsx` | Shared wheel, HSV/RGB/alpha/hex fields, palette and eyedropper integration |
+| `src/components/CoverStyleControls.tsx` | Shared style scope, clipboard, preset, and inline save controls |
+| `src/lib/bookCoverStyles.ts` | Appearance extraction, scoped selection patches, and saved style storage |
 | `src/lib/bookCoverColor.ts` | Hex validation and normalization, RGB/HSV conversion |
 | `src/lib/bookCoverImages.ts` | Selected-layer raster exports, background lifting, image reset and frame-ratio helpers |
 | `src/lib/bookCoverLayers.ts` | Layer search, artboard filtering, selection ordering, and group assignment |
@@ -183,6 +185,35 @@ the chosen artwork without a proof watermark. Empty selections and allocations
 over 32 million pixels fail explicitly. The regular cover exports retain their
 paper, background, bleed, and proof options.
 
+## Reusable layer styles
+
+The **Style** panel is available for a layer or a multi-layer selection. **Copy
+style** and **Save current style** read the primary selected layer, named in
+the selection panel. Save uses an inline name field with Enter to submit and
+Escape or Cancel to close. Storage failures keep the name available for retry.
+At 30 saved styles, saving asks the writer to remove an entry first.
+
+Choose **Apply style** before pasting or applying a saved preset.
+
+| Choice | Properties |
+| --- | --- |
+| All appearance | Shared appearance and the target layer's compatible properties |
+| Colours & fills | Ink, fills, stroke color, effect color, barcode colors, and image tint |
+| Shared effects | Opacity, blend mode, shadow, glow, and gradient fade |
+| Typography | Typeface, size, weight, italic, alignment, leading, tracking, case, and curve |
+| Photo grading | Grayscale, sepia, brightness, contrast, saturation, hue, blur, and tint |
+
+The chosen scope also controls **Paste style** in the context menu and
+⌥⌘V. Copy always captures the full appearance. Existing saved styles use the
+same version-1 storage format.
+
+`applyLayerStyle(layer, values, scope = "all")` builds a compatible patch.
+`styleCoverSelection(doc, ids, values, scope = "all")` builds one atomic update
+for the selection. It rejects missing members and individual or inherited group
+locks. Matching and incompatible layers produce no patches. Each application
+uses one undo entry and the existing autosave. Controls disable applications
+that would have no effect.
+
 ## Clipping masks and print checks
 
 In **Clipping mask**, use **Reveal masking shape** to inspect the shape that
@@ -261,6 +292,8 @@ For interactive changes, check:
    background preflight jump with the compact drawer.
 2. Group/ungroup, select a group, move it on the canvas, duplicate/delete multiple
    layers, undo, redo, and edit after undo.
+   Apply a style to a mixed selection using each scope. Verify individual and
+   inherited locks, one-step undo/redo, inline save/cancel, and preset reload.
 3. Type hex, RGB, HSV, and alpha; use the wheel/square with pointer and keyboard;
    reuse saved/document colors; sample into a specific gradient stop.
 4. Upload and reuse a background, edit fit/focus/opacity/tint/blur, extract its

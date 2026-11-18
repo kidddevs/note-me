@@ -39,6 +39,12 @@ the shared X/Y fields or drag a member to move their composition together.
 keep the two outer items fixed, preserve stacking order, and allow an existing
 overlapping span instead of automatically enlarging it.
 
+The multi-layer inspector also includes **Style**. Copy or save the primary
+layer's appearance and apply a chosen set of properties to compatible members.
+An individual or inherited lock blocks style changes for the entire selection.
+Style application uses one undo entry. See the scope and persistence contracts
+in [Cover designer](COVER_DESIGNER.md#reusable-layer-styles).
+
 ## Manuscript workflow
 
 Multi-select page objects to open **Align & arrange**. The same spacing choices

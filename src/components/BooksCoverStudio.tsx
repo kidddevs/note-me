@@ -200,6 +200,7 @@ import {
   type CoverDistributeAxis,
 } from "../lib/bookCoverGeometry";
 import type { StudioArrangeReference, StudioSpacing } from "../lib/studioGeometry";
+import { CoverStyleControls } from "./CoverStyleControls";
 import { CoverSelectionInspector } from "./CoverSelectionInspector";
 import {
   layoutForBook,
@@ -218,13 +219,14 @@ import { getCoverLayerClipboard, setCoverLayerClipboard } from "../lib/bookCover
 import { deleteBrandPalette, readBrandPalettes, saveBrandPalette, type CoverBrandPalette } from "../lib/bookCoverBrandPalettes";
 import { loadCoverHistory, saveCoverHistory } from "../lib/bookCoverHistory";
 import {
-  applyLayerStyle,
+  styleCoverSelection,
   deleteLayerStylePreset,
   readLayerStylePresets,
   saveLayerStylePreset,
   styleValuesFromLayer,
   type CoverLayerStylePreset,
   type CoverLayerStyleValues,
+  type CoverStyleScope,
 } from "../lib/bookCoverStyles";
 import {
   addSavedCoverTemplate,
@@ -362,13 +364,7 @@ interface InspectorProps {
   onClearBarcode: () => void;
   imagePanMode: boolean;
   onImagePanMode: (value: boolean) => void;
-  stylePresets: CoverLayerStylePreset[];
-  hasStyleClipboard: boolean;
-  onCopyStyle: () => void;
-  onPasteStyle: () => void;
-  onApplyStylePreset: (preset: CoverLayerStylePreset) => void;
-  onSaveStyle: () => void;
-  onDeleteStylePreset: (id: string) => void;
+  stylePanel: ReactNode;
   onExtractPalette: (source: string, id: string) => void;
   onExtractViewPalette: () => void;
   extractingViewPalette: boolean;
@@ -799,6 +795,7 @@ export function CoverScreen({
   const [savedTemplates, setSavedTemplates] = useState<SavedCoverTemplate[]>(() => readSavedCoverTemplates());
   const [stylePresets, setStylePresets] = useState<CoverLayerStylePreset[]>(() => readLayerStylePresets());
   const [styleClipboard, setStyleClipboard] = useState<CoverLayerStyleValues | null>(null);
+  const [styleScope, setStyleScope] = useState<CoverStyleScope>("all");
   const [imageLibrary, setImageLibrary] = useState<CoverImageAsset[]>([]);
   const [imageLibraryTarget, setImageLibraryTarget] = useState<"add" | "replace" | "background" | null>(null);
   const [arrangeReference, setArrangeReference] = useState<StudioArrangeReference>("selection");
@@ -1034,6 +1031,7 @@ export function CoverScreen({
     setExtraSelectedIds([]);
     setPanel("wrap");
     setLayerReveal(null);
+    setStyleScope("all");
     setActiveGroupId(null);
     setImageLibraryTarget(null);
     setTool("select");
@@ -1564,47 +1562,46 @@ export function CoverScreen({
     notify("info", "Layer style copied", `${layer.name} · paste with ⌥⌘V or the Style panel.`);
   };
 
+  const applySelectedStyle = (values: CoverLayerStyleValues, key: string) => {
+    const current = layoutRef.current.cover.doc;
+    if (current.layers.some((layer) => selectedIds.includes(layer.id) && coverLayerLocked(current, layer))) {
+      notify("info", "Selection is locked", "Unlock every selected layer and group to apply a style.");
+      return 0;
+    }
+    const updates = styleCoverSelection(current, selectedIds, values, styleScope);
+    if (updates.length === 0) {
+      notify("info", "Style has no changes", "The selected layers already match or have no compatible properties.");
+      return 0;
+    }
+    // Each paste/preset application is one undo step, even when repeated quickly.
+    lastHistoryKeyRef.current = "";
+    updateLayers(updates, { key });
+    lastHistoryKeyRef.current = "";
+    return updates.length;
+  };
+
   const pasteSelectedStyle = () => {
     if (!styleClipboard) {
       notify("info", "Nothing to paste", "Copy a layer style first with ⌥⌘C.");
       return;
     }
-    const current = layoutRef.current.cover;
-    const ids = selectedIds.length > 0 ? selectedIds : selectedLayerId ? [selectedLayerId] : [];
-    const updates = ids.flatMap((id) => {
-      const layer = current.doc.layers.find((item) => item.id === id);
-      return layer ? [{ id, patch: applyLayerStyle(layer, styleClipboard) }] : [];
-    });
-    if (updates.length === 0) return;
-    updateLayers(updates, { key: "style:paste" });
-    notify("success", updates.length === 1 ? "Style pasted" : `Style pasted to ${updates.length} layers`);
+    const count = applySelectedStyle(styleClipboard, "style:paste");
+    if (count) notify("success", count === 1 ? "Style pasted" : `Style pasted to ${count} layers`);
   };
 
-  const saveCurrentStyle = () => {
-    const current = layoutRef.current.cover;
-    const layer = current.doc.layers.find((item) => item.id === selectedLayerId);
-    if (!layer) return;
-    const name = window.prompt("Name this layer style", `${layer.name} style`);
-    if (!name?.trim()) return;
+  const saveCurrentStyle = (name: string): string | null => {
+    const layer = layoutRef.current.cover.doc.layers.find((item) => item.id === selectedLayerId);
+    if (!layer) return "Select a source layer to save its style.";
     const result = saveLayerStylePreset(name, layer, stylePresets);
-    if (!result.ok) {
-      notify("error", "Style not saved", result.message);
-      return;
-    }
+    if (!result.ok) return result.message ?? "The style could not be saved.";
     setStylePresets(result.presets);
-    notify("success", "Layer style saved", `“${name.trim()}” is ready in the Style panel.`);
+    notify("success", "Layer style saved", name);
+    return null;
   };
 
   const applyStylePreset = (preset: CoverLayerStylePreset) => {
-    const current = layoutRef.current.cover;
-    const ids = selectedIds.length > 0 ? selectedIds : selectedLayerId ? [selectedLayerId] : [];
-    const updates = ids.flatMap((id) => {
-      const layer = current.doc.layers.find((item) => item.id === id);
-      return layer ? [{ id, patch: applyLayerStyle(layer, preset.values) }] : [];
-    });
-    if (updates.length === 0) return;
-    updateLayers(updates, { key: `style:preset:${preset.id}` });
-    notify("success", "Style applied", updates.length === 1 ? preset.name : `${preset.name} · ${updates.length} layers`);
+    const count = applySelectedStyle(preset.values, `style:preset:${preset.id}`);
+    if (count) notify("success", "Style applied", count === 1 ? preset.name : `${preset.name} · ${count} layers`);
   };
 
   const removeStylePreset = (id: string) => {
@@ -2244,7 +2241,7 @@ export function CoverScreen({
     if (key === "s") { setSymbolOpen(true); setArtworkOpen(false); }
     if (key === "a") { setArtworkOpen(true); setSymbolOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, shortcutsOpen, layerDrawerOpen, selectedLayerId, selectedIds, selected?.type, tool, styleClipboard, undo, redo]);
+  }, [previewing, imagePanMode, symbolOpen, artworkOpen, downloadOpen, templateOpen, mockupOpen, layerMenu, preflightOpen, shortcutsOpen, layerDrawerOpen, selectedLayerId, selectedIds, selected?.type, tool, styleClipboard, styleScope, undo, redo]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyboardHandler(event);
@@ -2558,13 +2555,24 @@ export function CoverScreen({
               onStartErasing={() => setTool("eraser")}
               imagePanMode={imagePanMode}
               onImagePanMode={setImagePanMode}
-              stylePresets={stylePresets}
-              hasStyleClipboard={Boolean(styleClipboard)}
-              onCopyStyle={copySelectedStyle}
-              onPasteStyle={pasteSelectedStyle}
-              onApplyStylePreset={applyStylePreset}
-              onSaveStyle={saveCurrentStyle}
-              onDeleteStylePreset={removeStylePreset}
+              stylePanel={selected && <Section title="Style" hint="Copy & presets" defaultOpen={false}>
+                <CoverStyleControls
+                  key={selected.id}
+                  sourceName={selected.name || layerLabel(selected.type)}
+                  selectionCount={selectedIds.length}
+                  scope={styleScope}
+                  onScope={setStyleScope}
+                  locked={selectedLayers.some((layer) => coverLayerLocked(doc, layer))}
+                  canPaste={Boolean(styleClipboard && styleCoverSelection(doc, selectedIds, styleClipboard, styleScope).length)}
+                  canApply={(values) => styleCoverSelection(doc, selectedIds, values, styleScope).length > 0}
+                  presets={stylePresets}
+                  onCopy={copySelectedStyle}
+                  onPaste={pasteSelectedStyle}
+                  onApply={applyStylePreset}
+                  onSave={saveCurrentStyle}
+                  onDelete={removeStylePreset}
+                />
+              </Section>}
               onExtractPalette={extractImagePalette}
               onExtractViewPalette={extractViewPalette}
               extractingViewPalette={extractingViewPalette}
@@ -2670,7 +2678,7 @@ export function CoverScreen({
           onPaste={pasteSelection}
           onCopyStyle={copySelectedStyle}
           onPasteStyle={pasteSelectedStyle}
-          canPasteStyle={Boolean(styleClipboard)}
+          canPasteStyle={Boolean(styleClipboard && styleCoverSelection(doc, selectedIds, styleClipboard, styleScope).length)}
           clipShape={menuClipShape}
           onClipToShape={() => { if (menuLayer && menuClipShape) updateLayer(menuLayer.id, { clipTo: menuClipShape.id }, { key: `clip:${menuLayer.id}` }); }}
           onReleaseClip={() => { if (menuLayer) updateLayer(menuLayer.id, { clipTo: null }, { key: `clip:${menuLayer.id}` }); }}
@@ -4378,7 +4386,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, selectionInspector, pageEstimate, onSelect, onRevealLayer, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, onExtractViewPalette, extractingViewPalette, onOpenImageLibrary, imageLibrary, onUseLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, selectionInspector, pageEstimate, onSelect, onRevealLayer, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePanel, onExtractPalette, onExtractViewPalette, extractingViewPalette, onOpenImageLibrary, imageLibrary, onUseLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
   const eraserActive = tool === "eraser";
   const eraserTarget = selected?.type === "image" ? selected : null;
   const imageLayers = cover.doc.layers.filter((layer): layer is CoverImageLayer => layer.type === "image");
@@ -4406,7 +4414,7 @@ function Inspector({ book, cover, metrics, selected, selectedCount, selectionIns
             onEraseBackground={cover.doc.backgroundImage?.src ? () => onLiftBackground("eraser") : undefined}
           />
         )}
-        {selectionInspector && !eraserActive ? selectionInspector : selected ? (
+        {selectionInspector && !eraserActive ? <>{selectionInspector}{stylePanel}</> : selected ? (
           <LayerInspector
             book={book}
             cover={cover}
@@ -4421,13 +4429,7 @@ function Inspector({ book, cover, metrics, selected, selectedCount, selectionIns
             onClearBarcode={onClearBarcode}
             imagePanMode={imagePanMode}
             onImagePanMode={onImagePanMode}
-            stylePresets={stylePresets}
-            hasStyleClipboard={hasStyleClipboard}
-            onCopyStyle={onCopyStyle}
-            onPasteStyle={onPasteStyle}
-            onApplyStylePreset={onApplyStylePreset}
-            onSaveStyle={onSaveStyle}
-            onDeleteStylePreset={onDeleteStylePreset}
+            stylePanel={stylePanel}
             onExtractPalette={onExtractPalette}
             onOpenImageLibrary={onOpenImageLibrary}
             imageLibrary={imageLibrary}
@@ -4678,13 +4680,7 @@ function LayerInspector({
   onClearBarcode,
   imagePanMode,
   onImagePanMode,
-  stylePresets,
-  hasStyleClipboard,
-  onCopyStyle,
-  onPasteStyle,
-  onApplyStylePreset,
-  onSaveStyle,
-  onDeleteStylePreset,
+  stylePanel,
   onExtractPalette,
   onOpenImageLibrary,
   imageLibrary,
@@ -4707,13 +4703,7 @@ function LayerInspector({
   onClearBarcode: () => void;
   imagePanMode: boolean;
   onImagePanMode: (value: boolean) => void;
-  stylePresets: CoverLayerStylePreset[];
-  hasStyleClipboard: boolean;
-  onCopyStyle: () => void;
-  onPasteStyle: () => void;
-  onApplyStylePreset: (preset: CoverLayerStylePreset) => void;
-  onSaveStyle: () => void;
-  onDeleteStylePreset: (id: string) => void;
+  stylePanel: ReactNode;
   onExtractPalette: (source: string, id: string) => void;
   onOpenImageLibrary: (target: "add" | "replace" | "background") => void;
   imageLibrary: CoverImageAsset[];
@@ -4842,29 +4832,7 @@ function LayerInspector({
         </div>}
       </Section>
 
-      <Section title="Style" hint="Copy & presets" defaultOpen={false}>
-        <div className="cover-style-actions">
-          <button type="button" className="cover-mini-button" onClick={onCopyStyle} title="Copy this layer's appearance"><Paintbrush size={12} /> Copy style</button>
-          <button type="button" className="cover-mini-button" disabled={!hasStyleClipboard} onClick={onPasteStyle} title="Paste appearance onto the selection"><ClipboardPaste size={12} /> Paste style</button>
-        </div>
-        <div className="cover-style-presets">
-          <span className="cover-field-heading">Saved styles</span>
-          {stylePresets.length === 0 ? (
-            <p className="cover-style-empty">Save a look to reuse its type, fill, effects, and mask across layers and covers.</p>
-          ) : (
-            <div className="cover-style-preset-list">
-              {stylePresets.map((preset) => (
-                <div className="cover-style-preset" key={preset.id}>
-                  <button type="button" onClick={() => onApplyStylePreset(preset)} title={`Apply ${preset.name}`}><span>{preset.name}</span><small>{preset.sourceType}</small></button>
-                  <button type="button" className="cover-style-delete" onClick={() => onDeleteStylePreset(preset.id)} title={`Delete ${preset.name}`} aria-label={`Delete ${preset.name} style`}><Trash2 size={11} /></button>
-                </div>
-              ))}
-            </div>
-          )}
-          <button type="button" className="cover-wide-button subtle" onClick={onSaveStyle}><Plus size={12} /> Save current style</button>
-        </div>
-        <small className="cover-field-hint">Shared effects, opacity, blend mode, and masks apply to any layer. Type settings apply to matching layers. Shortcuts: ⌥⌘C / ⌥⌘V.</small>
-      </Section>
+      {stylePanel}
 
       <Section title="Layer mask" hint="Gradient fade" defaultOpen={layer.fade.mode !== "none"}>
         <label className="cover-select-field full"><span>Fade edge</span><select value={layer.fade.mode} onChange={(event) => onUpdate({ fade: { ...layer.fade, mode: event.target.value as CoverLayer["fade"]["mode"] } }, { key: `fade-mode:${layer.id}` })}><option value="none">No mask</option><option value="bottom">Fade bottom</option><option value="top">Fade top</option><option value="left">Fade left</option><option value="right">Fade right</option><option value="vignette">Vignette</option></select></label>

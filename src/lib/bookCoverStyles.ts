@@ -1,5 +1,7 @@
 import {
+  coverLayerLocked,
   parseCoverDocument,
+  type BookCoverDocument,
   type CoverBlendMode,
   type CoverDashStyle,
   type CoverFill,
@@ -19,6 +21,16 @@ import {
 export const SAVED_COVER_STYLES_KEY = "book-studio:cover-styles:v1";
 export const MAX_SAVED_COVER_STYLES = 30;
 export const MAX_SAVED_COVER_STYLE_NAME = 48;
+
+export type CoverStyleScope = "all" | "colors" | "effects" | "typography" | "grading";
+
+export const COVER_STYLE_SCOPES: { value: CoverStyleScope; label: string }[] = [
+  { value: "all", label: "All appearance" },
+  { value: "colors", label: "Colours & fills" },
+  { value: "effects", label: "Shared effects" },
+  { value: "typography", label: "Typography" },
+  { value: "grading", label: "Photo grading" },
+];
 
 export interface CoverLayerStyleValues {
   opacity: number;
@@ -83,6 +95,13 @@ const TYPE_KEYS: Record<CoverLayerType, (keyof CoverLayerStyleValues)[]> = {
   barcode: ["showText", "barColor", "background"],
 };
 
+const SCOPE_KEYS: Record<Exclude<CoverStyleScope, "all">, (keyof CoverLayerStyleValues)[]> = {
+  colors: ["color", "fill", "strokeColor", "effectColor", "barColor", "background", "tint", "tintStrength"],
+  effects: SHARED_KEYS,
+  typography: ["fontFamily", "fontSize", "fontWeight", "italic", "align", "verticalAlign", "lineHeight", "letterSpacing", "uppercase", "curve", "customFont"],
+  grading: ["grayscale", "sepia", "brightness", "contrast", "saturation", "hue", "blur", "tint", "tintStrength"],
+};
+
 const LAYER_TYPES: CoverLayerType[] = ["text", "image", "shape", "line", "symbol", "artwork", "barcode"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -124,17 +143,28 @@ export function styleValuesFromLayer(layer: CoverLayer): CoverLayerStyleValues {
 }
 
 /** Builds a type-safe patch; shared appearance always applies and matching type fields follow. */
-export function applyLayerStyle(layer: CoverLayer, values: CoverLayerStyleValues): Partial<CoverLayer> {
+export function applyLayerStyle(layer: CoverLayer, values: CoverLayerStyleValues, scope: CoverStyleScope = "all"): Partial<CoverLayer> {
   const patch: Record<string, unknown> = {};
-  for (const key of SHARED_KEYS) {
-    const value = values[key];
-    if (value !== undefined) patch[key] = cloneValue(value);
-  }
-  for (const key of TYPE_KEYS[layer.type]) {
+  const keys = [...SHARED_KEYS, ...TYPE_KEYS[layer.type]];
+  for (const key of keys) {
+    if (scope !== "all" && !SCOPE_KEYS[scope].includes(key)) continue;
     const value = values[key];
     if (value !== undefined) patch[key] = cloneValue(value);
   }
   return patch as Partial<CoverLayer>;
+}
+
+/** Build one atomic style change. A missing or locked member rejects the selection. */
+export function styleCoverSelection(doc: BookCoverDocument, ids: string[], values: CoverLayerStyleValues, scope: CoverStyleScope = "all") {
+  const selected = new Set(ids);
+  const layers = doc.layers.filter((layer) => selected.has(layer.id));
+  if (layers.length !== selected.size || layers.some((layer) => coverLayerLocked(doc, layer))) return [];
+  return layers.flatMap((layer) => {
+    const patch = applyLayerStyle(layer, values, scope);
+    const previous = layer as unknown as Record<string, unknown>;
+    const changed = Object.entries(patch).some(([key, value]) => JSON.stringify(value) !== JSON.stringify(previous[key]));
+    return changed ? [{ id: layer.id, patch }] : [];
+  });
 }
 
 function normalizeStyleValues(sourceType: CoverLayerType, raw: unknown): CoverLayerStyleValues | null {
@@ -257,6 +287,9 @@ export function writeLayerStylePresets(presets: CoverLayerStylePreset[]): CoverS
 }
 
 export function saveLayerStylePreset(name: string, layer: CoverLayer, presets = readLayerStylePresets()): CoverStyleWriteResult {
+  if (presets.length >= MAX_SAVED_COVER_STYLES) {
+    return { ok: false, presets, message: "The style library is full. Remove a saved style before adding another." };
+  }
   return writeLayerStylePresets([createLayerStylePreset(name, layer), ...presets]);
 }
 
