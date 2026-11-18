@@ -1,3 +1,27 @@
+import { normalizeCoverHex } from "./bookCoverColor";
+import type { BookCoverGradient } from "./bookLayout";
+
+/** Place new colors first, preserving alpha and the first occurrence of each color. */
+export function mergeCoverPalette(incoming: string[], existing: string[] = []): string[] {
+  const colors = new Set<string>();
+  for (const entry of [...incoming, ...existing]) {
+    const color = normalizeCoverHex(entry);
+    if (color) colors.add(color);
+    if (colors.size === 16) break;
+  }
+  return [...colors];
+}
+
+/** Use up to four distinct palette colors as evenly spaced stops. */
+export function coverGradientFromPalette(palette: string[], gradient: BookCoverGradient): BookCoverGradient | null {
+  const colors = mergeCoverPalette(palette).slice(0, 4);
+  if (colors.length < 2) return null;
+  return {
+    ...gradient,
+    stops: colors.map((color, index) => ({ color, position: index / (colors.length - 1) })),
+  };
+}
+
 export interface CoverPaletteOptions {
   alphaThreshold?: number;
   similarity?: number;

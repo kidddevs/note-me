@@ -81,7 +81,26 @@ input cannot corrupt a saved fill. Document and brand palettes preserve alpha.
 canvas eyedropper. **Save colour** adds the current color to the document.
 **Sample cover** closes the picker and samples once into that exact field or
 gradient stop. Escape cancels sampling. The regular **E** tool still samples into
-the selected layer or background and collects document colors.
+the selected layer or background and collects document colors. Shift-click
+collects a color without changing the artwork. A locked layer, an inherited
+group lock, or a multi-layer selection also routes the sample to the palette.
+Rendering uses the active artboard. Changing the cover or selection or exiting
+the tool while a pixel is being read discards the pending sample.
+
+**Extract artboard palette** reads the rendered spread, front, spine, or back
+from the current view, including the background, visible layers, and effects.
+It uses the same canvas renderer as the image exports. Image and background
+extraction sample the original photo. Both add colors to the same document
+palette available in the picker and in saved brand palettes. **Save background
+colours** adds the active solid, all gradient stops, or both pattern colors.
+
+In a background or shape gradient, **Use palette** sets two to four evenly
+spaced stops from the first distinct document colors. It preserves the gradient
+style, angle, and color alpha. Both extraction and fill changes use the cover
+history. **Use palette** is its own undo step. `mergeCoverPalette` normalizes
+swatches, preserves their order, and
+caps the document palette at 16 colors. `coverGradientFromPalette` returns
+`null` when the document has fewer than two distinct valid colors.
 
 Keyboard events inside the picker must stay inside it: arrows adjust color,
 Escape closes it, and focus returns to the originating swatch. The popover follows

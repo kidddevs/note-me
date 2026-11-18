@@ -3,9 +3,19 @@ const assert = require("node:assert/strict");
 const {
   filterLibraryBooks,
   libraryBookSearchText,
+  libraryCoverColors,
   libraryStatusCounts,
   libraryStatusLabel,
 } = require("./.compiled/src/lib/bookLibrary.js");
+
+test("shelf placeholder ink follows the saved background, including medium hues", () => {
+  assert.deepEqual(libraryCoverColors("#e8d9c7"), { background: "#e8d9c7", color: "#000000" });
+  assert.deepEqual(libraryCoverColors("#172a20"), { background: "#172a20", color: "#ffffff" });
+  assert.equal(libraryCoverColors("#a56b3e").color, "#000000");
+  assert.equal(libraryCoverColors("#f4e").color, "#000000");
+  assert.deepEqual(libraryCoverColors(""), libraryCoverColors("#a56b3e"));
+  assert.deepEqual(libraryCoverColors("#fff0"), libraryCoverColors("#a56b3e"));
+});
 
 function book(overrides = {}) {
   return {

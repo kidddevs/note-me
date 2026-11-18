@@ -1,5 +1,13 @@
 import type { Book } from "./types";
 import { STATUS_OPTIONS } from "./bookPublishing";
+import { contrastingCoverInk, normalizeCoverHex } from "./bookCoverColor";
+
+/** Resolve one opaque card color and legible ink for its icon and label. */
+export function libraryCoverColors(value: string) {
+  const color = normalizeCoverHex(value);
+  const background = color?.length === 7 ? color : "#a56b3e";
+  return { background, color: contrastingCoverInk(background) };
+}
 
 export type LibrarySort = "recent" | "title" | "stage" | "created";
 export type LibraryStatusFilter = "all" | "draft" | "revising" | "ready" | "published";

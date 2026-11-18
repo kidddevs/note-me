@@ -41,6 +41,19 @@ export function rgbaToHex({ r, g, b, a }: Rgba) {
   return `#${channels.join("")}${alpha < 255 ? alpha.toString(16).padStart(2, "0") : ""}`;
 }
 
+/** Pick the higher-contrast ink for an opaque sRGB background. */
+export function contrastingCoverInk(background: string): "#000000" | "#ffffff" {
+  const { r, g, b } = parseCoverColor(background);
+  const linear = (channel: number) => {
+    const srgb = channel / 255;
+    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+  const blackContrast = (luminance + 0.05) / 0.05;
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  return blackContrast >= whiteContrast ? "#000000" : "#ffffff";
+}
+
 export function rgbToHsv({ r, g, b }: Pick<Rgba, "r" | "g" | "b">): Hsv {
   const red = r / 255;
   const green = g / 255;

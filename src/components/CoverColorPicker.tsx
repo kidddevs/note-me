@@ -16,6 +16,10 @@ const CoverColorContext = createContext<{
   onPickColor?: (apply: (color: string) => void) => void;
 }>({ palette: [] });
 
+export function useCoverColors() {
+  return useContext(CoverColorContext);
+}
+
 export function CoverColorProvider({ palette, onSaveColor, onPickColor, children }: {
   palette: string[];
   onSaveColor: (color: string) => void;
@@ -180,7 +184,7 @@ function NumberInput({ label, value, min, max, onChange }: { label: string; valu
 }
 
 function ColorPopover({ value, onChange, trigger, id, onClose }: { value: string; onChange: (value: string) => void; trigger: HTMLButtonElement | null; id: string; onClose: () => void }) {
-  const { palette, onSaveColor, onPickColor } = useContext(CoverColorContext);
+  const { palette, onSaveColor, onPickColor } = useCoverColors();
   const [position, setPosition] = useState({ left: 8, top: 52 });
   const initial = parseCoverColor(value);
   const [hsv, setHsv] = useState<Hsv>(() => rgbToHsv(initial));

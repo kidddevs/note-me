@@ -1,6 +1,30 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { extractPaletteFromPixels } = require("./.compiled/src/lib/bookCoverPalette");
+const { coverGradientFromPalette, extractPaletteFromPixels, mergeCoverPalette } = require("./.compiled/src/lib/bookCoverPalette");
+
+test("sampled colours move to the front of a bounded palette without duplicate swatches", () => {
+  const existing = Array.from({ length: 16 }, (_, index) => "#1234" + index.toString(16).padStart(2, "0"));
+  const palette = mergeCoverPalette(["#AbC8", " #123409 ", "invalid"], existing);
+  assert.deepEqual(palette.slice(0, 3), ["#aabbcc88", "#123409", "#123400"]);
+  assert.equal(palette.length, 16);
+  assert.equal(new Set(palette).size, 16);
+  assert.ok(!palette.includes("#12340f"));
+});
+
+test("palette gradients use distinct colours, preserve transparency and keep the gradient geometry", () => {
+  const radial = { type: "radial", angle: 73, stops: [{ color: "#efefef", position: 0 }, { color: "#343434", position: 1 }] };
+  assert.equal(coverGradientFromPalette(["#abc", "#aabbcc", "invalid"], radial), null);
+  assert.deepEqual(coverGradientFromPalette(["#ABC", "#aabbcc", "#0128", "#321", "#faa", "#111"], radial), {
+    type: "radial", angle: 73,
+    stops: [
+      { color: "#aabbcc", position: 0 },
+      { color: "#00112288", position: 1 / 3 },
+      { color: "#332211", position: 2 / 3 },
+      { color: "#ffaaaa", position: 1 },
+    ],
+  });
+  assert.equal(radial.stops[0].color, "#efefef");
+});
 
 function pixelsOf(colors, repeat = 40) {
   const data = [];

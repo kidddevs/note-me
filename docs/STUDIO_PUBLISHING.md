@@ -11,7 +11,12 @@ store order intact. Card actions use the book tab and its existing section memor
 A saved layered cover displays the full back, spine, and front at the spread's
 aspect ratio. The publication cover toggle only controls the default export
 choice. A book with a legacy cover template shows the front, and a book without
-cover artwork shows its colour and genre.
+cover artwork shows its colour and genre. `libraryCoverColors` resolves an
+opaque background from the saved cover color and picks black or white for the
+genre and book icon based on sRGB contrast. Layered artwork keeps its own ink.
+
+In Book settings, **Page design** spans the full settings grid. Paper presets
+wrap to the number of columns that fit.
 
 ## Edition and save
 

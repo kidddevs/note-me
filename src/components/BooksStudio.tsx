@@ -39,7 +39,7 @@ import {
   TRIM_SIZES,
 } from "../lib/bookPublishing";
 import { coverMetrics, coverPanelRect, hasCoverDocument } from "../lib/bookCoverDoc";
-import { filterLibraryBooks, libraryStatusCounts, libraryStatusLabel, LIBRARY_SORT_OPTIONS, type LibrarySort, type LibraryStatusFilter } from "../lib/bookLibrary";
+import { filterLibraryBooks, libraryCoverColors, libraryStatusCounts, libraryStatusLabel, LIBRARY_SORT_OPTIONS, type LibrarySort, type LibraryStatusFilter } from "../lib/bookLibrary";
 export * from "../lib/bookPublishing";
 import type { BookExportFormat, PageBand } from "../lib/bookPublishing";
 import { useBooks } from "../store/books";
@@ -453,7 +453,7 @@ function LibraryCover({ book }: { book: Book }) {
   const rect = coverPanelRect(coverMetrics(book.trim_size, layout.cover), panel);
   const style = hasArtwork
     ? { "--card-cover-ratio": rect.width / rect.height } as CSSProperties
-    : { background: book.cover_color || undefined };
+    : libraryCoverColors(book.cover_color);
   return (
     <div className={`book-card-cover ${hasArtwork ? "designed" : "fallback"}`} style={style} aria-hidden="true">
       {hasArtwork ? <CoverArtwork book={book} layout={layout} panel={panel} /> : <><BookOpen size={25} /><span>{book.genre || "MANUSCRIPT"}</span></>}

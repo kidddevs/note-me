@@ -155,6 +155,7 @@ import {
   reflowSpineLayers,
   reorderCoverGroup,
   renderCoverCanvas,
+  coverDocPanelLabel,
   reverseCoverGradient,
   resolveCoverTokenText,
   shapeLayer,
@@ -211,7 +212,7 @@ import { downloadCoverMockup, type CoverMockupFormat } from "../lib/bookCoverMoc
 import { downloadCoverPackage } from "../lib/bookCoverPackage";
 import { coverPreflight, coverPreflightFix, coverPreflightSummary, type CoverPreflightCheck } from "../lib/bookCoverPreflight";
 import { downloadCoverPdf } from "../lib/bookCoverPdf";
-import { extractPaletteFromPixels } from "../lib/bookCoverPalette";
+import { coverGradientFromPalette, extractPaletteFromPixels, mergeCoverPalette } from "../lib/bookCoverPalette";
 import { IMAGE_LIBRARY_CHANGED, listCoverImageAssets, saveCoverImageAsset, type CoverImageAsset } from "../lib/bookImageLibrary";
 import { getCoverLayerClipboard, setCoverLayerClipboard } from "../lib/bookCoverClipboard";
 import { deleteBrandPalette, readBrandPalettes, saveBrandPalette, type CoverBrandPalette } from "../lib/bookCoverBrandPalettes";
@@ -243,7 +244,7 @@ import { useBooks } from "../store/books";
 import { CoverImageFocus } from "./CoverImageFocus";
 import { BookImageLibrary, SaveStudioImageButton } from "./BookImageLibrary";
 import { liftCoverBackground, matchCoverImageRatio, renderCoverSelectionCanvas, resetCoverImageCrop, resetCoverImageTone } from "../lib/bookCoverImages";
-import { CoverColorField, CoverColorSwatch, CoverColorProvider } from "./CoverColorPicker";
+import { CoverColorField, CoverColorSwatch, CoverColorProvider, useCoverColors } from "./CoverColorPicker";
 import { moveCoverLayers, stepCoverLayers, type CoverLayerPlacement } from "../lib/bookCoverLayers";
 import { notify } from "../store/toast";
 
@@ -318,7 +319,7 @@ interface CoverStageProps {
   onAddText: () => void;
   onAddImage: () => void;
   onOpenTemplates: () => void;
-  onSample: (x: number, y: number) => void;
+  onSample: (x: number, y: number, paletteOnly: boolean) => void;
   onContextMenu: (event: React.MouseEvent<HTMLElement>, layerId: string) => void;
   onGuideAdd: (axis: "x" | "y", spreadPosition: number) => void;
   onGuideChange: (id: string, spreadPosition: number) => void;
@@ -367,7 +368,9 @@ interface InspectorProps {
   onApplyStylePreset: (preset: CoverLayerStylePreset) => void;
   onSaveStyle: () => void;
   onDeleteStylePreset: (id: string) => void;
-  onExtractPalette: (layer: CoverImageLayer) => void;
+  onExtractPalette: (source: string, id: string) => void;
+  onExtractViewPalette: () => void;
+  extractingViewPalette: boolean;
   onOpenImageLibrary: (target: "add" | "replace" | "background") => void;
   imageLibrary: CoverImageAsset[];
   onUseLibraryImage: (asset: CoverImageAsset) => void;
@@ -644,6 +647,8 @@ function historyLabel(key?: string) {
   if (value.startsWith("clip:")) return "Changed clipping mask";
   if (value.startsWith("highlight-")) return "Changed text highlight";
   if (value.startsWith("palette:image:")) return "Extracted image palette";
+  if (value.startsWith("palette:view:")) return "Extracted artboard palette";
+  if (value.startsWith("gradient:palette")) return "Set gradient from palette";
   if (value.startsWith("palette:brand:")) return "Applied brand palette";
   if (value === "style:paste") return "Pasted layer style";
   if (value.startsWith("style:preset:")) return "Applied layer style";
@@ -806,6 +811,7 @@ export function CoverScreen({
   const [proofWatermark, setProofWatermark] = useState(false);
   const [busyImageAction, setBusyImageAction] = useState(false);
   const [busyDownload, setBusyDownload] = useState<string | null>(null);
+  const [extractingViewPalette, setExtractingViewPalette] = useState(false);
   const [history, setHistory] = useState<CoverHistoryEntry[]>([]);
   const [future, setFuture] = useState<CoverHistoryEntry[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
@@ -815,7 +821,9 @@ export function CoverScreen({
   const bookRef = useRef(book);
   const dirtyRef = useRef(false);
   const timerRef = useRef<number | null>(null);
-  const colorSampleRef = useRef<((color: string) => void) | null>(null);
+  const colorSampleRef = useRef<{ cover: BookCoverDesign; layerId: string | null; apply: (color: string) => void } | null>(null);
+  const sampleRequest = useRef(0);
+  const mounted = useRef(false);
   const colorRef = useRef(book.cover_color || FALLBACK_ACCENT);
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const replaceImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -840,13 +848,22 @@ export function CoverScreen({
 
   useEffect(() => {
     if (tool === "eraser" || tool === "hand" || tool === "zoom") setImagePanMode(false);
-    if (tool !== "eyedropper") colorSampleRef.current = null;
+    if (tool !== "eyedropper") {
+      colorSampleRef.current = null;
+      sampleRequest.current += 1;
+    }
   }, [tool]);
   const selectedIds = useMemo(
     () => selectedLayerId ? [selectedLayerId, ...extraSelectedIds.filter((id) => id !== selectedLayerId)] : [],
     [selectedLayerId, extraSelectedIds],
   );
   const selectedLayers = useMemo(() => doc.layers.filter((layer) => selectedIds.includes(layer.id)), [doc.layers, selectedIds]);
+  const sampleView = useRef({ panel, selectedIds });
+  sampleView.current = { panel, selectedIds };
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const pageEstimate = useMemo(() => pageCountFor(book, chapters), [book, chapters]);
   const coverChapter = chapters.find((chapter) => chapter.chapter_kind === "cover") ?? null;
   const designPanel: Exclude<CoverPanel, "wrap"> = panel === "wrap" ? "front" : panel;
@@ -1902,61 +1919,108 @@ export function CoverScreen({
     void saveNow(layoutRef.current).then(() => window.setTimeout(start, 120)).catch(() => start());
   };
 
-  const sampleCoverColour = async (x: number, y: number) => {
+  const addPaletteColors = (colors: string[], options: CommitOptions) => {
+    const current = layoutRef.current.cover.doc;
+    const palette = mergeCoverPalette(colors, current.palette);
+    if (palette.length === current.palette.length && palette.every((color, index) => color === current.palette[index])) return;
+    updateDoc({ ...current, palette }, options);
+  };
+
+  const sampleCoverColour = async (x: number, y: number, paletteOnly: boolean) => {
     const current = layoutRef.current.cover;
+    const currentBook = bookRef.current;
+    const field = colorSampleRef.current;
+    const request = ++sampleRequest.current;
+    const view = coverEditorViewRect(coverMetrics(currentBook.trim_size, current), panel);
+    const stillSampling = () => mounted.current
+      && sampleRequest.current === request
+      && colorSampleRef.current === field
+      && bookRef.current.id === currentBook.id
+      && bookRef.current.trim_size === currentBook.trim_size
+      && sampleView.current.panel === panel
+      && sampleView.current.selectedIds === selectedIds
+      && layoutRef.current.cover === current;
     try {
-      const currentBook = bookRef.current;
-      const metrics = coverMetrics(currentBook.trim_size, current);
-      const canvas = await renderCoverCanvas(currentBook, current, "wrap", { dpi: 120, bleed: true });
+      const canvas = await renderCoverCanvas(currentBook, current, "wrap", { dpi: 120, region: view });
+      if (!stillSampling()) return;
       const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      const px = Math.min(canvas.width - 1, Math.max(0, Math.round((x / metrics.fullWidth) * canvas.width)));
-      const py = Math.min(canvas.height - 1, Math.max(0, Math.round((y / metrics.fullHeight) * canvas.height)));
+      if (!ctx) throw new Error("Canvas is unavailable.");
+      const px = Math.min(canvas.width - 1, Math.max(0, Math.round(((x - view.x) / view.width) * canvas.width)));
+      const py = Math.min(canvas.height - 1, Math.max(0, Math.round(((y - view.y) / view.height) * canvas.height)));
       const data = ctx.getImageData(px, py, 1, 1).data;
       const hex = `#${[data[0], data[1], data[2]].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
-      const applySample = colorSampleRef.current;
-      if (applySample) {
+      if (field) {
         colorSampleRef.current = null;
-        applySample(hex);
         setTool("select");
+        if (field.cover !== current || field.layerId !== selectedLayerId) {
+          notify("info", "Colour field changed", "Open the picker again to sample into this field.");
+          return;
+        }
+        field.apply(hex);
+        addPaletteColors([hex], { history: false });
         return;
       }
-      const layer = selectedLayerId ? current.doc.layers.find((item) => item.id === selectedLayerId) ?? null : null;
-      let nextLayer: CoverLayer | null = null;
-      if (layer) {
-        if (layer.type === "text" || layer.type === "line" || layer.type === "symbol" || layer.type === "artwork") {
-          nextLayer = { ...layer, color: hex };
-        } else if (layer.type === "shape") {
-          nextLayer = { ...layer, fill: coverFill(hex) };
-        } else if (layer.type === "image") {
-          nextLayer = { ...layer, tint: hex, tintStrength: Math.max(0.25, layer.tintStrength) };
-        } else if (layer.type === "barcode") {
-          nextLayer = { ...layer, barColor: hex };
-        }
+      const layer = current.doc.layers.find((item) => item.id === selectedLayerId);
+      if (paletteOnly || selectedIds.length > 1 || (layer && coverLayerLocked(current.doc, layer))) {
+        addPaletteColors([hex], { key: "palette:sample" });
+        notify("success", "Colour saved to palette", hex);
+        return;
       }
-      const palette = [hex, ...current.doc.palette.filter((entry) => entry.toLocaleLowerCase() !== hex)].slice(0, 16);
+      let nextLayer: CoverLayer | undefined;
+      if (layer?.type === "text" || layer?.type === "line" || layer?.type === "symbol" || layer?.type === "artwork") {
+        nextLayer = { ...layer, color: hex };
+      } else if (layer?.type === "shape") {
+        nextLayer = { ...layer, fill: { ...layer.fill, type: "solid", color: hex } };
+      } else if (layer?.type === "image") {
+        nextLayer = { ...layer, tint: hex, tintStrength: Math.max(0.25, layer.tintStrength) };
+      } else if (layer?.type === "barcode") {
+        nextLayer = { ...layer, barColor: hex };
+      }
       const nextDoc: BookCoverDocument = {
         ...current.doc,
-        palette,
-        background: nextLayer ? current.doc.background : coverFill(hex),
-        layers: nextLayer ? current.doc.layers.map((item) => item.id === nextLayer?.id ? nextLayer as CoverLayer : item) : current.doc.layers,
+        palette: mergeCoverPalette([hex], current.doc.palette),
+        background: layer ? current.doc.background : { ...current.doc.background, type: "solid", color: hex },
+        layers: nextLayer ? current.doc.layers.map((item) => item.id === nextLayer.id ? nextLayer : item) : current.doc.layers,
       };
       updateDoc(nextDoc, { key: "eyedropper" });
       notify("success", "Colour sampled", `${hex}${nextLayer ? ` · applied to ${nextLayer.name}` : " · set as background"}`);
     } catch (error) {
-      notify("error", "Colour could not be sampled", String(error));
+      if (stillSampling()) notify("error", "Colour could not be sampled", String(error));
     }
   };
 
-  const extractImagePalette = async (layer: CoverImageLayer) => {
-    if (!layer.src) return;
+  const extractViewPalette = async () => {
+    if (extractingViewPalette) return;
+    const sourceBook = bookRef.current;
+    const source = layoutRef.current.cover;
+    setExtractingViewPalette(true);
+    try {
+      const view = coverEditorViewRect(coverMetrics(sourceBook.trim_size, source), panel);
+      const canvas = await renderCoverCanvas(sourceBook, source, "wrap", { dpi: 72, region: view });
+      if (!mounted.current || bookRef.current.id !== sourceBook.id) return;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Canvas is unavailable.");
+      const colors = extractPaletteFromPixels(context.getImageData(0, 0, canvas.width, canvas.height).data);
+      addPaletteColors(colors, { key: `palette:view:${panel}` });
+      notify("success", "Artboard palette extracted", coverDocPanelLabel(panel));
+    } catch (error) {
+      if (mounted.current && bookRef.current.id === sourceBook.id) notify("error", "Artboard palette could not be extracted", String(error));
+    } finally {
+      if (mounted.current) setExtractingViewPalette(false);
+    }
+  };
+
+  const extractImagePalette = async (source: string, id: string) => {
+    if (!source) return;
+    const sourceBookId = bookRef.current.id;
     try {
       const image = new Image();
       await new Promise<void>((resolve, reject) => {
         image.onload = () => resolve();
         image.onerror = () => reject(new Error("The image could not be read."));
-        image.src = layer.src;
+        image.src = source;
       });
+      if (!mounted.current || bookRef.current.id !== sourceBookId) return;
       const maxSide = 180;
       const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || 1, image.naturalHeight || 1));
       const canvas = document.createElement("canvas");
@@ -1970,9 +2034,7 @@ export function CoverScreen({
         notify("info", "No palette found", "This image doesn't contain enough visible colour.");
         return;
       }
-      const current = layoutRef.current.cover;
-      const merged = [...colors, ...current.doc.palette.filter((entry) => !colors.includes(entry.toLocaleLowerCase()))].slice(0, 16);
-      updateDoc({ ...current.doc, palette: merged }, { key: `palette:image:${layer.id}` });
+      addPaletteColors(colors, { key: `palette:image:${id}` });
       notify("success", "Image palette extracted", `${colors.length} colours added to the document palette.`);
     } catch (error) {
       notify("error", "Palette could not be extracted", String(error));
@@ -2052,6 +2114,7 @@ export function CoverScreen({
     const editing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable);
     if (event.key === "Escape") {
       colorSampleRef.current = null;
+      sampleRequest.current += 1;
       if (previewing) setPreviewing(false);
       else if (imagePanMode) setImagePanMode(false);
       else if (symbolOpen) setSymbolOpen(false);
@@ -2199,14 +2262,15 @@ export function CoverScreen({
 
   return (
     <CoverColorProvider palette={doc.palette} onSaveColor={(color) => {
-      const current = layoutRef.current.cover.doc;
-      updateDoc({ ...current, palette: [color, ...current.palette.filter((entry) => entry.toLowerCase() !== color.toLowerCase())].slice(0, 16) }, { key: "palette:save-colour" });
+      addPaletteColors([color], { key: "palette:save-colour" });
     }} onPickColor={(apply) => {
-      colorSampleRef.current = (color) => {
-        apply(color);
-        const current = layoutRef.current.cover.doc;
-        updateDoc({ ...current, palette: [color, ...current.palette.filter((entry) => entry.toLowerCase() !== color)].slice(0, 16) }, { history: false });
-      };
+      const current = layoutRef.current.cover;
+      const layer = current.doc.layers.find((item) => item.id === selectedLayerId);
+      if (layer && coverLayerLocked(current.doc, layer)) {
+        notify("info", "Layer is locked", "Unlock the layer or its group to sample into this field.");
+        return;
+      }
+      colorSampleRef.current = { cover: current, layerId: selectedLayerId, apply };
       setTool("eyedropper");
     }}>
     <div className={`books-screen books-cover-screen ${previewing ? "is-previewing" : ""}`}>
@@ -2398,7 +2462,7 @@ export function CoverScreen({
             onInteractionEnd={onInteractionEnd}
             onInteractionCancel={onInteractionCancel}
             onEditText={requestEditText}
-            onSample={(x, y) => void sampleCoverColour(x, y)}
+            onSample={sampleCoverColour}
             onContextMenu={openLayerMenu}
             onGuideAdd={addGuide}
             onGuideChange={changeGuide}
@@ -2473,6 +2537,8 @@ export function CoverScreen({
               onSaveStyle={saveCurrentStyle}
               onDeleteStylePreset={removeStylePreset}
               onExtractPalette={extractImagePalette}
+              onExtractViewPalette={extractViewPalette}
+              extractingViewPalette={extractingViewPalette}
               onOpenImageLibrary={setImageLibraryTarget}
               imageLibrary={imageLibrary}
               onUseLibraryImage={useLibraryImage}
@@ -3367,6 +3433,12 @@ function LayerContextMenu({
 
 /* ========================================================================== */
 
+function coverEditorViewRect(metrics: ReturnType<typeof coverMetrics>, panel: CoverPanel) {
+  if (panel === "wrap") return coverPanelRect(metrics, panel);
+  const trim = coverPanelRect(metrics, panel);
+  return { x: Math.max(0, trim.x - metrics.bleed), y: 0, width: trim.width + metrics.bleed * 2, height: metrics.fullHeight };
+}
+
 function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, showGrid, showBleed, previewing, eyedropper, eraser, handTool, zoomTool, imagePanMode, zoom, autoFit, onSelect, onZoom, onFit, onLayersChange, onInteractionStart, onInteractionEnd, onInteractionCancel, onEditText, onDropImage, onAddText, onAddImage, onOpenTemplates, onSample, onContextMenu, onGuideAdd, onGuideChange, onGuideDelete, onAlignSelection, onDistributeSelection, onGroupSelection, onDuplicateSelection, onDeleteSelection }: CoverStageProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -3398,10 +3470,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
   const [snapGuides, setSnapGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] });
   const movedRef = useRef(false);
   const metrics = useMemo(() => coverMetrics(book.trim_size, cover), [book.trim_size, cover.pageCount, cover.paperStock, cover.spineWidthOverride, cover.bleed]);
-  const panelRect = coverPanelRect(metrics, panel);
-  const viewRect = panel === "wrap"
-    ? { x: 0, y: 0, width: metrics.fullWidth, height: metrics.fullHeight }
-    : { x: Math.max(0, panelRect.x - metrics.bleed), y: 0, width: panelRect.width + metrics.bleed * 2, height: metrics.fullHeight };
+  const viewRect = coverEditorViewRect(metrics, panel);
   const fitScale = viewport.width > 0 && viewport.height > 0
     ? Math.min((viewport.width - 76) / (viewRect.width * 96), (viewport.height - 86) / (viewRect.height * 96), 1.35)
     : 0.6;
@@ -4075,9 +4144,10 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
               if (!eyedropper) return;
               event.preventDefault();
               event.stopPropagation();
+              if (event.button !== 0) return;
               const rect = event.currentTarget.getBoundingClientRect();
               const scale = rect.width / metrics.fullWidth;
-              onSample((event.clientX - rect.left) / scale, (event.clientY - rect.top) / scale);
+              onSample((event.clientX - rect.left) / scale, (event.clientY - rect.top) / scale, event.shiftKey);
             }}
             onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
             onDrop={(event) => void onDrop(event)}
@@ -4232,7 +4302,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
           <button type="button" onClick={() => onZoom(Math.min(3, effectiveZoom + 0.1))} aria-label="Zoom in"><ZoomIn size={14} /></button>
           <button type="button" className={autoFit ? "active" : ""} onClick={onFit}><Maximize2 size={13} /> Fit</button>
         </div>
-        <span className="cover-stage-hint">{eraser ? <><Eraser size={12} /> Drag on an image to {eraser.mode === "erase" ? "erase" : "restore"} · Shift for a straight stroke · Esc cancels stroke or exits</> : handTool ? <><Hand size={12} /> Drag to pan the canvas · Esc to finish</> : zoomTool ? <><ZoomIn size={12} /> Click to zoom in · Alt-click to zoom out · Esc to finish</> : eyedropper ? <><Pipette size={12} /> Click the cover to sample a colour · press Esc or V to exit</> : imagePanMode ? <><Hand size={12} /> Drag the photo to reposition it inside its frame · Esc to finish</> : selectedIds.length > 1 ? <><Move size={12} /> Drag selection to move · corners resize · use the rotation handle to turn · Esc cancels a drag</> : <><Move size={12} /> Drag to move · Shift-click multi-select · Alt-drag a photo to reposition it · Drag from rulers for guides</>}</span>
+        <span className="cover-stage-hint">{eraser ? <><Eraser size={12} /> Drag on an image to {eraser.mode === "erase" ? "erase" : "restore"} · Shift for a straight stroke · Esc cancels stroke or exits</> : handTool ? <><Hand size={12} /> Drag to pan the canvas · Esc to finish</> : zoomTool ? <><ZoomIn size={12} /> Click to zoom in · Alt-click to zoom out · Esc to finish</> : eyedropper ? <><Pipette size={12} /> Click to sample · Shift-click saves to the palette · Esc exits</> : imagePanMode ? <><Hand size={12} /> Drag the photo to reposition it inside its frame · Esc to finish</> : selectedIds.length > 1 ? <><Move size={12} /> Drag selection to move · corners resize · use the rotation handle to turn · Esc cancels a drag</> : <><Move size={12} /> Drag to move · Shift-click multi-select · Alt-drag a photo to reposition it · Drag from rulers for guides</>}</span>
       </div>
     </main>
   );
@@ -4240,7 +4310,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, selectionInspector, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, onOpenImageLibrary, imageLibrary, onUseLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, selectionInspector, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, onExtractViewPalette, extractingViewPalette, onOpenImageLibrary, imageLibrary, onUseLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
   const eraserActive = tool === "eraser";
   const eraserTarget = selected?.type === "image" ? selected : null;
   const imageLayers = cover.doc.layers.filter((layer): layer is CoverImageLayer => layer.type === "image");
@@ -4316,7 +4386,9 @@ function Inspector({ book, cover, metrics, selected, selectedCount, selectionIns
             onLiftBackground={onLiftBackground}
             onOpenImageLibrary={onOpenImageLibrary}
             imageLibrary={imageLibrary}
-            onExtractBackgroundPalette={() => { if (cover.doc.backgroundImage?.src) void onExtractPalette(imageLayer({ id: "background", name: "Background", src: cover.doc.backgroundImage.src, panel: "wrap", x: 0, y: 0, width: metrics.fullWidth, height: metrics.fullHeight })); }}
+            onExtractBackgroundPalette={() => onExtractPalette(cover.doc.backgroundImage?.src ?? "", "background")}
+            onExtractViewPalette={onExtractViewPalette}
+            extractingViewPalette={extractingViewPalette}
             onUploadBarcode={onUploadBarcode}
             onClearBarcode={onClearBarcode}
             brandPalettes={brandPalettes}
@@ -4334,7 +4406,7 @@ function Section({ title, hint, children, defaultOpen = true }: { title: string;
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className={`cover-inspector-section ${open ? "open" : ""}`}>
-      <button type="button" className="cover-inspector-section-head" onClick={() => setOpen((value) => !value)}>
+      <button type="button" className="cover-inspector-section-head" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
         <span>{title}{hint && <small>{hint}</small>}</span>
         <ChevronDown size={14} />
       </button>
@@ -4385,7 +4457,9 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
   );
 }
 
-function FillEditor({ label, fill, onChange }: { label: string; fill: CoverFill; onChange: (fill: CoverFill) => void }) {
+function FillEditor({ label, fill, onChange }: { label: string; fill: CoverFill; onChange: (fill: CoverFill, key?: string) => void }) {
+  const { palette } = useCoverColors();
+  const paletteGradient = fill.type === "gradient" ? coverGradientFromPalette(palette, fill.gradient) : null;
   const update = (patch: Partial<CoverFill>) => onChange({ ...fill, ...patch });
   const updateGradient = (patch: Partial<CoverFill["gradient"]>) => update({ gradient: { ...fill.gradient, ...patch } });
   const pattern = fill.pattern ?? coverPattern(fill.color);
@@ -4429,6 +4503,9 @@ function FillEditor({ label, fill, onChange }: { label: string; fill: CoverFill;
             ))}
           </div>
           <div className="cover-gradient-actions">
+            <button type="button" className="cover-mini-button" disabled={!paletteGradient} title="Use the first two to four document colours" onClick={() => {
+              if (paletteGradient) onChange({ ...fill, gradient: paletteGradient }, "gradient:palette");
+            }}><Palette size={12} /> Use palette</button>
             <button type="button" className="cover-mini-button" onClick={() => update({ gradient: reverseCoverGradient(fill.gradient) })}><FlipHorizontal2 size={12} /> Reverse</button>
             {fill.gradient.stops.length < 4 && <button type="button" className="cover-mini-button" onClick={() => updateGradient({ stops: [...fill.gradient.stops, { color: "#ffffff", position: 1 }] })}><Plus size={12} /> Add stop</button>}
           </div>
@@ -4564,7 +4641,7 @@ function LayerInspector({
   onApplyStylePreset: (preset: CoverLayerStylePreset) => void;
   onSaveStyle: () => void;
   onDeleteStylePreset: (id: string) => void;
-  onExtractPalette: (layer: CoverImageLayer) => void;
+  onExtractPalette: (source: string, id: string) => void;
   onOpenImageLibrary: (target: "add" | "replace" | "background") => void;
   imageLibrary: CoverImageAsset[];
   onUseLibraryImage: (asset: CoverImageAsset) => void;
@@ -4784,7 +4861,7 @@ function LayerInspector({
               {layer.eraseMask && <button type="button" className="cover-mini-button" onClick={() => onClearEraseMask(layer.id)}><RotateCcw size={12} /> Clear</button>}
             </div>
           </div>
-          <button type="button" className="cover-wide-button subtle" onClick={() => onExtractPalette(layer)}><Palette size={13} /> Extract image palette</button>
+          <button type="button" className="cover-wide-button subtle" onClick={() => onExtractPalette(layer.src, layer.id)}><Palette size={13} /> Extract image palette</button>
           {imageLibrary.length > 0 && (
             <div className="cover-image-library">
               <span className="cover-field-heading">Image library</span>
@@ -4857,7 +4934,7 @@ function LayerInspector({
               </button>
             ))}
           </div>
-          <FillEditor label="Fill" fill={layer.fill} onChange={(fill) => onUpdate({ fill }, { key: `fill:${layer.id}` })} />
+          <FillEditor label="Fill" fill={layer.fill} onChange={(fill, key = "fill") => onUpdate({ fill }, { key: `${key}:${layer.id}` })} />
           <div className="cover-transform-grid">
             {layer.shape === "rectangle" && <NumberField label="Corner" value={layer.radius} onChange={(radius) => onUpdate({ radius: Math.max(0, radius) }, { key: `radius:${layer.id}` })} step={0.01} min={0} suffix="in" />}
             <NumberField label="Stroke" value={layer.strokeWidth} onChange={(strokeWidth) => onUpdate({ strokeWidth: Math.max(0, strokeWidth) }, { key: `stroke:${layer.id}` })} step={0.005} min={0} suffix="in" />
@@ -4992,6 +5069,8 @@ function DocumentInspector({
   onOpenImageLibrary,
   imageLibrary,
   onExtractBackgroundPalette,
+  onExtractViewPalette,
+  extractingViewPalette,
   onUploadBarcode,
   onClearBarcode,
   brandPalettes,
@@ -5019,6 +5098,8 @@ function DocumentInspector({
   onOpenImageLibrary: (target: "add" | "replace" | "background") => void;
   imageLibrary: CoverImageAsset[];
   onExtractBackgroundPalette: () => void;
+  onExtractViewPalette: () => void;
+  extractingViewPalette: boolean;
   onUploadBarcode: () => void;
   onClearBarcode: () => void;
   brandPalettes: CoverBrandPalette[];
@@ -5027,6 +5108,12 @@ function DocumentInspector({
   onDeleteBrandPalette: (id: string) => void;
 }) {
   const doc = cover.doc;
+  const finish = doc.background;
+  const pattern = finish.pattern ?? coverPattern(finish.color);
+  const finishColors = finish.type === "solid" ? [finish.color]
+    : finish.type === "gradient" ? finish.gradient.stops.map((stop) => stop.color)
+    : finish.type === "pattern" ? [pattern.color, pattern.background]
+    : [];
   const isbn = normalizeIsbn13(cover.isbn);
   const validIsbn = isbnIsValid(cover.isbn);
   const useStockBackground = (src: string) => {
@@ -5052,7 +5139,7 @@ function DocumentInspector({
         <button type="button" className="cover-pill" onClick={onApplyTemplate}><LayoutTemplate size={12} /> Change template</button>
       </div>
       <Section title="Background" hint="Paper, colour or image">
-        <FillEditor label="Cover finish" fill={doc.background} onChange={(background) => onUpdateDoc({ ...doc, background }, { key: "background" })} />
+        <FillEditor label="Cover finish" fill={doc.background} onChange={(background, key) => onUpdateDoc({ ...doc, background }, { key: key ?? "background" })} />
         <div className="cover-swatch-row">
           {["#f6efe3", "#fffdf8", "#1f3a2d", "#14161a", "#e4583a", "#315f73", "#d4b26b", "#e8d9c7"].map((color) => <button key={color} type="button" style={{ background: color }} onClick={() => onUpdateDoc({ ...doc, background: coverFill(color) }, { key: "background-swatch" })} aria-label={`Set background ${color}`} />)}
         </div>
@@ -5095,6 +5182,10 @@ function DocumentInspector({
       </Section>
 
       <Section title="Document palette" hint="Sampled colours">
+        <button type="button" className="cover-wide-button subtle" disabled={extractingViewPalette} onClick={onExtractViewPalette}>
+          {extractingViewPalette ? <LoaderCircle size={13} className="cover-tool-busy" /> : <Palette size={13} />}
+          {extractingViewPalette ? "Extracting colours…" : "Extract artboard palette"}
+        </button>
         {doc.palette.length === 0 ? (
           <p className="cover-inspector-note">Use the eyedropper (<strong>E</strong>) to sample colours from the cover. They collect here for reuse.</p>
         ) : (
@@ -5115,11 +5206,12 @@ function DocumentInspector({
             ))}
           </div>
         )}
-        <button type="button" className="cover-wide-button subtle" onClick={() => {
-          const color = doc.background.type === "solid" ? doc.background.color : doc.background.gradient.stops[0]?.color;
-          if (!color) return;
-          onUpdateDoc({ ...doc, palette: [color, ...doc.palette.filter((entry) => entry !== color)].slice(0, 16) }, { key: "palette-add-background" });
-        }}><Palette size={13} /> Save background colour</button>
+        <button type="button" className="cover-wide-button subtle" disabled={!finishColors.length} onClick={() => {
+          const palette = mergeCoverPalette(finishColors, doc.palette);
+          if (palette.length !== doc.palette.length || palette.some((color, index) => color !== doc.palette[index])) {
+            onUpdateDoc({ ...doc, palette }, { key: "palette-add-background" });
+          }
+        }}><Palette size={13} /> Save background colours</button>
         <div className="cover-brand-palettes">
           <div className="cover-brand-palettes-head"><span className="cover-field-heading">Brand palettes</span><button type="button" className="cover-mini-button" disabled={doc.palette.length === 0} onClick={onSaveBrandPalette}><BookmarkPlus size={11} /> Save current</button></div>
           {brandPalettes.length === 0 ? (
