@@ -37,6 +37,7 @@ export interface CoverPreflightCheck {
   detail: string;
   severity: CoverPreflightSeverity;
   layerId?: string;
+  target?: "background";
   fix?: CoverPreflightFix;
 }
 
@@ -253,6 +254,7 @@ export function coverPreflight(book: Book, cover: BookCoverDesign): CoverPreflig
         ? `The full-wrap background is ${dpi} DPI at its placed size.${dpi < 220 ? " Choose a larger image for sharper print output." : ""}`
         : "Background resolution is unknown. Replace the image to record its pixel dimensions.",
       severity: !measured ? "info" : dpi < 150 ? "warning" : dpi < 220 ? "info" : "pass",
+      target: "background",
     });
   }
 

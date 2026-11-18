@@ -23,7 +23,7 @@ The development fixture also supports the section planner and outline; see
 | `src/components/CoverColorPicker.tsx` | Shared wheel, HSV/RGB/alpha/hex fields, palette and eyedropper integration |
 | `src/lib/bookCoverColor.ts` | Hex validation and normalization, RGB/HSV conversion |
 | `src/lib/bookCoverImages.ts` | Selected-layer raster exports, background lifting, image reset and frame-ratio helpers |
-| `src/lib/bookCoverLayers.ts` | Selection ordering and group assignment without mutating the document |
+| `src/lib/bookCoverLayers.ts` | Layer search, artboard filtering, selection ordering, and group assignment |
 | `src/lib/bookCoverDoc.ts` | Document normalization, full-wrap geometry, HTML markup, raster rendering |
 | `src/lib/bookCoverLibrary.ts` | Saved templates, cross-trim adaptation, `.bookcover` interchange |
 | `src/lib/bookCoverPreview.ts` | Isolated IndexedDB persistence for the development fixture |
@@ -53,6 +53,15 @@ documents and layer objects stay unchanged.
   Keep one pointer gesture separate from click-to-select and inline rename.
 - Shift/Cmd/Ctrl-click toggles selection. Enter/Space selects a focused row;
   Alt+Up/Down reorders it. The compact drawer stays open while selecting layers.
+- The artboard filter narrows the Layers list to the active panel and whole-wrap
+  layers. On Spread it includes every layer. Search matches each word across the
+  layer name, type, artboard, and group name. It opens matching groups in the
+  list for the duration of the search.
+- **Reveal in Layers** from the inspector or layer context menu opens the Layers
+  tab and focuses the target row. It opens the compact drawer when needed. A
+  target can appear even if it falls outside the current search or belongs to a
+  collapsed group. Reveal preserves the search and saved group state. Selection
+  and reordering still operate on the document's complete layer stack.
 - Group creation gathers selected members into one ordered block. Clicking an
   unlocked group header selects all its members for canvas movement. A group
   with locked members stays available for group controls without partial movement.
@@ -174,6 +183,18 @@ the chosen artwork without a proof watermark. Empty selections and allocations
 over 32 million pixels fail explicitly. The regular cover exports retain their
 paper, background, bleed, and proof options.
 
+## Clipping masks and print checks
+
+In **Clipping mask**, use **Reveal masking shape** to inspect the shape that
+clips the selected layer. A mask shape lists all layers using it, with links
+back to their rows. Navigation keeps the mask links intact.
+
+Print preflight filters by errors, warnings, notes, and passed checks. Its
+**Reveal layer** action uses the same Layers navigation. A background resolution
+check targets the pinned Background row and opens document properties on the
+Spread view. Filtering and revealing are editor view state and create no undo
+entries. The full report still supplies all checks to the production package.
+
 ## History and autosave
 
 All document changes use `updateDoc`/`updateCover` and the existing debounced book
@@ -235,6 +256,9 @@ For interactive changes, check:
 
 1. Drag above and below a layer, drag several selected layers, cancel a drag,
    enter/leave groups, and try a locked selection.
+   Filter to the current artboard, reveal a preflight target outside the search,
+   and follow the links between a clipping mask and its layers. Repeat the
+   background preflight jump with the compact drawer.
 2. Group/ungroup, select a group, move it on the canvas, duplicate/delete multiple
    layers, undo, redo, and edit after undo.
 3. Type hex, RGB, HSV, and alpha; use the wheel/square with pointer and keyboard;

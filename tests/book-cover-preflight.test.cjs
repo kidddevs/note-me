@@ -177,6 +177,7 @@ test("background resolution uses full-wrap geometry and the actual fit", () => {
   const check = () => coverPreflight(book, cover).find((item) => item.id === "background-resolution");
   assert.equal(check().severity, "warning");
   assert.match(check().detail, /100 DPI/);
+  assert.equal(check().target, "background");
   assert.equal(check().fix, undefined);
   cover.doc.backgroundImage.sourceWidth = 5220;
   cover.doc.backgroundImage.sourceHeight = 3700;

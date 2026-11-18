@@ -1,12 +1,26 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { moveCoverLayers, stepCoverLayers } = require("./.compiled/src/lib/bookCoverLayers.js");
+const { matchingCoverLayerIds, moveCoverLayers, stepCoverLayers } = require("./.compiled/src/lib/bookCoverLayers.js");
 const { emptyCoverDocument, textLayer } = require("./.compiled/src/lib/bookCoverDoc.js");
 
 function document() {
   return { ...emptyCoverDocument(), layers: ["a", "b", "c", "d"].map((id) => textLayer({ id, name: id, panel: "front", x: 0, y: 0, width: 1, height: 1, text: id })) };
 }
 const order = (doc) => doc.layers.map((layer) => layer.id);
+
+test("layer search combines group and layer metadata inside the active artboard", () => {
+  const doc = document();
+  doc.groups = [{ id: "metadata", name: "Front typography", visible: false, locked: true, collapsed: true }];
+  doc.layers[0] = { ...doc.layers[0], name: "Author Credit", groupId: "metadata" };
+  doc.layers[1] = { ...doc.layers[1], name: "Edition line", panel: "back", groupId: "metadata" };
+  doc.layers[2] = { ...doc.layers[2], name: "Paper note", panel: "wrap" };
+  assert.deepEqual([...matchingCoverLayerIds(doc, " TYPOGRAPHY credit ", "front")], ["a"]);
+  assert.deepEqual([...matchingCoverLayerIds(doc, "typography", "back")], ["b"]);
+  assert.deepEqual([...matchingCoverLayerIds(doc, "", "back")], ["b", "c"]);
+  assert.deepEqual([...matchingCoverLayerIds(doc, "absent", "back", "a")], ["a"]);
+  assert.equal(matchingCoverLayerIds(doc, "", "front", "deleted").has("deleted"), false);
+  assert.equal(doc.groups[0].collapsed, true);
+});
 
 test("drop before and after follow the reversed visible list in both directions", () => {
   const doc = document();

@@ -245,7 +245,7 @@ import { CoverImageFocus } from "./CoverImageFocus";
 import { BookImageLibrary, SaveStudioImageButton } from "./BookImageLibrary";
 import { liftCoverBackground, matchCoverImageRatio, renderCoverSelectionCanvas, resetCoverImageCrop, resetCoverImageTone } from "../lib/bookCoverImages";
 import { CoverColorField, CoverColorSwatch, CoverColorProvider, useCoverColors } from "./CoverColorPicker";
-import { moveCoverLayers, stepCoverLayers, type CoverLayerPlacement } from "../lib/bookCoverLayers";
+import { matchingCoverLayerIds, moveCoverLayers, stepCoverLayers, type CoverLayerPlacement } from "../lib/bookCoverLayers";
 import { notify } from "../store/toast";
 
 const COVER_CSS = coverCss();
@@ -340,6 +340,7 @@ interface InspectorProps {
   selectionInspector?: ReactNode;
   pageEstimate: number;
   onSelect: (id: string | null) => void;
+  onRevealLayer: (id: string) => void;
   onUpdateLayer: (id: string, patch: Partial<CoverLayer>, options?: CommitOptions) => void;
   onUpdateCover: (patch: Partial<BookCoverDesign>, options?: CommitOptions) => void;
   onUpdateDoc: (doc: BookCoverDocument, options?: CommitOptions) => void;
@@ -386,8 +387,15 @@ interface InspectorProps {
   focusContent: number;
 }
 
+interface LayerReveal {
+  layerId: string | null;
+}
+
 interface LayerPanelProps {
   doc: BookCoverDocument;
+  panel: CoverPanel;
+  reveal: LayerReveal | null;
+  onDismissReveal: () => void;
   drawer?: boolean;
   cover: BookCoverDesign;
   selectedId: string | null;
@@ -816,6 +824,7 @@ export function CoverScreen({
   const [future, setFuture] = useState<CoverHistoryEntry[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
   const [sideTab, setSideTab] = useState<"layers" | "history">("layers");
+  const [layerReveal, setLayerReveal] = useState<LayerReveal | null>(null);
   const [focusContent, setFocusContent] = useState(0);
   const layoutRef = useRef(layout);
   const bookRef = useRef(book);
@@ -1024,6 +1033,7 @@ export function CoverScreen({
     setSelectedLayerId(null);
     setExtraSelectedIds([]);
     setPanel("wrap");
+    setLayerReveal(null);
     setActiveGroupId(null);
     setImageLibraryTarget(null);
     setTool("select");
@@ -1078,6 +1088,7 @@ export function CoverScreen({
   }, [doc.layers, selectedLayerId]);
 
   const selectLayer = (id: string | null, additive = false) => {
+    setLayerReveal(null);
     if (!id) {
       setSelectedLayerId(null);
       setExtraSelectedIds([]);
@@ -1107,6 +1118,20 @@ export function CoverScreen({
       setPanel(layer.panel);
       setAutoFit(true);
     }
+  };
+
+  const revealLayer = (id: string | null) => {
+    if (id && !layoutRef.current.cover.doc.layers.some((layer) => layer.id === id)) return;
+    selectLayer(id);
+    if (!id) {
+      setPanel("wrap");
+      setAutoFit(true);
+    }
+    setTool("select");
+    setSideTab("layers");
+    setShowLayers(true);
+    if (window.matchMedia("(max-width: 1180px)").matches) setLayerDrawerOpen(true);
+    setLayerReveal({ layerId: id });
   };
 
   const openLayerMenu = (event: React.MouseEvent<HTMLElement>, layerId: string) => {
@@ -2396,6 +2421,9 @@ export function CoverScreen({
             <LayerPanel
               drawer={layerDrawerOpen}
               doc={doc}
+              panel={panel}
+              reveal={layerReveal}
+              onDismissReveal={() => setLayerReveal(null)}
               cover={cover}
               selectedId={selectedLayerId}
               selectedIds={selectedIds}
@@ -2503,6 +2531,7 @@ export function CoverScreen({
               selectionInspector={selectedIds.length > 1 ? <CoverSelectionInspector doc={doc} ids={selectedIds} metrics={metrics} reference={arrangeReference} onReference={setArrangeReference} spacing={arrangeSpacing} onSpacing={setArrangeSpacing} onAlign={alignSelection} onDistribute={distributeSelection} onTransform={transformSelection} onGroup={groupSelection} onDuplicate={duplicateSelection} /> : undefined}
               pageEstimate={pageEstimate}
               onSelect={selectLayer}
+              onRevealLayer={revealLayer}
               onUpdateLayer={updateLayer}
               onUpdateCover={updateCover}
               onUpdateDoc={updateDoc}
@@ -2621,7 +2650,7 @@ export function CoverScreen({
         <PreflightModal
           book={book}
           cover={cover}
-          onSelectLayer={(id) => { selectLayer(id); setPreflightOpen(false); }}
+          onReveal={(id) => { revealLayer(id); setPreflightOpen(false); }}
           onFix={fixPreflightCheck}
           onClose={() => setPreflightOpen(false)}
           onPackage={() => { setPreflightOpen(false); void handleDownloadPackage(); }}
@@ -2636,6 +2665,7 @@ export function CoverScreen({
           group={menuGroup}
           allVisible={menuAllVisible}
           allLocked={menuAllLocked}
+          onReveal={() => revealLayer(menuLayer.id)}
           onCopy={copySelection}
           onPaste={pasteSelection}
           onCopyStyle={copySelectedStyle}
@@ -2921,6 +2951,9 @@ function ArtworkPicker({ onAdd, onClose }: { onAdd: (graphic: BookGraphic) => vo
 
 function LayerPanel({
   doc,
+  panel,
+  reveal,
+  onDismissReveal,
   drawer = false,
   cover,
   selectedId,
@@ -2964,11 +2997,21 @@ function LayerPanel({
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
   const [layerRenameValue, setLayerRenameValue] = useState("");
   const [query, setQuery] = useState("");
+  const [currentArtboardOnly, setCurrentArtboardOnly] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const revealedRowRef = useRef<HTMLDivElement>(null);
+  const backgroundRowRef = useRef<HTMLButtonElement>(null);
   const suppressClickRef = useRef(false);
   const dragRef = useRef<{ id: string; x: number; y: number; startX: number; startY: number; pointerId: number; active: boolean } | null>(null);
   const dragActionsRef = useRef({ onReorderDrag, onAssignGroup });
   dragActionsRef.current = { onReorderDrag, onAssignGroup };
+
+  useEffect(() => {
+    if (tab !== "layers" || !reveal) return;
+    const row = reveal.layerId === null ? backgroundRowRef.current : revealedRowRef.current;
+    row?.focus({ preventScroll: true });
+    row?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [reveal, tab]);
 
   useEffect(() => {
     let frame = 0;
@@ -3049,10 +3092,9 @@ function LayerPanel({
     dragRef.current = { id: layer.id, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, pointerId: event.pointerId, active: false };
   };
   const search = query.trim().toLocaleLowerCase();
-  const matches = (layer: CoverLayer) => !search
-    || layer.name.toLocaleLowerCase().includes(search)
-    || layer.type.includes(search)
-    || layer.panel.includes(search);
+  const artboard = currentArtboardOnly ? panel : "wrap";
+  const revealedId = reveal?.layerId === selectedId ? reveal.layerId ?? undefined : undefined;
+  const matchingIds = matchingCoverLayerIds(doc, search, artboard, revealedId);
   const layers = [...doc.layers].reverse();
   const groupsById = new Map(doc.groups.map((group) => [group.id, group]));
   const activeGroup = activeGroupId ? groupsById.get(activeGroupId) ?? null : null;
@@ -3082,6 +3124,7 @@ function LayerPanel({
     return (
       <div
         key={layer.id}
+        ref={layer.id === revealedId ? revealedRowRef : undefined}
         data-cover-layer-id={layer.id}
         className={`cover-layer-row ${inGroup ? "in-group" : ""} ${selectedIds.includes(layer.id) ? "active" : ""} ${selectedId === layer.id ? "primary" : ""} ${dropTarget?.layerId === layer.id ? `drop-${dropTarget.placement}` : ""} ${dragId && (selectedIds.includes(dragId) ? selectedIds.includes(layer.id) : dragId === layer.id) ? "dragging" : ""} ${visible ? "" : "is-hidden"}`}
         tabIndex={0}
@@ -3122,8 +3165,9 @@ function LayerPanel({
     );
   };
 
-  const renderGroupRow = (group: CoverLayerGroup, count: number) => {
+  const renderGroupRow = (group: CoverLayerGroup, count: number, revealed = false) => {
     const lockedChild = doc.layers.some((layer) => layer.groupId === group.id && layer.locked);
+    const expanded = !group.collapsed || revealed || Boolean(search);
     return (
     <div
       key={`group-${group.id}`}
@@ -3136,7 +3180,11 @@ function LayerPanel({
       onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); event.stopPropagation(); onSelectGroup(group.id); } }}
 
     >
-      <button type="button" className="cover-group-chevron" onClick={(event) => { event.stopPropagation(); onToggleGroupCollapsed(group.id); }} aria-label={group.collapsed ? "Expand group" : "Collapse group"}>{group.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</button>
+      <button type="button" className="cover-group-chevron" disabled={Boolean(search)} onClick={(event) => {
+        event.stopPropagation();
+        if (group.collapsed && revealed) onDismissReveal();
+        else onToggleGroupCollapsed(group.id);
+      }} aria-expanded={expanded} aria-label={expanded ? "Collapse group" : "Expand group"}>{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</button>
       <span className="cover-group-icon"><Folder size={13} /></span>
       <span
         className="cover-group-name"
@@ -3166,24 +3214,24 @@ function LayerPanel({
 
   const rows: ReactNode[] = [];
   const renderedGroups = new Set<string>();
-  const groupMatches = (group: CoverLayerGroup, children: CoverLayer[]) => !search || group.name.toLocaleLowerCase().includes(search) || children.some(matches);
   for (const layer of layers) {
     const group = layer.groupId ? groupsById.get(layer.groupId) : null;
     if (group) {
       if (renderedGroups.has(group.id)) continue;
       renderedGroups.add(group.id);
       const children = layers.filter((item) => item.groupId === group.id);
-      if (!groupMatches(group, children)) continue;
-      const nameMatches = group.name.toLocaleLowerCase().includes(search);
-      const visibleChildren = search && !nameMatches ? children.filter(matches) : children;
-      rows.push(renderGroupRow(group, children.length));
-      if (!group.collapsed || search) rows.push(...visibleChildren.map((child) => renderLayerRow(child, true)));
-    } else if (matches(layer)) {
+      const matchedChildren = children.filter((child) => matchingIds.has(child.id));
+      if (matchedChildren.length === 0) continue;
+      const revealed = matchedChildren.some((child) => child.id === revealedId);
+      rows.push(renderGroupRow(group, children.length, revealed));
+      const shown = group.collapsed && !search ? matchedChildren.filter((child) => child.id === revealedId) : matchedChildren;
+      rows.push(...shown.map((child) => renderLayerRow(child, true)));
+    } else if (matchingIds.has(layer.id)) {
       rows.push(renderLayerRow(layer, false));
     }
   }
   for (const group of doc.groups) {
-    if (!renderedGroups.has(group.id) && (!search || group.name.toLocaleLowerCase().includes(search))) rows.push(renderGroupRow(group, 0));
+    if (artboard === "wrap" && !renderedGroups.has(group.id) && (!search || group.name.toLocaleLowerCase().includes(search))) rows.push(renderGroupRow(group, 0));
   }
 
   return (
@@ -3206,15 +3254,22 @@ function LayerPanel({
         <>
           <div className="cover-layer-search">
             <Search size={12} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search layers" aria-label="Search layers" />
-            {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear layer search"><X size={11} /></button>}
+            <input value={query} onChange={(event) => { onDismissReveal(); setQuery(event.target.value); }} placeholder="Search layers" aria-label="Search layers" />
+            {query && <button type="button" onClick={() => { onDismissReveal(); setQuery(""); }} aria-label="Clear layer search"><X size={11} /></button>}
             <button type="button" onClick={onAddGroup} title="New group" aria-label="New group"><FolderPlus size={14} /></button>
             <button type="button" onClick={onAdd} title="Add image layer" aria-label="Add image layer"><Plus size={14} /></button>
           </div>
+          <div className="cover-layer-scope">
+            <label><Frame size={12} /><select aria-label="Layer artboard filter" value={currentArtboardOnly ? "current" : "all"} onChange={(event) => {
+              onDismissReveal();
+              setCurrentArtboardOnly(event.target.value === "current");
+            }}><option value="all">All artboards</option><option value="current">Current artboard</option></select></label>
+            {(search || artboard !== "wrap") && <small role="status">{matchingIds.size} of {layers.length}</small>}
+          </div>
           <div className={`cover-layer-list ${dragId ? "is-dragging" : ""}`} ref={listRef}>
-            {rows.length === 0 && search && <div className="cover-layer-empty"><Search size={15} /><span>No layers match “{query}”</span></div>}
+            {rows.length === 0 && (search || artboard !== "wrap") && <div className="cover-layer-empty"><Search size={15} /><span>{search ? `No layers match “${query}”` : "No layers on this artboard"}</span></div>}
             {rows}
-            <button type="button" className={`cover-background-row ${dropTarget && !dropTarget.layerId && dropTarget.groupId === null ? "drop-target" : ""}`} onClick={() => onSelect(null)} title="Edit the background fill or image">
+            <button type="button" ref={backgroundRowRef} className={`cover-background-row ${dropTarget && !dropTarget.layerId && dropTarget.groupId === null ? "drop-target" : ""}`} onClick={() => onSelect(null)} title="Edit the background fill or image">
               <span className="cover-layer-type-icon">{doc.backgroundImage?.src ? <ImagePlus size={13} /> : <Palette size={13} />}</span>
               <span className="cover-layer-name">Background<small>{doc.backgroundImage?.src ? "image · paper fill behind" : "paper, colour or gradient"}</small></span>
               <span
@@ -3294,11 +3349,20 @@ function preflightIcon(severity: CoverPreflightCheck["severity"]) {
   return <Info size={15} />;
 }
 
-function PreflightModal({ book, cover, onSelectLayer, onFix, onClose, onPackage }: { book: Book; cover: BookCoverDesign; onSelectLayer: (id: string) => void; onFix: (check: CoverPreflightCheck) => void; onClose: () => void; onPackage: () => void }) {
+function PreflightModal({ book, cover, onReveal, onFix, onClose, onPackage }: { book: Book; cover: BookCoverDesign; onReveal: (id: string | null) => void; onFix: (check: CoverPreflightCheck) => void; onClose: () => void; onPackage: () => void }) {
   const checks = useMemo(() => coverPreflight(book, cover), [book, cover]);
   const summary = useMemo(() => coverPreflightSummary(checks), [checks]);
   const order: Record<CoverPreflightCheck["severity"], number> = { error: 0, warning: 1, info: 2, pass: 3 };
-  const sorted = [...checks].sort((a, b) => order[a.severity] - order[b.severity]);
+  const [filter, setFilter] = useState<CoverPreflightCheck["severity"] | "all">("all");
+  const filtered = checks.filter((check) => filter === "all" || check.severity === filter);
+  const sorted = filtered.sort((a, b) => order[a.severity] - order[b.severity]);
+  const filters = [
+    { value: "all", label: "All", count: summary.total },
+    { value: "error", label: "Errors", count: summary.errors },
+    { value: "warning", label: "Warnings", count: summary.warnings },
+    { value: "info", label: "Notes", count: summary.infos },
+    { value: "pass", label: "Passed", count: summary.passes },
+  ] as const;
   const headline = summary.errors > 0
     ? `${summary.errors} blocking issue${summary.errors === 1 ? "" : "s"}`
     : summary.warnings > 0
@@ -3315,20 +3379,21 @@ function PreflightModal({ book, cover, onSelectLayer, onFix, onClose, onPackage 
           </div>
           <button type="button" onClick={onClose} aria-label="Close preflight"><X size={18} /></button>
         </div>
-        <div className="cover-preflight-summary">
-          <span className="cover-preflight-pill error"><strong>{summary.errors}</strong> errors</span>
-          <span className="cover-preflight-pill warning"><strong>{summary.warnings}</strong> warnings</span>
-          <span className="cover-preflight-pill pass"><strong>{summary.passes}</strong> passed</span>
-          <span className="cover-preflight-pill info"><strong>{summary.infos}</strong> notes</span>
+        <div className="cover-preflight-summary" role="group" aria-label="Filter print checks">
+          {filters.map(({ value, label, count }) => (
+            <button key={value} type="button" className={`cover-preflight-pill ${value}`} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label} <strong>{count}</strong></button>
+          ))}
         </div>
         <div className="cover-preflight-list">
+          {sorted.length === 0 && <p className="cover-preflight-empty" role="status">No checks in this filter.</p>}
           {sorted.map((check) => (
-            <div key={check.id} className={`cover-preflight-row severity-${check.severity} ${check.layerId ? "has-target" : ""}`}>
+            <div key={check.id} className={`cover-preflight-row severity-${check.severity}`}>
               <span className="cover-preflight-icon">{preflightIcon(check.severity)}</span>
-              <button type="button" className="cover-preflight-copy" onClick={() => check.layerId && onSelectLayer(check.layerId)} disabled={!check.layerId}><strong>{check.label}</strong><small>{check.detail}</small></button>
+              <div className="cover-preflight-copy"><strong>{check.label}</strong><small>{check.detail}</small></div>
               <div className="cover-preflight-actions">
                 {check.fix && <button type="button" className="cover-preflight-fix" onClick={() => onFix(check)}><Wand2 size={11} /> {check.fix.label}</button>}
-                {check.layerId && <button type="button" className="cover-preflight-jump" onClick={() => onSelectLayer(check.layerId!)}>Select <ArrowRight size={12} /></button>}
+                {check.layerId && <button type="button" className="cover-preflight-jump" onClick={() => onReveal(check.layerId!)}>Reveal layer <ArrowRight size={12} /></button>}
+                {check.target === "background" && <button type="button" className="cover-preflight-jump" onClick={() => onReveal(null)}>Edit background <ArrowRight size={12} /></button>}
               </div>
             </div>
           ))}
@@ -3355,6 +3420,7 @@ function LayerContextMenu({
   group,
   allVisible,
   allLocked,
+  onReveal,
   onCopy,
   onPaste,
   onCopyStyle,
@@ -3380,6 +3446,7 @@ function LayerContextMenu({
   group: CoverLayerGroup | null;
   allVisible: boolean;
   allLocked: boolean;
+  onReveal: () => void;
   onCopy: () => void;
   onPaste: () => void;
   onCopyStyle: () => void;
@@ -3405,8 +3472,9 @@ function LayerContextMenu({
   const count = layers.length;
   const run = (action: () => void) => () => { action(); onClose(); };
   return (
-    <div className="cover-context-menu" role="menu" style={{ left, top, width }} onContextMenu={(event) => event.preventDefault()}>
+    <div className="cover-context-menu" role="menu" style={{ left, top, width, maxHeight: `calc(100vh - ${top + 8}px)` }} onContextMenu={(event) => event.preventDefault()}>
       <div className="cover-context-head"><strong>{count > 1 ? `${count} layers` : layer.name}</strong><small>{count > 1 ? "Selection" : layerLabel(layer.type)}</small></div>
+      <button type="button" role="menuitem" onClick={run(onReveal)}><PanelLeftOpen size={14} /><span>Reveal in Layers</span></button>
       <button type="button" role="menuitem" onClick={run(onDuplicate)}><Files size={14} /><span>Duplicate</span><kbd>⌘D</kbd></button>
       <button type="button" role="menuitem" onClick={run(onCopy)}><ClipboardCopy size={14} /><span>Copy</span><kbd>⌘C</kbd></button>
       <button type="button" role="menuitem" onClick={run(onPaste)}><ClipboardPaste size={14} /><span>Paste</span><kbd>⌘V</kbd></button>
@@ -4310,7 +4378,7 @@ function CoverStage({ book, cover, panel, selectedId, selectedIds, showGuides, s
 
 /* ========================================================================== */
 
-function Inspector({ book, cover, metrics, selected, selectedCount, selectionInspector, pageEstimate, onSelect, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, onExtractViewPalette, extractingViewPalette, onOpenImageLibrary, imageLibrary, onUseLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
+function Inspector({ book, cover, metrics, selected, selectedCount, selectionInspector, pageEstimate, onSelect, onRevealLayer, onUpdateLayer, onUpdateCover, onUpdateDoc, onApplyTemplate, onEstimatePages, onPageCount, onPaperStock, onSpineOverride, onBleed, onTrimSize, onOpenSettings, onReplaceImage, onCopyImageToBackground, busyImageAction, onPickBackgroundImage, onUseBackgroundImage, onLiftBackground, onUploadBarcode, onClearBarcode, tool, eraser, onEraser, onClearEraseMask, onStartErasing, imagePanMode, onImagePanMode, stylePresets, hasStyleClipboard, onCopyStyle, onPasteStyle, onApplyStylePreset, onSaveStyle, onDeleteStylePreset, onExtractPalette, onExtractViewPalette, extractingViewPalette, onOpenImageLibrary, imageLibrary, onUseLibraryImage, brandPalettes, onSaveBrandPalette, onApplyBrandPalette, onDeleteBrandPalette, focusContent }: InspectorProps) {
   const eraserActive = tool === "eraser";
   const eraserTarget = selected?.type === "image" ? selected : null;
   const imageLayers = cover.doc.layers.filter((layer): layer is CoverImageLayer => layer.type === "image");
@@ -4321,7 +4389,10 @@ function Inspector({ book, cover, metrics, selected, selectedCount, selectionIns
           <span className="cover-panel-eyebrow">{eraserActive ? "Eraser tool" : selected ? layerLabel(selected.type) : "Cover"}{selectedCount > 1 ? ` · ${selectedCount} selected` : ""}</span>
           <strong>{eraserActive ? eraserTarget?.name || "Select an image layer" : selectedCount > 1 ? `${selectedCount} layers selected` : selectedLayerName(selected)}</strong>
         </div>
-        {selected ? <button type="button" onClick={() => onSelect(null)} title="Document settings" aria-label="Document settings"><SlidersHorizontal size={15} /></button> : <span className="cover-inspector-badge">Document</span>}
+        {selected ? <div className="cover-inspector-nav">
+          {selectedCount === 1 && <button type="button" onClick={() => onRevealLayer(selected.id)} title="Reveal in Layers" aria-label="Reveal in Layers"><PanelLeftOpen size={15} /></button>}
+          <button type="button" onClick={() => onSelect(null)} title="Document settings" aria-label="Document settings"><SlidersHorizontal size={15} /></button>
+        </div> : <span className="cover-inspector-badge">Document</span>}
       </div>
       <div className="cover-inspector-scroll">
         {eraserActive && (
@@ -4364,6 +4435,7 @@ function Inspector({ book, cover, metrics, selected, selectedCount, selectionIns
             onStartErasing={onStartErasing}
             onClearEraseMask={onClearEraseMask}
             focusContent={focusContent}
+            onRevealLayer={onRevealLayer}
           />
         ) : (
           <DocumentInspector
@@ -4620,6 +4692,7 @@ function LayerInspector({
   onStartErasing,
   onClearEraseMask,
   focusContent,
+  onRevealLayer,
 }: {
   book: Book;
   cover: BookCoverDesign;
@@ -4648,6 +4721,7 @@ function LayerInspector({
   onStartErasing: () => void;
   onClearEraseMask: (id?: string) => void;
   focusContent: number;
+  onRevealLayer: (id: string) => void;
 }) {
   const contentRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -4666,6 +4740,9 @@ function LayerInspector({
     ? Math.floor(Math.min(layer.sourceWidth / layer.width, layer.sourceHeight / layer.height))
     : 0;
   const clipShapes = cover.doc.layers.filter((item): item is CoverShapeLayer => item.type === "shape" && item.id !== layer.id);
+
+  const clippingShape = clipShapes.find((shape) => shape.id === layer.clipTo);
+  const clippedLayers = layer.type === "shape" ? cover.doc.layers.filter((item) => item.clipTo === layer.id) : [];
 
   const fitTextToFrame = () => {
     if (layer.type !== "text") return;
@@ -4749,15 +4826,20 @@ function LayerInspector({
         </div>
       </Section>
 
-      <Section title="Clipping mask" hint="Shape silhouette" defaultOpen={Boolean(layer.clipTo)}>
+      <Section title="Clipping mask" hint="Shape silhouette" defaultOpen={Boolean(layer.clipTo || clippedLayers.length)}>
         {clipShapes.length === 0 ? (
           <p className="cover-inspector-note">Add a shape layer first, then paint this layer inside its silhouette.</p>
         ) : (
           <>
             <label className="cover-select-field full"><span>Clip to shape</span><select value={layer.clipTo ?? ""} onChange={(event) => onUpdate({ clipTo: event.target.value || null }, { key: `clip:${layer.id}` })}><option value="">No clipping mask</option>{clipShapes.map((shape) => <option key={shape.id} value={shape.id}>{shape.name} · {shape.panel}</option>)}</select></label>
             <small className="cover-field-hint">The shape stays visible; this layer is painted only inside it. Move, rotate, or resize the shape to reposition the mask.</small>
+            {clippingShape && <button type="button" className="cover-wide-button subtle" onClick={() => onRevealLayer(clippingShape.id)}><Link2 size={13} /> Reveal masking shape</button>}
           </>
         )}
+        {clippedLayers.length > 0 && <div className="cover-clip-links">
+          <span className="cover-field-heading">Layers using this mask</span>
+          {clippedLayers.map((item) => <button key={item.id} type="button" className="cover-wide-button subtle" onClick={() => onRevealLayer(item.id)}><PanelLeftOpen size={13} /><span>{item.name || layerLabel(item.type)}</span></button>)}
+        </div>}
       </Section>
 
       <Section title="Style" hint="Copy & presets" defaultOpen={false}>

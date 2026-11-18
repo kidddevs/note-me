@@ -1,4 +1,22 @@
-import { coverGroupLocked, coverLayerLocked, type BookCoverDocument, type CoverLayer } from "./bookCoverDoc";
+import { coverGroupLocked, coverLayerLocked, layerForPanel, type BookCoverDocument, type CoverLayer, type CoverPanel } from "./bookCoverDoc";
+
+/** Find layer rows by metadata and artboard, retaining an explicitly revealed row. */
+export function matchingCoverLayerIds(doc: BookCoverDocument, query: string, artboard: CoverPanel, revealedId?: string) {
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const groupNames = new Map(doc.groups.map((group) => [group.id, group.name]));
+  const ids = new Set<string>();
+  for (const layer of doc.layers) {
+    if (layer.id === revealedId) {
+      ids.add(layer.id);
+      continue;
+    }
+    if (!layerForPanel(layer, artboard)) continue;
+    const groupName = layer.groupId ? groupNames.get(layer.groupId) ?? "" : "";
+    const metadata = [layer.name, layer.type, layer.panel === "wrap" ? "whole wrap" : layer.panel, groupName].join(" ").toLocaleLowerCase();
+    if (terms.every((term) => metadata.includes(term))) ids.add(layer.id);
+  }
+  return ids;
+}
 
 /** Placement follows the visible, front-to-back layer list. */
 export type CoverLayerPlacement = "before" | "after";
