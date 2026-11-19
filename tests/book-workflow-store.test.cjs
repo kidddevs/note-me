@@ -3,8 +3,9 @@ const assert = require("node:assert/strict");
 const { api } = require("./.compiled/src/lib/api.js");
 const { useBooks } = require("./.compiled/src/store/books.js");
 const { parseChapterWorkflow, serializeChapterWorkflow } = require("./.compiled/src/lib/bookWorkflow.js");
+const { hasPendingChapterWorkflowWrites, flushChapterWorkflowWrites } = require("./.compiled/src/lib/bookWorkflowWrites.js");
 const initialState = useBooks.getState();
-const originals = { updateChapterWorkflow: api.updateChapterWorkflow, updateChapter: api.updateChapter, updateChapterLayout: api.updateChapterLayout, reorderChapters: api.reorderChapters, deleteChapter: api.deleteChapter };
+const originals = { updateChapterWorkflow: api.updateChapterWorkflow, updateChapter: api.updateChapter, updateChapterLayout: api.updateChapterLayout, reorderChapters: api.reorderChapters, deleteChapter: api.deleteChapter, restoreChapterSnapshot: api.restoreChapterSnapshot };
 const chapter = { id: 2, book_id: 1, title: "North", content: "Original writing", chapter_kind: "photo_essay", position: 0, toc_include: false, toc_heading_exclusions: ["quiet"], layout_json: "{}", workflow_json: "{}", created_at: "", updated_at: "" };
 const workflow = (status = "ready", wordGoal = 100) => ({ status, wordGoal, dueDate: "" });
 const response = (plan) => ({ ...chapter, workflow_json: serializeChapterWorkflow(plan), updated_at: "2026-11-08T12:00:00.000Z" });
@@ -40,17 +41,86 @@ test("a failed planning write leaves the saved plan intact and does not block a 
   assert.equal(parseChapterWorkflow(useBooks.getState().chapters[0].workflow_json).wordGoal, 800);
 });
 
-test("writing rollback preserves a plan saved while the writing request was pending", async () => {
+test("a failed writing request rolls back text before the queued plan saves", async () => {
   seed(); const pending = deferred(); let args;
   api.updateChapter = (...input) => { args = input; return pending.promise; };
   api.updateChapterWorkflow = (_id, plan) => Promise.resolve(response(plan));
   const writing = useBooks.getState().updateChapter(2, "Changed title", "Changed writing").then(() => null, (error) => error);
+  await turn();
   assert.deepEqual(args.slice(3), ["photo_essay", false, ["quiet"]]);
-  await useBooks.getState().updateChapterWorkflow(2, workflow("ready", 400));
+  const planning = useBooks.getState().updateChapterWorkflow(2, workflow("ready", 400));
   pending.reject(new Error("Writing failed")); await writing;
+  await planning;
   const current = useBooks.getState().chapters[0];
   assert.equal(current.title, "North"); assert.equal(current.content, "Original writing");
   assert.deepEqual(parseChapterWorkflow(current.workflow_json), workflow("ready", 400));
+});
+
+test("restore waits for earlier writing and copies the submitted safety draft", async () => {
+  seed(); const writing = deferred(); const calls = [];
+  api.updateChapter = () => { calls.push("writing"); return writing.promise; };
+  api.restoreChapterSnapshot = async (id, snapshotId, draft) => {
+    calls.push([id, snapshotId, draft]); return { ...chapter, title: "Earlier", content: "Checkpoint text" };
+  };
+  const save = useBooks.getState().updateChapter(2, "Typing", "Autosave text");
+  const draft = { title: "Unsaved", content: "Unsaved text", wordCount: 2 };
+  const restore = useBooks.getState().restoreChapterSnapshot(2, 8, draft);
+  assert.equal(hasPendingChapterWorkflowWrites(), true);
+  let closed = false;
+  const closing = flushChapterWorkflowWrites().then(() => { closed = true; });
+  draft.content = "Mutated later";
+  await turn(); assert.deepEqual(calls, ["writing"]);
+  assert.equal(closed, false);
+  writing.resolve(); await save; await restore; await closing;
+  assert.equal(hasPendingChapterWorkflowWrites(), false);
+  assert.deepEqual(calls[1], [2, 8, { title: "Unsaved", content: "Unsaved text", wordCount: 2 }]);
+  assert.equal(useBooks.getState().chapters[0].content, "Checkpoint text");
+});
+
+test("restore merges only text while retaining page design and section metadata", async () => {
+  seed(); const pending = deferred(); api.restoreChapterSnapshot = () => pending.promise;
+  const restore = useBooks.getState().restoreChapterSnapshot(2, 8, { title: "Draft", content: "Draft", wordCount: 1 });
+  useBooks.setState((state) => ({ chapters: state.chapters.map((item) => ({ ...item, layout_json: '{"paper":"cream"}', workflow_json: serializeChapterWorkflow(workflow()) })) }));
+  pending.resolve({ ...chapter, title: "Earlier", content: "Earlier text", layout_json: "{}", workflow_json: "{}" }); await restore;
+  const saved = useBooks.getState().chapters[0];
+  assert.equal(saved.content, "Earlier text"); assert.equal(saved.layout_json, '{"paper":"cream"}');
+  assert.equal(parseChapterWorkflow(saved.workflow_json).status, "ready");
+  assert.equal(saved.chapter_kind, "photo_essay"); assert.equal(saved.toc_include, false);
+});
+
+test("a late restore cannot replace writing submitted after it", async () => {
+  seed(); const pending = deferred(); api.restoreChapterSnapshot = () => pending.promise;
+  const calls = []; api.updateChapter = async (_id, title, content) => { calls.push([title, content]); };
+  const restore = useBooks.getState().restoreChapterSnapshot(2, 8, { title: "Draft", content: "Draft", wordCount: 1 });
+  const save = useBooks.getState().updateChapter(2, "Newer", "Newer draft");
+  pending.resolve({ ...chapter, title: "Earlier", content: "Earlier text" }); await restore; await save;
+  assert.equal(useBooks.getState().chapters[0].content, "Newer draft");
+  assert.deepEqual(calls, [["Newer", "Newer draft"]]);
+});
+
+test("failed restore leaves state intact and does not block a retry", async () => {
+  seed(); let calls = 0; api.restoreChapterSnapshot = async () => {
+    if (++calls === 1) throw new Error("Safety checkpoint failed");
+    return { ...chapter, content: "Recovered" };
+  };
+  const draft = { title: "Draft", content: "Draft", wordCount: 1 };
+  await assert.rejects(useBooks.getState().restoreChapterSnapshot(2, 8, draft), /Safety checkpoint/);
+  assert.equal(useBooks.getState().chapters[0].content, "Original writing");
+  await useBooks.getState().restoreChapterSnapshot(2, 8, draft);
+  assert.equal(useBooks.getState().chapters[0].content, "Recovered");
+});
+
+test("restore completes after a failed autosave and cannot replace another book", async () => {
+  seed(); api.updateChapter = async () => { throw new Error("Writing failed"); };
+  api.restoreChapterSnapshot = async () => ({ ...chapter, content: "Recovered" });
+  const save = useBooks.getState().updateChapter(2, "Draft", "Draft").catch(() => undefined);
+  await useBooks.getState().restoreChapterSnapshot(2, 8, { title: "Draft", content: "Draft", wordCount: 1 }); await save;
+  assert.equal(useBooks.getState().chapters[0].content, "Recovered");
+  const pending = deferred(); api.restoreChapterSnapshot = () => pending.promise;
+  const restore = useBooks.getState().restoreChapterSnapshot(2, 8, { title: "Draft", content: "Draft", wordCount: 1 });
+  useBooks.setState({ selectedBookId: 3, chapters: [{ ...chapter, id: 4, book_id: 3, content: "Other manuscript" }] });
+  pending.resolve(chapter); await restore;
+  assert.equal(useBooks.getState().chapters[0].content, "Other manuscript");
 });
 
 test("page-layout rollback preserves independently confirmed planning", async () => {

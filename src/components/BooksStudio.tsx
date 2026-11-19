@@ -17,6 +17,7 @@ import {
   NotebookPen,
   Palette,
   Plus,
+  RotateCcw,
   Search,
   Settings2,
   Sparkles,
@@ -64,6 +65,7 @@ interface ConfirmationRequest {
   title: string;
   description: string;
   confirmLabel: string;
+  intent?: "restore";
   onConfirm: () => void | Promise<void>;
 }
 
@@ -91,10 +93,11 @@ export function useConfirmationDialog() {
   }, []);
 
   useEffect(() => {
-    if (request) requestAnimationFrame(() => cancelRef.current?.focus());
+    if (request) cancelRef.current?.focus();
   }, [request]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    event.stopPropagation();
     if (event.key === "Escape") {
       event.preventDefault();
       close();
@@ -132,7 +135,7 @@ export function useConfirmationDialog() {
   const dialog = request ? (
     <div className="modal-overlay books-confirm-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <div ref={dialogRef} className="books-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={busy} onKeyDown={onKeyDown}>
-        <div className="books-confirm-mark" aria-hidden="true"><Trash2 size={18} /></div>
+        <div className="books-confirm-mark" aria-hidden="true">{request.intent === "restore" ? <RotateCcw size={18} /> : <Trash2 size={18} />}</div>
         <div className="books-confirm-copy">
           <span className="books-eyebrow">Please confirm</span>
           <h2 id={titleId}>{request.title}</h2>
@@ -140,8 +143,8 @@ export function useConfirmationDialog() {
           {error && <p className="books-confirm-error" role="alert">{error}</p>}
         </div>
         <div className="books-confirm-actions">
-          <button ref={cancelRef} className="books-confirm-cancel" onClick={close} disabled={busy}>Keep it</button>
-          <button className="books-confirm-delete" onClick={() => void accept()} disabled={busy}>{busy ? "Deleting…" : request.confirmLabel}</button>
+          <button ref={cancelRef} className="books-confirm-cancel" onClick={close} disabled={busy}>{request.intent === "restore" ? "Cancel" : "Keep it"}</button>
+          <button className="books-confirm-delete" onClick={() => void accept()} disabled={busy}>{busy ? request.intent === "restore" ? "Restoring…" : "Deleting…" : request.confirmLabel}</button>
         </div>
       </div>
     </div>

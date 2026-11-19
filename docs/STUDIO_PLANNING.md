@@ -61,7 +61,7 @@ and run startup migrations. Browser-only Vite refresh does not update Rust.
 | `src/components/BooksStudioPlan.tsx` | Planner, cards, filters, summary, section navigation and new-section entry |
 | `src/components/BookWorkflowControls.tsx` | Shared form, status badge and writing-surface popover |
 | `src/store/books.ts`, `src/lib/api.ts` | Serialized saves, field ownership and typed native bridge |
-| `src/lib/bookWorkflowWrites.ts` | Independent section-plan write queue |
+| `src/lib/bookWorkflowWrites.ts` | Shared queue for section writing, plans and checkpoint restores |
 | `src/lib/bookStudioClose.ts`, `src/components/BookStudioWriteGuard.tsx` | Registered draft savers and one app-wide native close owner |
 | `src-tauri/src/book_workflow.rs` | Native validation and transactional persistence |
 | `src-tauri/src/db.rs`, `models.rs`, `commands.rs` | Additive schema, chapter response and registered command |
@@ -93,10 +93,12 @@ workflow/timestamp fields into the current chapter instead of replacing an older
 whole-chapter snapshot. Pending saves cannot overwrite newer writing or layout, or
 replace a chapter from a newly selected book. Failed saves do not block later ones.
 
-`queueChapterWorkflowWrite` serializes native calls per section. Independent sections
-can save concurrently. `hasPendingChapterWorkflowWrites` reports in-flight or queued
-writes; `flushChapterWorkflowWrites` waits for pending writes, including ones added
-while waiting, and rejects on a failed write.
+`queueChapterWrite` serializes writing, plans and checkpoint restores per section.
+`queueChapterWorkflowWrite` remains an alias for existing callers. Independent
+sections can save concurrently. `hasPendingChapterWorkflowWrites` reports all
+these in-flight or queued writes. `flushChapterWorkflowWrites` waits for pending
+writes, including ones added while waiting, and rejects on a failed write.
+See [Manuscript recovery](STUDIO_MANUSCRIPT.md) for restore and save ordering.
 
 `registerBookStudioCloseTask({hasChanges, save})` registers a writing/settings draft
 saver and returns its cleanup function. A saver must reject failures and clear only

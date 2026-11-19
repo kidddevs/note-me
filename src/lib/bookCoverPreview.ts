@@ -10,7 +10,7 @@ function previewChapter(value: unknown): value is Chapter {
   return Boolean(value && typeof value === "object" && "id" in value && "book_id" in value && typeof value.id === "number" && previewChapterId(value.id) && value.book_id === BOOK_ID);
 }
 
-function openDatabase(): Promise<IDBDatabase> {
+export function openCoverPreviewDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DATABASE, 1);
     request.onupgradeneeded = () => request.result.createObjectStore(STORE, { keyPath: "id" });
@@ -21,7 +21,7 @@ function openDatabase(): Promise<IDBDatabase> {
 }
 
 export async function loadCoverPreviewBook(): Promise<Book | null> {
-  const database = await openDatabase();
+  const database = await openCoverPreviewDatabase();
   try {
     return await new Promise((resolve, reject) => {
       const request = database.transaction(STORE, "readonly").objectStore(STORE).get(BOOK_ID);
@@ -33,7 +33,7 @@ export async function loadCoverPreviewBook(): Promise<Book | null> {
 
 async function writePreview(book: Book | null) {
   if (book && book.id !== BOOK_ID) throw new Error("Only the cover preview fixture can be saved here.");
-  const database = await openDatabase();
+  const database = await openCoverPreviewDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(STORE, "readwrite");
@@ -54,7 +54,7 @@ export const clearCoverPreviewBook = () => writePreview(null);
 /** The manuscript companion uses a negative fixture id in the same isolated store. */
 export async function loadCoverPreviewChapter(id = -702): Promise<Chapter | null> {
   if (!previewChapterId(id)) throw new Error("Only studio fixture chapters can be read here.");
-  const database = await openDatabase();
+  const database = await openCoverPreviewDatabase();
   try {
     return await new Promise((resolve, reject) => {
       const request = database.transaction(STORE, "readonly").objectStore(STORE).get(id);
@@ -66,7 +66,7 @@ export async function loadCoverPreviewChapter(id = -702): Promise<Chapter | null
 
 export async function saveCoverPreviewChapter(chapter: Chapter | null) {
   if (chapter && !previewChapter(chapter)) throw new Error("Only studio fixture chapters can be saved here.");
-  const database = await openDatabase();
+  const database = await openCoverPreviewDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(STORE, "readwrite");
@@ -80,7 +80,7 @@ export async function saveCoverPreviewChapter(chapter: Chapter | null) {
 }
 
 export async function loadCoverPreviewChapters(): Promise<Chapter[]> {
-  const database = await openDatabase();
+  const database = await openCoverPreviewDatabase();
   try {
     return await new Promise((resolve, reject) => {
       const request = database.transaction(STORE, "readonly").objectStore(STORE).getAll();
@@ -93,7 +93,7 @@ export async function loadCoverPreviewChapters(): Promise<Chapter[]> {
 /** Isolated fixture mutations use the same field ownership as native commands. */
 export async function patchCoverPreviewChapter(id: number, patch: Partial<Omit<Chapter, "id" | "book_id">>): Promise<Chapter> {
   if (!previewChapterId(id)) throw new Error("Only studio fixture chapters can be changed here.");
-  const database = await openDatabase();
+  const database = await openCoverPreviewDatabase();
   try {
     return await new Promise((resolve, reject) => {
       const transaction = database.transaction(STORE, "readwrite");
@@ -112,7 +112,7 @@ export async function patchCoverPreviewChapter(id: number, patch: Partial<Omit<C
 }
 
 export async function createCoverPreviewChapter(input: ChapterInput): Promise<Chapter> {
-  const database = await openDatabase();
+  const database = await openCoverPreviewDatabase();
   try {
     return await new Promise((resolve, reject) => {
       const transaction = database.transaction(STORE, "readwrite");
@@ -137,7 +137,7 @@ export async function createCoverPreviewChapter(input: ChapterInput): Promise<Ch
 
 export async function reorderCoverPreviewChapters(ids: number[]) {
   if (new Set(ids).size !== ids.length || ids.some((id) => !previewChapterId(id))) throw new Error("Invalid studio fixture order.");
-  const database = await openDatabase();
+  const database = await openCoverPreviewDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(STORE, "readwrite");
@@ -156,11 +156,18 @@ export async function reorderCoverPreviewChapters(ids: number[]) {
 
 export async function deleteCoverPreviewChapter(id: number) {
   if (!previewChapterId(id)) throw new Error("Only studio fixture chapters can be deleted here.");
-  const database = await openDatabase();
+  const database = await openCoverPreviewDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(STORE, "readwrite");
-      transaction.objectStore(STORE).delete(id);
+      const store = transaction.objectStore(STORE);
+      store.delete(id);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        for (const value of request.result) {
+          if (value.snapshot?.chapter_id === id) store.delete(value.id);
+        }
+      };
       transaction.oncomplete = () => resolve();
       transaction.onerror = transaction.onabort = () => reject(transaction.error);
     });

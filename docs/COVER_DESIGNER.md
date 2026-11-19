@@ -265,8 +265,11 @@ sections, starting at `-702`, alongside book `-701`; an intentionally empty save
 book stays empty. `?screen=manuscript` opens the page canvas, `?screen=plan` opens
 planning, `?screen=library` opens the shelf, and `?screen=export` opens Export
 Studio. See [Studio planning](STUDIO_PLANNING.md) for chapter adapters and safe
-reset helpers. Use a Tauri build to check native navigation, SQLite persistence,
-checkpoints, and system dialogs. See [Studio publishing](STUDIO_PUBLISHING.md)
+reset helpers. The manuscript fixture also supports persistent checkpoints and
+transactional restore in its isolated IndexedDB store. See
+[Manuscript recovery](STUDIO_MANUSCRIPT.md) for the adapters and QA workflow.
+Use a Tauri build to check native navigation, SQLite persistence, checkpoint
+commands, and system dialogs. See [Studio publishing](STUDIO_PUBLISHING.md)
 for file and print checks.
 
 ## Validation checklist

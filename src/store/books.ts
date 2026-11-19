@@ -2,11 +2,12 @@ import { create } from "zustand";
 import { api } from "../lib/api";
 import { DEFAULT_BOOK_LAYOUT, serializeBookLayout } from "../lib/bookLayout";
 import { activeChapterSetting, LEGACY_ACTIVE_CHAPTER_SETTING, rememberedChapterId, SELECTED_BOOK_SETTING, storedEntityId } from "../lib/bookSession";
-import type { Book, BookInput, Chapter, ChapterKind, ChapterWorkflow } from "../lib/types";
+import type { Book, BookInput, Chapter, ChapterKind, ChapterWorkflow, ChapterSnapshotInput } from "../lib/types";
 import { serializeChapterWorkflow } from "../lib/bookWorkflow";
-import { queueChapterWorkflowWrite } from "../lib/bookWorkflowWrites";
+import { queueChapterWrite, queueChapterWorkflowWrite } from "../lib/bookWorkflowWrites";
 
 let selectionPersistence = Promise.resolve();
+const latestChapterTextWrite = new Map<number, symbol>();
 
 function persistSelection(bookId: number | null, chapterId: number | null) {
   selectionPersistence = selectionPersistence
@@ -68,6 +69,7 @@ interface BooksState {
   updateChapter: (id: number, title: string, content: string, chapterKind?: ChapterKind, tocInclude?: boolean, tocHeadingExclusions?: string[]) => Promise<void>;
   updateChapterLayout: (id: number, layoutJson: string) => Promise<void>;
   updateChapterWorkflow: (id: number, workflow: ChapterWorkflow) => Promise<void>;
+  restoreChapterSnapshot: (id: number, snapshotId: number, draft: Pick<ChapterSnapshotInput, "title" | "content" | "wordCount">) => Promise<Chapter>;
   deleteChapter: (id: number) => Promise<void>;
   reorderChapters: (ids: number[]) => Promise<void>;
 }
@@ -207,6 +209,8 @@ export const useBooks = create<BooksState>((set, get) => ({
   },
 
   updateChapter: async (id, title, content, chapterKind, tocInclude, tocHeadingExclusions) => {
+    const write = Symbol();
+    latestChapterTextWrite.set(id, write);
     const previousChapter = get().chapters.find((chapter) => chapter.id === id);
     const nextChapter = previousChapter
       ? { ...previousChapter, title, content, chapter_kind: chapterKind ?? previousChapter.chapter_kind, toc_include: tocInclude ?? previousChapter.toc_include, toc_heading_exclusions: tocHeadingExclusions ?? previousChapter.toc_heading_exclusions }
@@ -219,12 +223,12 @@ export const useBooks = create<BooksState>((set, get) => ({
       ),
     }));
     try {
-      await api.updateChapter(id, title, content, chapterKind ?? previousChapter?.chapter_kind, tocInclude ?? previousChapter?.toc_include, tocHeadingExclusions ?? previousChapter?.toc_heading_exclusions);
+      await queueChapterWrite(id, () => api.updateChapter(id, title, content, chapterKind ?? previousChapter?.chapter_kind, tocInclude ?? previousChapter?.toc_include, tocHeadingExclusions ?? previousChapter?.toc_heading_exclusions));
     } catch (error) {
       if (nextChapter && previousChapter) {
         set((state) => ({
           chapters: state.chapters.map((chapter) => {
-            const stillOptimistic = chapter.id === id
+            const stillOptimistic = latestChapterTextWrite.get(id) === write && chapter.id === id
               && chapter.title === nextChapter.title
               && chapter.content === nextChapter.content
               && chapter.chapter_kind === nextChapter.chapter_kind
@@ -237,6 +241,26 @@ export const useBooks = create<BooksState>((set, get) => ({
         }));
       }
       throw error;
+    } finally {
+      if (latestChapterTextWrite.get(id) === write) latestChapterTextWrite.delete(id);
+    }
+  },
+
+  restoreChapterSnapshot: async (id, snapshotId, draft) => {
+    const write = Symbol();
+    latestChapterTextWrite.set(id, write);
+    const input = { ...draft };
+    try {
+      const saved = await queueChapterWrite(id, () => api.restoreChapterSnapshot(id, snapshotId, input));
+      set((state) => ({
+        chapters: state.chapters.map((chapter) => chapter.id === id && chapter.book_id === saved.book_id
+          && latestChapterTextWrite.get(id) === write
+          ? { ...chapter, title: saved.title, content: saved.content, updated_at: saved.updated_at } : chapter),
+        books: state.books.map((book) => book.id === saved.book_id ? { ...book, updated_at: saved.updated_at } : book),
+      }));
+      return saved;
+    } finally {
+      if (latestChapterTextWrite.get(id) === write) latestChapterTextWrite.delete(id);
     }
   },
 

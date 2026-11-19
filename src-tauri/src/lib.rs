@@ -1,3 +1,4 @@
+mod book_snapshots;
 mod book_workflow;
 mod commands;
 mod db;
@@ -354,6 +355,7 @@ pub fn run() {
             reorder_chapters,
             list_chapter_snapshots,
             create_chapter_snapshot,
+            restore_chapter_snapshot,
             delete_chapter_snapshot,
         ])
         .build(tauri::generate_context!())

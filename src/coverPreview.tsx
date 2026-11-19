@@ -15,6 +15,7 @@ import { orderBookChapters } from "./lib/bookToc";
 import { serializeChapterWorkflow } from "./lib/bookWorkflow";
 import { layoutForBook, serializeBookLayout } from "./lib/bookLayout";
 import { createCoverDocument } from "./lib/bookCoverDoc";
+import { createPreviewSnapshot, deletePreviewSnapshot, listPreviewSnapshots, restorePreviewSnapshot } from "./lib/bookSnapshotPreview";
 import { loadCoverPreviewBook, saveCoverPreviewBook, loadCoverPreviewChapters, saveCoverPreviewChapter, patchCoverPreviewChapter, createCoverPreviewChapter, deleteCoverPreviewChapter, reorderCoverPreviewChapters } from "./lib/bookCoverPreview";
 import { useBooks } from "./store/books";
 import { notify } from "./store/toast";
@@ -83,6 +84,10 @@ async function startPreview() {
   if (!storedChapters.length) for (const chapter of chapters) await saveCoverPreviewChapter(chapter);
   const fixtureBook = (id: number) => { if (id !== PREVIEW_BOOK_ID) throw new Error("Only the development fixture can be changed here."); };
   api.listChapters = async (id) => { fixtureBook(id); return loadCoverPreviewChapters(); };
+  api.listChapterSnapshots = listPreviewSnapshots;
+  api.createChapterSnapshot = createPreviewSnapshot;
+  api.deleteChapterSnapshot = deletePreviewSnapshot;
+  api.restoreChapterSnapshot = restorePreviewSnapshot;
   api.createChapter = async (id, input) => { fixtureBook(id); return createCoverPreviewChapter(input); };
   api.updateChapter = async (id, title, content, chapterKind = "chapter", tocInclude = true, tocHeadingExclusions = []) => { await patchCoverPreviewChapter(id, { title, content, chapter_kind: chapterKind, toc_include: tocInclude, toc_heading_exclusions: tocHeadingExclusions }); };
   api.updateChapterLayout = async (id, layoutJson) => { await patchCoverPreviewChapter(id, { layout_json: layoutJson }); };

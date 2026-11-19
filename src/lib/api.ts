@@ -129,6 +129,8 @@ export const api = {
       wordCount: snapshot.wordCount,
     }),
   deleteChapterSnapshot: (id: number) => invoke<void>("delete_chapter_snapshot", { id }),
+  restoreChapterSnapshot: (chapterId: number, snapshotId: number, draft: Pick<ChapterSnapshotInput, "title" | "content" | "wordCount">) =>
+    invoke<Chapter>("restore_chapter_snapshot", { chapterId, snapshotId, draftTitle: draft.title, draftContent: draft.content, wordCount: draft.wordCount }),
 
   listCategories: () => invoke<Category[]>("list_categories"),
   createCategory: (name: string, color: string, icon: string) =>

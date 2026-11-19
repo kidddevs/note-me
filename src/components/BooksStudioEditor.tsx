@@ -9,8 +9,6 @@ import {
   BringToFront,
   ChevronRight,
   ChevronLeft,
-  BookmarkPlus,
-  Clock3,
   Copy,
   Grid3X3,
   GripVertical,
@@ -62,6 +60,7 @@ import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVar
 import { api } from "../lib/api";
 import { readBookImageFile, readBookImageSource, saveCoverImageAsset } from "../lib/bookImageLibrary";
 import { BookImageLibrary } from "./BookImageLibrary";
+import { ManuscriptHistory, snapshotTime } from "./ManuscriptHistory";
 import { ChapterWorkflowPopover } from "./BookWorkflowControls";
 import { registerBookStudioCloseTask } from "../lib/bookStudioClose";
 import { htmlToMarkdown } from "../lib/richtext";
@@ -160,32 +159,6 @@ type EditorHistoryEntry = {
   selectedIndices?: number[];
   layoutJson: string;
 };
-
-const SNAPSHOT_LABELS: Record<ChapterSnapshotReason, string> = {
-  auto: "Auto checkpoint",
-  manual: "Saved checkpoint",
-  safety: "Before restore",
-  restore: "Restored copy",
-};
-
-function snapshotTime(value: string) {
-  const date = new Date(value.replace(" ", "T") + "Z");
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
-}
-
-function snapshotPreview(content: string) {
-  const parts = canvasBlocks(content).map((block) => {
-    if (block.kind === "image") return "Artwork";
-    if (block.kind === "table") return "Data table";
-    if (block.kind === "chart") return "Chart";
-    if (block.kind === "callout") return "Callout";
-    return block.display.replace(/[`*_~]/g, "").replace(/\s+/g, " ").trim();
-  }).filter(Boolean);
-  const clean = parts.join(" · ").replace(/\s+/g, " ").trim();
-  return clean.slice(0, 180) || "No text in this checkpoint.";
-}
-
 
 function BooksAssetDrawer({ onClose, onInsert, replacing = false }: { onClose: () => void; onInsert: (markdown: string) => void; replacing?: boolean }) {
   const [category, setCategory] = useState(BOOK_GRAPHIC_CATEGORIES[0]);
@@ -950,6 +923,7 @@ function ScrollableBar({ className, ariaLabel, children }: { className: string; 
 
 export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onFocusModeChange, onOpenOutline, onOpenSettings, onNewChapter, onNavigateSection }: { book: Book; chapters: Chapter[]; activeChapter: Chapter | null; focusMode: boolean; onFocusModeChange: (focused: boolean) => void; onOpenOutline: () => void; onOpenSettings: () => void; onNewChapter: () => void; onNavigateSection: (direction: -1 | 1) => void }) {
   const updateChapter = useBooks((state) => state.updateChapter);
+  const restoreChapterSnapshot = useBooks((state) => state.restoreChapterSnapshot);
   const updateChapterLayout = useBooks((state) => state.updateChapterLayout);
   const updateBook = useBooks((state) => state.updateBook);
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -978,6 +952,13 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [snapshots, setSnapshots] = useState<ChapterSnapshot[]>([]);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [snapshotSaving, setSnapshotSaving] = useState(false);
+  const [snapshotError, setSnapshotError] = useState("");
+  const snapshotSessionRef = useRef(0);
+  const snapshotRequestRef = useRef(0);
+  const snapshotSavingRef = useRef(false);
+  const restorePendingRef = useRef<Promise<void> | null>(null);
+  const restoringDraftRef = useRef<{ id: number; version: number } | null>(null);
+  const [restoringSnapshot, setRestoringSnapshot] = useState(false);
   const [undoState, setUndoState] = useState({ canUndo: false, canRedo: false });
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [replaceQuery, setReplaceQuery] = useState("");
@@ -1050,10 +1031,17 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
   useEffect(() => {
     const previous = draftRef.current;
-    if (previous.id !== (activeChapter?.id ?? null) && previous.id !== null && previous.dirty) {
-      void updateChapter(previous.id, previous.title.trim() || "Untitled chapter", previous.content, previous.chapterKind, previous.tocInclude, previous.tocHeadingExclusions);
+    const previousIsRestoring = restoringDraftRef.current?.id === previous.id && restoringDraftRef.current?.version === draftVersionRef.current;
+    if (previous.id !== (activeChapter?.id ?? null) && previous.id !== null && previous.dirty && !previousIsRestoring) {
+      void updateChapter(previous.id, previous.title.trim() || "Untitled chapter", previous.content, previous.chapterKind, previous.tocInclude, previous.tocHeadingExclusions).catch((error) => notify("error", "Section could not be saved", String(error)));
     }
     draftVersionRef.current += 1;
+    snapshotSessionRef.current += 1;
+    snapshotRequestRef.current += 1;
+    snapshotSavingRef.current = false;
+    setSnapshotSaving(false);
+    setSnapshotLoading(false);
+    setSnapshotError("");
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     setFindOpen(false);
     setFindQuery("");
@@ -1096,12 +1084,14 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       dirty: false,
     };
     return () => {
+      snapshotSessionRef.current += 1;
       if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
       if (historyTimerRef.current !== null) window.clearTimeout(historyTimerRef.current);
       if (layoutHistoryTimerRef.current !== null) window.clearTimeout(layoutHistoryTimerRef.current);
       const draft = draftRef.current;
-      if (draft.id !== null && draft.dirty && useBooks.getState().chapters.some((chapter) => chapter.id === draft.id)) {
-        void updateChapter(draft.id, draft.title.trim() || "Untitled chapter", draft.content, draft.chapterKind, draft.tocInclude, draft.tocHeadingExclusions);
+      const draftIsRestoring = restoringDraftRef.current?.id === draft.id && restoringDraftRef.current?.version === draftVersionRef.current;
+      if (draft.id !== null && draft.dirty && !draftIsRestoring && useBooks.getState().chapters.some((chapter) => chapter.id === draft.id)) {
+        void updateChapter(draft.id, draft.title.trim() || "Untitled chapter", draft.content, draft.chapterKind, draft.tocInclude, draft.tocHeadingExclusions).catch((error) => notify("error", "Section could not be saved", String(error)));
       }
     };
   }, [activeChapter?.id, updateChapter]);
@@ -1251,8 +1241,9 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
 
   useEffect(() => registerBookStudioCloseTask({
-    hasChanges: () => draftRef.current.id !== null && draftRef.current.dirty,
+    hasChanges: () => Boolean(restorePendingRef.current) || draftRef.current.id !== null && draftRef.current.dirty,
     save: async () => {
+      if (restorePendingRef.current) await restorePendingRef.current;
       const draft = draftRef.current;
       if (draft.id === null || !draft.dirty) return;
       const version = draftVersionRef.current;
@@ -1289,7 +1280,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   }, [activeChapter?.id, activeChapter?.chapter_kind, activeChapter?.toc_include, title, content, saveState]);
 
   useEffect(() => {
-    if (!activeChapter || !draftRef.current.dirty) return;
+    if (!activeChapter || !draftRef.current.dirty || restorePendingRef.current) return;
     const version = draftVersionRef.current;
     saveTimerRef.current = window.setTimeout(async () => {
       setSaveState("saving");
@@ -1307,7 +1298,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     return () => {
       if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     };
-  }, [activeChapter?.id, activeChapter?.chapter_kind, activeChapter?.toc_include, activeChapter?.toc_heading_exclusions, title, content, updateChapter]);
+  }, [activeChapter?.id, activeChapter?.chapter_kind, activeChapter?.toc_include, activeChapter?.toc_heading_exclusions, title, content, updateChapter, restoringSnapshot]);
 
   const markDraft = (next: { title?: string; content?: string }) => {
     draftVersionRef.current += 1;
@@ -1410,121 +1401,162 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     };
   }, [content, title]);
 
-  const createChapterSnapshot = async (reason: ChapterSnapshotReason, snapshotTitle = title, snapshotContent = content) => {
-    if (!activeChapter) return null;
+  const snapshotSessionCurrent = (chapterId: number, session: number) =>
+    draftRef.current.id === chapterId && snapshotSessionRef.current === session;
+
+  const createChapterSnapshot = async (reason: ChapterSnapshotReason, snapshotTitle = titleRef.current, snapshotContent = contentRef.current) => {
+    const chapterId = draftRef.current.id;
+    if (chapterId === null || snapshotSavingRef.current || restorePendingRef.current) return null;
+    const session = snapshotSessionRef.current;
+    snapshotRequestRef.current += 1;
+    snapshotSavingRef.current = true;
     setSnapshotSaving(true);
+    setSnapshotLoading(false);
+    setSnapshotError("");
     try {
-      const snapshot = await api.createChapterSnapshot(activeChapter.id, {
-        title: snapshotTitle.trim() || "Untitled chapter",
-        content: snapshotContent,
-        reason,
-        wordCount: wordCount(snapshotContent),
+      const snapshot = await api.createChapterSnapshot(chapterId, {
+        title: snapshotTitle.trim() || "Untitled chapter", content: snapshotContent,
+        reason, wordCount: wordCount(snapshotContent),
       });
+      if (!snapshotSessionCurrent(chapterId, session)) return snapshot;
       setSnapshots((current) => [snapshot, ...current.filter((item) => item.id !== snapshot.id)].slice(0, 50));
-      lastSnapshotRef.current = { chapterId: activeChapter.id, content: snapshot.content, title: snapshot.title };
+      lastSnapshotRef.current = { chapterId, content: snapshot.content, title: snapshot.title };
       if (reason === "manual") notify("success", "Checkpoint saved", `${snapshot.word_count.toLocaleString()} words preserved`);
       return snapshot;
     } catch (error) {
-      notify("error", "Checkpoint could not be saved", String(error));
+      if (snapshotSessionCurrent(chapterId, session)) {
+        setSnapshotError(String(error));
+        notify("error", "Checkpoint could not be saved", String(error));
+      }
       return null;
     } finally {
-      setSnapshotSaving(false);
+      if (snapshotSessionCurrent(chapterId, session)) {
+        snapshotSavingRef.current = false;
+        setSnapshotSaving(false);
+      }
     }
   };
 
-  const openHistory = async () => {
-    if (!activeChapter) return;
-    setHistoryOpen(true);
+  const loadSnapshots = async () => {
+    const chapterId = draftRef.current.id;
+    if (chapterId === null) return;
+    const baseline = { chapterId, content: contentRef.current, title: titleRef.current };
+    const session = snapshotSessionRef.current;
+    const request = ++snapshotRequestRef.current;
     setSnapshotLoading(true);
+    setSnapshotError("");
     try {
-      let list = await api.listChapterSnapshots(activeChapter.id);
-      if (list.length === 0 && content.trim()) {
-        const snapshot = await createChapterSnapshot("auto", title, content);
-        if (snapshot) list = [snapshot];
-      }
+      const list = await api.listChapterSnapshots(chapterId);
+      if (!snapshotSessionCurrent(chapterId, session) || request !== snapshotRequestRef.current) return;
       setSnapshots(list);
       const latest = list[0];
-      lastSnapshotRef.current = latest ? { chapterId: activeChapter.id, content: latest.content, title: latest.title } : null;
+      if (latest) lastSnapshotRef.current = { chapterId, content: latest.content, title: latest.title };
+      else if (lastSnapshotRef.current?.chapterId !== chapterId) lastSnapshotRef.current = baseline;
     } catch (error) {
-      notify("error", "Version history could not be loaded", String(error));
+      if (snapshotSessionCurrent(chapterId, session) && request === snapshotRequestRef.current) setSnapshotError(String(error));
     } finally {
-      setSnapshotLoading(false);
+      if (snapshotSessionCurrent(chapterId, session) && request === snapshotRequestRef.current) setSnapshotLoading(false);
     }
+  };
+
+  const openHistory = () => {
+    setHistoryOpen(true);
+    void loadSnapshots();
   };
 
   const restoreSnapshot = (snapshot: ChapterSnapshot) => {
-    if (!activeChapter) return;
+    const chapterId = draftRef.current.id;
+    if (chapterId === null || snapshot.chapter_id !== chapterId) return;
     confirmation.ask({
       title: "Restore this checkpoint?",
-      description: `The current draft will be kept as a safety checkpoint first, then replaced with the version from ${snapshotTime(snapshot.created_at)}.`,
+      description: `Your current draft will be kept as a safety checkpoint, then replaced with the title and content from ${snapshotTime(snapshot.created_at)}.`,
       confirmLabel: "Restore checkpoint",
+      intent: "restore",
       onConfirm: async () => {
-        await createChapterSnapshot("safety", title, content);
-        setTitle(snapshot.title);
-        setContent(snapshot.content);
-        markDraft({ title: snapshot.title, content: snapshot.content });
-        try {
-          await updateChapter(activeChapter.id, snapshot.title, snapshot.content, activeChapter.chapter_kind, activeChapter.toc_include, activeChapter.toc_heading_exclusions);
-          draftRef.current.dirty = false;
+        if (draftRef.current.id !== chapterId) throw new Error("Open the original section before restoring this checkpoint.");
+        const session = snapshotSessionRef.current;
+        const draft = { ...draftRef.current };
+        const version = draftVersionRef.current;
+        restoringDraftRef.current = { id: chapterId, version };
+        if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+        flushHistory();
+        const operation = (async () => {
+          const saved = await restoreChapterSnapshot(chapterId, snapshot.id, {
+            title: draft.title.trim() || "Untitled chapter", content: draft.content, wordCount: wordCount(draft.content),
+          });
+          if (!snapshotSessionCurrent(chapterId, session)) return;
+          if (draftVersionRef.current !== version) {
+            notify("info", "Checkpoint restored on disk", "Your newer draft is still open and will save next.");
+            return;
+          }
+          setTitle(saved.title);
+          setContent(saved.content);
+          titleRef.current = saved.title;
+          contentRef.current = saved.content;
+          draftVersionRef.current += 1;
+          draftRef.current = { ...draftRef.current, title: saved.title, content: saved.content, dirty: false };
           setSaveState("saved");
+          setSelectedStarts([]);
+          selectedStartsRef.current = [];
+          selectionRef.current = { start: 0, end: 0, titleFocused: false };
+          setEditorSelection({ start: 0, end: 0, titleFocused: false });
+          commitHistory();
           setHistoryOpen(false);
-          notify("success", "Checkpoint restored", `${snapshot.word_count.toLocaleString()} words restored`);
-        } catch (error) {
-          notify("error", "Checkpoint could not be restored", String(error));
+          notify("success", "Checkpoint restored", "Your previous draft is available in version history.");
+        })();
+        restorePendingRef.current = operation;
+        setRestoringSnapshot(true);
+        try { await operation; }
+        catch (error) {
+          if (snapshotSessionCurrent(chapterId, session) && draftVersionRef.current === version) {
+            draftRef.current.dirty = true;
+            setSaveState("dirty");
+          }
+          throw error;
+        } finally {
+          if (restorePendingRef.current === operation) restorePendingRef.current = null;
+          restoringDraftRef.current = null;
+          setRestoringSnapshot(false);
         }
       },
     });
   };
 
   const deleteSnapshot = (snapshot: ChapterSnapshot) => {
+    const chapterId = draftRef.current.id;
+    const session = snapshotSessionRef.current;
+    if (chapterId === null || snapshot.chapter_id !== chapterId) return;
     confirmation.ask({
       title: "Delete this checkpoint?",
       description: "This saved version will be permanently removed from local history.",
       confirmLabel: "Delete checkpoint",
       onConfirm: async () => {
-        try {
-          await api.deleteChapterSnapshot(snapshot.id);
-          setSnapshots((current) => current.filter((item) => item.id !== snapshot.id));
-          notify("success", "Checkpoint deleted");
-        } catch (error) {
-          notify("error", "Checkpoint could not be deleted", String(error));
-        }
+        await api.deleteChapterSnapshot(snapshot.id);
+        if (!snapshotSessionCurrent(chapterId, session)) return;
+        snapshotRequestRef.current += 1;
+        setSnapshotLoading(false);
+        setSnapshots((current) => current.filter((item) => item.id !== snapshot.id));
+        if (lastSnapshotRef.current?.content === snapshot.content) lastSnapshotRef.current = null;
+        notify("success", "Checkpoint deleted");
       },
     });
   };
 
   useEffect(() => {
-    if (!activeChapter) return;
-    let cancelled = false;
-    void api.listChapterSnapshots(activeChapter.id).then((list) => {
-      if (cancelled) return;
-      setSnapshots(list);
-      const latest = list[0];
-      lastSnapshotRef.current = latest ? { chapterId: activeChapter.id, content: latest.content, title: latest.title } : null;
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
+    void loadSnapshots();
   }, [activeChapter?.id]);
 
   useEffect(() => {
     if (!activeChapter) return;
     const timer = window.setInterval(() => {
       const draft = draftRef.current;
-      if (draft.id !== activeChapter.id || !draft.dirty) return;
+      if (draft.id !== activeChapter.id || snapshotSavingRef.current || restorePendingRef.current) return;
       const last = lastSnapshotRef.current;
-      if (last?.chapterId === activeChapter.id && last.content === draft.content) return;
+      if (last?.chapterId === activeChapter.id && last.content === draft.content && last.title === draft.title) return;
       void createChapterSnapshot("auto", draft.title, draft.content);
     }, 2 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, [activeChapter?.id]);
-
-  useEffect(() => {
-    if (!historyOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setHistoryOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [historyOpen]);
 
   const syncCanvasSelection = (block: CanvasBlock, element: HTMLElement) => {
     editorRef.current = element;
@@ -2555,7 +2587,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
         draftRef.current.dirty = false;
         setSaveState("saved");
       }
-      void createChapterSnapshot("manual", title.trim() || "Untitled chapter", content);
+      if (draftRef.current.id === activeChapter.id) void createChapterSnapshot("manual", title.trim() || "Untitled chapter", content);
     } catch (error) {
       if (draftRef.current.id === activeChapter.id) setSaveState("dirty");
       notify("error", "Chapter could not be saved", String(error));
@@ -2827,51 +2859,10 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
         </>}
       </div>;
     })()}
-    {historyOpen && (
-      <div className="books-history-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setHistoryOpen(false); }}>
-        <section className="books-history-panel" role="dialog" aria-modal="true" aria-labelledby="books-history-title">
-          <div className="books-history-header">
-            <div>
-              <span className="books-eyebrow"><Clock3 size={13} /> Local version history</span>
-              <h2 id="books-history-title">Checkpoints</h2>
-              <p>{title || "Untitled chapter"} · {chapterWords.toLocaleString()} words in the current draft</p>
-            </div>
-            <div className="books-history-header-actions">
-              <button className="books-history-save" onClick={() => void createChapterSnapshot("manual")} disabled={snapshotSaving}><BookmarkPlus size={13} /> {snapshotSaving ? "Saving…" : "Save checkpoint"}</button>
-              <button className="books-history-close" onClick={() => setHistoryOpen(false)} aria-label="Close version history"><X size={15} /></button>
-            </div>
-          </div>
-          <div className="books-history-current">
-            <span className="books-history-dot current" aria-hidden="true" />
-            <div><strong>Current draft</strong><small>{chapterWords.toLocaleString()} words · {saveState === "saving" ? "saving" : saveState === "dirty" ? "unsaved changes" : "saved locally"}</small></div>
-            <ChevronRight size={14} aria-hidden="true" />
-          </div>
-          {snapshotLoading ? (
-            <div className="books-history-empty"><Clock3 size={19} /><strong>Loading checkpoints…</strong></div>
-          ) : snapshots.length === 0 ? (
-            <div className="books-history-empty"><History size={20} /><strong>No checkpoints yet</strong><span>Save a checkpoint now, or keep writing — a checkpoint is captured automatically every two minutes while this section changes.</span></div>
-          ) : (
-            <ol className="books-history-list">
-              {snapshots.map((snapshot) => (
-                <li className={`books-history-item ${snapshot.reason}`} key={snapshot.id}>
-                  <span className={`books-history-dot ${snapshot.reason}`} aria-hidden="true" />
-                  <div className="books-history-item-main">
-                    <div className="books-history-item-top"><span className={`books-history-badge ${snapshot.reason}`}>{SNAPSHOT_LABELS[snapshot.reason]}</span><time dateTime={snapshot.created_at}>{snapshotTime(snapshot.created_at)}</time></div>
-                    <p>{snapshotPreview(snapshot.content)}</p>
-                    <small>{snapshot.title || "Untitled section"} · {snapshot.word_count.toLocaleString()} words</small>
-                  </div>
-                  <div className="books-history-item-actions">
-                    <button onClick={() => restoreSnapshot(snapshot)}>Restore</button>
-                    <button className="danger" onClick={() => deleteSnapshot(snapshot)} title="Delete checkpoint" aria-label={`Delete checkpoint from ${snapshotTime(snapshot.created_at)}`}><Trash2 size={13} /></button>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-          <p className="books-history-note">Checkpoints stay on this Mac. The latest 50 per section are kept, and restoring one always saves your current draft first.</p>
-        </section>
-      </div>
-    )}
+    {historyOpen && <ManuscriptHistory key={activeChapter.id} title={title} content={content} saveState={saveState}
+      snapshots={snapshots} loading={snapshotLoading} saving={snapshotSaving || restoringSnapshot} error={snapshotError}
+      onRetry={() => void loadSnapshots()} onSave={() => void createChapterSnapshot("manual")}
+      onRestore={restoreSnapshot} onDelete={deleteSnapshot} onClose={() => setHistoryOpen(false)} />}
     {confirmation.dialog}
     </>
   );

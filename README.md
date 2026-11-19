@@ -68,7 +68,7 @@ Books Studio is a second workspace in the same app, opened from the titlebar boo
 - Typed manuscript sections — title page, cover, masthead, contents page, editor's letter, feature, department, column, profile, interview, review, photo essay, recipe, listing, advertisement, colophon, and traditional book matter.
 - Front matter, story, and closing pages can be reordered, hidden from the table of contents, and managed from the rail or context menu.
 - Distraction-reduced writing surface with H1–H6 formatting, focus mode, section statistics, find and replace, writing sprints, and automatic local saves.
-- Section-level undo and redo, plus automatic and manual version checkpoints you can preview, restore, or delete.
+- Section-level undo and redo, plus automatic and manual checkpoints with full draft comparison, transactional safety copies on restore, and local version history.
 - Reader metadata for title, subtitle, author, genre, description, status, cover color, trim size, and word goal.
 - **Section plan** with Draft/Revising/Ready status, individual word budgets and local-calendar due dates. Search and filter the manuscript, sort deadlines, open a section directly for writing, and edit its plan from the manuscript status button. Planning persists separately from writing/page design and stays out of reader exports; the outline and Export Studio reflect saved readiness.
 

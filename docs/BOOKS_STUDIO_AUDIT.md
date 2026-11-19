@@ -4,6 +4,15 @@ _Last reviewed: November 2026_
 
 Books Studio already has an unusually strong foundation for a local-first writing app: a real manuscript data model, a direct-manipulation page canvas, print-aware typography, multi-format export, version checkpoints, and a considered editorial UI. The work below focuses on the gap between "beautiful manuscript editor" and "industry-grade magazine production surface."
 
+## Manuscript recovery — November 19, 2026
+
+History now compares a full checkpoint with the current draft. Restores save the
+current title and body as a safety copy in the same transaction, retain section
+metadata, and participate in undo/redo. Autosaved writing is eligible for automatic
+checkpoints. Shared save ordering and section-session guards protect recovery
+during pending writes and navigation. See [Manuscript recovery](STUDIO_MANUSCRIPT.md).
+Comparing two stored checkpoints, comments and tracked changes remain future work.
+
 ## Cover tool upgrades — November 7, 2026
 
 The cover editor now has pointer-driven ordered multi-layer dragging, group

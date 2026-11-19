@@ -1199,6 +1199,33 @@ pub fn create_chapter_snapshot(
 }
 
 #[tauri::command]
+pub fn restore_chapter_snapshot(
+    state: State<Db>,
+    chapter_id: i64,
+    snapshot_id: i64,
+    draft_title: String,
+    draft_content: String,
+    word_count: i64,
+) -> Result<Chapter, String> {
+    with_conn(&state, |conn| {
+        crate::book_snapshots::restore_chapter_snapshot(
+            conn,
+            chapter_id,
+            snapshot_id,
+            &draft_title,
+            &draft_content,
+            word_count,
+        )?;
+        conn.query_row(
+            &format!("{CHAPTER_SELECT} WHERE id = ?1"),
+            [chapter_id],
+            row_to_chapter,
+        )
+        .map_err(|e| e.to_string())
+    })
+}
+
+#[tauri::command]
 pub fn delete_chapter_snapshot(state: State<Db>, id: i64) -> Result<(), String> {
     with_conn(&state, |conn| {
         let deleted = conn
