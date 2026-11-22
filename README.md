@@ -51,6 +51,7 @@ NoteMe is an open-source desktop app for notes and long-form writing. It pairs a
 The notes workspace is designed for the way thoughts actually arrive: quickly, in fragments, and often while you are doing something else.
 
 - **Write your way.** Markdown edit, split, and preview modes; rich text editing with headings, emphasis, lists, task lists, quotes, code, and links. Switching modes preserves the Markdown source.
+- **Keep your spacing.** Notes retain authored line breaks, blank rows and repeated spaces across rich text, preview and reopening. Pending saves survive tab closure, and normal window close waits for writes.
 - **Organize lightly.** All Notes, Favorites, Tasks, Archive, and Trash views; color-coded categories; tags with live counts; full-text search and command-palette navigation.
 - **Keep moving.** Browser-style tabs with drag-to-reorder and middle-click close; pin, favorite, archive, restore, duplicate, and batch-manage notes.
 - **Capture anything.** Global Quick Capture with `Cmd+Shift+N`, clipboard history with `Cmd+Shift+V`, and Daily Note, Meeting, and Journal templates.

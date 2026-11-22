@@ -1644,6 +1644,14 @@ textarea:focus-visible,
   pointer-events: none;
 }
 
+/* Notes preserve authored rows; prose paragraph margins must not add extra rows. */
+.note-markdown p, .note-markdown > div { margin: 0; min-height: 1.75em; }
+.note-markdown p, .note-markdown li, .note-markdown h1, .note-markdown h2,
+.note-markdown h3, .note-markdown h4, .note-markdown h5, .note-markdown h6 { white-space: break-spaces; }
+.note-markdown > :first-child { margin-top: 0; }
+.note-markdown > :last-child { margin-bottom: 0; }
+.note-markdown [data-note-blank="true"] { min-height: 1.75em; }
+
 /* Format Toolbar */
 .toolbar {
   display: flex;

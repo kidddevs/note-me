@@ -92,7 +92,7 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
             &PredefinedMenuItem::hide_others(handle, None)?,
             &PredefinedMenuItem::show_all(handle, None)?,
             &sep()?,
-            &PredefinedMenuItem::quit(handle, None)?,
+            &MenuItem::with_id(handle, "quit", "Quit NoteMe", true, Some("Cmd+Q"))?,
         ],
     )?;
 

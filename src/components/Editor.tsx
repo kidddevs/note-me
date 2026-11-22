@@ -38,8 +38,9 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { NoteMarkdown } from "../lib/noteRichtext";
+import { noteSaves } from "../lib/noteSaves";
+import type { Note } from "../lib/types";
 import { api } from "../lib/api";
 import { useNotes } from "../store/notes";
 import { useTabs } from "../store/tabs";
@@ -134,17 +135,28 @@ export function Editor({ noteId, tabId }: { noteId: number; tabId: string }) {
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const spellcheck = useTheme((st) => st.spellcheck);
-  const saveTimer = useRef<number | null>(null);
-  const pending = useRef<{ title: string; content: string } | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const richRef = useRef<RichEditorHandle | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   useEffect(() => {
     if (note) {
-      setTitle(note.title);
-      setContent(note.content);
+      const draft = noteSaves.get(noteId);
+      setTitle(draft?.title ?? note.title);
+      setContent(draft?.content ?? note.content);
     }
+  }, [noteId]);
+
+  useEffect(() => {
+    const update = () => {
+      const status = noteSaves.status(noteId);
+      setSaving(status.dirty || status.saving);
+      setSaveError(Boolean(status.error));
+    };
+    update();
+    const unsubscribe = noteSaves.subscribe(update);
+    return () => { unsubscribe(); void noteSaves.flush(noteId).catch(() => {}); };
   }, [noteId]);
 
   useEffect(() => {
@@ -173,20 +185,9 @@ export function Editor({ noteId, tabId }: { noteId: number; tabId: string }) {
   }, [notes, archived, trashed]);
 
   const queueSave = (t: string, c: string) => {
-    pending.current = { title: t, content: c };
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(async () => {
-      const p = pending.current;
-      if (!p) return;
-      setSaving(true);
-      try {
-        await api.updateNote(noteId, p.title, p.content, note?.category_id ?? null);
-      } catch (e) {
-        notify("error", "Failed to autosave", String(e));
-      } finally {
-        setSaving(false);
-      }
-    }, 600);
+    noteSaves.stage(noteId, { title: t, content: c, categoryId: note?.category_id ?? null });
+    const patch = (item: Note) => item.id === noteId ? { ...item, title: t, content: c } : item;
+    useNotes.setState((state) => ({ notes: state.notes.map(patch), archived: state.archived.map(patch), trashed: state.trashed.map(patch) }));
   };
 
   if (!note) {
@@ -549,7 +550,7 @@ export function Editor({ noteId, tabId }: { noteId: number; tabId: string }) {
               {t.name}
             </span>
           ))}
-          {saving && <span style={{ marginLeft: "auto", color: "var(--accent)" }}>Saving…</span>}
+          {saveError ? <button type="button" onClick={() => void noteSaves.flush(noteId).catch(() => {})} style={{ marginLeft: "auto", color: "var(--danger)" }}>Retry save</button> : saving && <span style={{ marginLeft: "auto", color: "var(--accent)" }}>Saving…</span>}
         </div>
 
         {(mode === "edit" || mode === "rich") && (
@@ -635,7 +636,7 @@ export function Editor({ noteId, tabId }: { noteId: number; tabId: string }) {
           )}
           {mode === "rich" && (
             <div className="editor-pane" onDragOver={(e) => e.preventDefault()} onDrop={onDropFiles}>
-              <RichTextEditor ref={richRef} value={content} onChange={onContentChange} spellcheck={spellcheck} />
+              <RichTextEditor key={noteId} ref={richRef} value={content} onChange={onContentChange} spellcheck={spellcheck} />
             </div>
           )}
           {(mode === "split" || mode === "preview") && (
@@ -657,8 +658,8 @@ export function Editor({ noteId, tabId }: { noteId: number; tabId: string }) {
               {mode === "split" && <div className="pane-divider" />}
               <div className="preview-pane">
                 {content.trim() ? (
-                  <div className="markdown">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                  <div className="markdown note-markdown">
+                    <NoteMarkdown content={content} />
                   </div>
                 ) : (
                   <div style={{ color: "var(--text-3)", padding: "10px 0" }}>Nothing to preview yet — start writing.</div>

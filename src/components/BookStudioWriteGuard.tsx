@@ -12,13 +12,13 @@ export function BookStudioWriteGuard() {
     let unlisten: (() => void) | undefined;
     const close = createBookStudioCloseHandler(
       async () => { if (!cancelled) await window.destroy(); },
-      (error) => notify("error", "Close paused: Studio could not finish saving", `The window stayed open so you can retry. ${String(error)}`),
+      (error) => notify("error", "Close paused: changes could not finish saving", `The window stayed open so you can retry. ${String(error)}`),
     );
     void window.onCloseRequested((event) => {
       if (cancelled) { event.preventDefault(); return; }
       return close(event);
     }).then((stop) => { if (cancelled) stop(); else unlisten = stop; })
-      .catch((error) => { if (!cancelled) notify("error", "Studio save protection could not start", String(error)); });
+      .catch((error) => { if (!cancelled) notify("error", "Save protection could not start", String(error)); });
     return () => { cancelled = true; unlisten?.(); };
   }, []);
   return null;

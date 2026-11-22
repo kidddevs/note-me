@@ -9,6 +9,7 @@ For library cards, export choices, save dialogs or print output, read
 For canvas selection, transforms, arrangement or undo, read `docs/STUDIO_SELECTION.md`.
 For section status, word budgets, due dates or chapter saves, read `docs/STUDIO_PLANNING.md`.
 For manuscript find/replace, checkpoints, recovery or save ordering, read `docs/STUDIO_MANUSCRIPT.md`.
+For Notes rendering, rich-text conversion, autosave or close behavior, read `docs/NOTES_EDITOR.md`.
 
 ## Conventions
 
@@ -21,6 +22,8 @@ For manuscript find/replace, checkpoints, recovery or save ordering, read `docs/
   do not introduce dot indicators or pulsing dots.
 - Do not modify local databases or delete user books, images, templates, palettes,
   or history during QA. Use the isolated cover development fixture for browser QA.
+- Notes may contain credentials. Never open or inspect real notes for QA. Use the
+  isolated `/notes-preview.html` fixture with synthetic negative-id notes instead.
 - Do not commit, push, or change branches unless the user authorizes that work.
 
 ## Validation and documentation

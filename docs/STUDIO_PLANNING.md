@@ -109,7 +109,9 @@ repeated close requests while draining, closes once after success, and surfaces
 failure while leaving the window open.
 
 `BookStudioWriteGuard` owns the **only** native `onCloseRequested` listener, mounted
-in `App` so submitted plans remain protected after switching to Notes. Tauri gives
+in `App` so submitted plans remain protected after switching to Notes. Its shared
+close drain also waits for the Notes save queue, including drafts whose tabs have
+closed. See [Notes editor](NOTES_EDITOR.md) for those contracts. Tauri gives
 each listener its own automatic destroy behavior, so additional surface-level close
 listeners can bypass another listener's cancellation. Register a draft saver instead.
 Settings close saves join an existing settings write before checking newer changes.

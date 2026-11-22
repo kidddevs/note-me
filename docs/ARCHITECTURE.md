@@ -31,7 +31,7 @@ NoteMe is a Tauri 2 desktop application. A Rust process owns the window, native 
 ## Data flow
 
 - **Reads**: frontend calls `api.listNotes()` → `invoke("list_notes")` → SQL. The `useNotes` zustand store caches everything (`notes`, `archived`, `trashed`, `categories`, `tags`, `clipboard`, `stats`) and is the single source of truth for the UI.
-- **Writes**: optimistic UI state → debounced `update_note` (700ms) → Rust emits `notes-changed` → store `refresh()` re-fetches.
+- **Notes writes**: optimistic UI and a copied per-note draft → serialized/debounced `update_note` (600ms) → Rust emits `notes-changed` → revision-guarded store refresh merges any newer pending draft. Tab unmount flushes its note and the app close guard drains all pending writes.
 - **Books writes**: `useBooks` keeps books and chapters separate from notes → typed `create/update_*` commands → SQLite. Chapter text is autosaved after 700ms and book settings after 900ms; dirty editor/settings state intercepts native window close long enough to finish the latest local write.
 - **Events**: `notes-changed`, `clipboard-changed` (Rust → frontend), `global-shortcut` (`quick-capture` / `toggle-clipboard`), `menu` (native menu item ids), and `open-files` for associated Markdown/text files.
 
@@ -58,8 +58,10 @@ Custom items emit `"menu"` events (or `"global-shortcut"` for capture/clipboard)
 
 ## Editing pipeline
 
+Notes spacing and draft persistence are documented in [Notes editor](NOTES_EDITOR.md). Notes use a shared spacing-aware renderer for rich text and preview, with explicit authored breaks and blank rows. Their independent in-memory save queue survives tab unmount, protects pending drafts during refresh, and joins the single app-wide native close guard. The macOS application-menu Quit action uses that same guarded window-close path. Browser validation uses synthetic negative-id notes in a separate IndexedDB fixture and never initializes the native application or clipboard polling.
+
 - **Markdown modes** (`edit`/`split`/`preview`): a plain `<textarea>` + `react-markdown` + `remark-gfm` preview. Toolbar helpers mutate the textarea via selection-aware insert/wrap.
-- **Rich text mode**: a `contenteditable` div (`RichTextEditor.tsx`). On mount it renders `markdownToHtml()` (react-markdown → `renderToStaticMarkup`); every input is converted back with `turndown` (custom rules: GFM task lists, checkbox stripping) into the same markdown state, so the note stays markdown-on-disk no matter which editor you used.
+- **Rich text mode**: a `contenteditable` div (`RichTextEditor.tsx`). Notes render through `noteMarkdownToHtml()` and serialize changed DOM with `noteHtmlToMarkdown()`, preserving authored spacing. Untouched blur/mode changes do not rewrite Markdown. The shared `richtext.tsx` converters retain their original manuscript behavior.
 - Keyboard shortcuts run only in the active mode; `execCommand` (legacy but universally supported in WKWebView/WebView2/WebKitGTK) powers rich text formatting.
 
 ## Database schema

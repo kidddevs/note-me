@@ -5,8 +5,7 @@ import TurndownService from "turndown";
 
 let turndown: TurndownService | null = null;
 
-function getTurndown(): TurndownService {
-  if (turndown) return turndown;
+export function createMarkdownConverter(options: TurndownService.Options = {}): TurndownService {
   const td = new TurndownService({
     headingStyle: "atx",
     codeBlockStyle: "fenced",
@@ -14,6 +13,7 @@ function getTurndown(): TurndownService {
     emDelimiter: "*",
     strongDelimiter: "**",
     linkStyle: "inlined",
+    ...options,
   });
   td.addRule("taskListItem", {
     filter: (node) => {
@@ -43,8 +43,11 @@ function getTurndown(): TurndownService {
     filter: (node) => ["S", "DEL", "STRIKE"].includes(node.nodeName),
     replacement: (content) => `~~${content}~~`,
   });
-  turndown = td;
   return td;
+}
+
+function getTurndown(): TurndownService {
+  return turndown ??= createMarkdownConverter();
 }
 
 export function markdownToHtml(md: string): string {

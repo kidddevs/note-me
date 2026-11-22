@@ -1,4 +1,5 @@
 import { flushChapterWorkflowWrites, hasPendingChapterWorkflowWrites } from "./bookWorkflowWrites";
+import { noteSaves } from "./noteSaves";
 
 interface StudioCloseTask {
   hasChanges: () => boolean;
@@ -13,7 +14,7 @@ export function registerBookStudioCloseTask(task: StudioCloseTask): () => void {
 }
 
 export function hasBookStudioCloseWork() {
-  return hasPendingChapterWorkflowWrites() || [...tasks].some((task) => task.hasChanges());
+  return noteSaves.hasPending() || hasPendingChapterWorkflowWrites() || [...tasks].some((task) => task.hasChanges());
 }
 
 export async function flushBookStudioCloseWork(): Promise<void> {
@@ -21,6 +22,7 @@ export async function flushBookStudioCloseWork(): Promise<void> {
     // Start watching plans before another surface saves: a fast failure must not
     // disappear from the pending queue while a slower manuscript write finishes.
     const results = await Promise.allSettled([
+      noteSaves.flushAll(),
       flushChapterWorkflowWrites(),
       (async () => {
         for (const task of [...tasks]) {

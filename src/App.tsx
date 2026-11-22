@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TitleBar, TabContextMenu } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
 import { Editor } from "./components/Editor";
@@ -93,6 +94,10 @@ export default function App() {
     }).then((u) => unlisteners.push(u));
     listen<string>("menu", (e) => {
       switch (e.payload) {
+        case "quit":
+          // The shared close owner drains Notes and Studio drafts before destroy.
+          void getCurrentWindow().close().catch((error) => notify("error", "Could not close the window", String(error)));
+          break;
         case "new-note":
           useWorkspace.getState().setMode("notes");
           useNotes.getState().createNote().then((n) => n && openNoteInTab(n));

@@ -3,6 +3,9 @@ import type { AppStats, Category, ClipboardItem, Note, SidebarSelection, Tag, Ta
 import { api } from "../lib/api";
 import { notify } from "./toast";
 import { useTabs } from "./tabs";
+import { noteSaves } from "../lib/noteSaves";
+
+let refreshRevision = 0;
 
 interface NotesState {
   notes: Note[];
@@ -68,6 +71,7 @@ export const useNotes = create<NotesState>((set, get) => ({
   },
 
   refresh: async () => {
+    const revision = ++refreshRevision;
     set({ loading: true });
     try {
       const [notes, archived, trashed, categories, tags, clipboard, tasks, stats] = await Promise.all([
@@ -80,8 +84,11 @@ export const useNotes = create<NotesState>((set, get) => ({
         api.listTasks(),
         api.stats(),
       ]);
-      set({ notes, archived, trashed, categories, tags, clipboard, tasks, stats, loading: false });
+      if (revision !== refreshRevision) return;
+      const withDraft = (note: Note) => { const draft = noteSaves.get(note.id); return draft ? { ...note, title: draft.title, content: draft.content } : note; };
+      set({ notes: notes.map(withDraft), archived: archived.map(withDraft), trashed: trashed.map(withDraft), categories, tags, clipboard, tasks, stats, loading: false });
     } catch (e) {
+      if (revision !== refreshRevision) return;
       set({ loading: false });
       notify("error", "Failed to load notes", String(e));
     }
