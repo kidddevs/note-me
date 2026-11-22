@@ -13,6 +13,14 @@ checkpoints. Shared save ordering and section-session guards protect recovery
 during pending writes and navigation. See [Manuscript recovery](STUDIO_MANUSCRIPT.md).
 Comparing two stored checkpoints, comments and tracked changes remain future work.
 
+## Manuscript prose search — November 22, 2026
+
+Find/replace now searches editable prose and protects media, destinations, rich
+objects and layout data. It adds case/whole-word controls, live match highlights,
+keyboard navigation, replacement counts and single-step undo for each replacement
+action. Search stays within each formatting run. Narrow-window controls wrap
+without stretching the editor. See [Manuscript editing](STUDIO_MANUSCRIPT.md).
+
 ## Cover tool upgrades — November 7, 2026
 
 The cover editor now has pointer-driven ordered multi-layer dragging, group

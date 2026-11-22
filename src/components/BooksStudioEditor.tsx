@@ -61,6 +61,7 @@ import { api } from "../lib/api";
 import { readBookImageFile, readBookImageSource, saveCoverImageAsset } from "../lib/bookImageLibrary";
 import { BookImageLibrary } from "./BookImageLibrary";
 import { ManuscriptHistory, snapshotTime } from "./ManuscriptHistory";
+import { findManuscriptMatches, replaceManuscriptText, highlightManuscriptMatches, type ManuscriptMatch, type ManuscriptSearchOptions } from "../lib/bookManuscriptSearch";
 import { ChapterWorkflowPopover } from "./BookWorkflowControls";
 import { registerBookStudioCloseTask } from "../lib/bookStudioClose";
 import { htmlToMarkdown } from "../lib/richtext";
@@ -83,7 +84,6 @@ import {
   defaultChartData,
   DEFAULT_RICH_PRESENTATION,
   editorContextFor,
-  findOccurrences,
   imageAltText,
   imageDataUri,
   imageMarkdownFromAsset,
@@ -390,7 +390,7 @@ function CanvasRulers({ trimWidth, trimHeight }: { trimWidth: number; trimHeight
 
 
 
-function CanvasTextBlock({ block, index, width, left, freeY, layer, height, fullResize, selected, moving, resizing, typography, focusRequest, onFocusHandled, onTextChange, onTextSelection, onEditorKeyDown, onResizeStart, onMoveStart, onParagraphBreak, onContextMenu }: { block: CanvasBlock; index: number; width: number; left?: number; freeY?: number; layer?: number; height?: number; fullResize?: boolean; selected: boolean; moving?: boolean; resizing?: boolean; typography: BookTypography; focusRequest?: { start: number; cursor: number } | null; onFocusHandled?: () => void; onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void; onTextSelection: (block: CanvasBlock, element: HTMLElement) => void; onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: ResizeDirection) => void; onMoveStart: (event: React.PointerEvent<HTMLElement>, block: CanvasBlock) => void; onParagraphBreak: (block: CanvasBlock, before: string, after: string) => void; onContextMenu: (event: React.MouseEvent, block: CanvasBlock) => void }) {
+function CanvasTextBlock({ block, index, width, left, freeY, layer, height, fullResize, selected, moving, resizing, searchMatches = [], activeFindStart, typography, focusRequest, onFocusHandled, onTextChange, onTextSelection, onEditorKeyDown, onResizeStart, onMoveStart, onParagraphBreak, onContextMenu }: { searchMatches?: ManuscriptMatch[]; activeFindStart?: number; block: CanvasBlock; index: number; width: number; left?: number; freeY?: number; layer?: number; height?: number; fullResize?: boolean; selected: boolean; moving?: boolean; resizing?: boolean; typography: BookTypography; focusRequest?: { start: number; cursor: number } | null; onFocusHandled?: () => void; onTextChange: (block: CanvasBlock, value: string, selectionStart: number, selectionEnd: number) => void; onTextSelection: (block: CanvasBlock, element: HTMLElement) => void; onEditorKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void; onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, block: CanvasBlock, direction: ResizeDirection) => void; onMoveStart: (event: React.PointerEvent<HTMLElement>, block: CanvasBlock) => void; onParagraphBreak: (block: CanvasBlock, before: string, after: string) => void; onContextMenu: (event: React.MouseEvent, block: CanvasBlock) => void }) {
   const [editing, setEditing] = useState(false);
   const editor = useRef<HTMLDivElement>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
@@ -485,14 +485,16 @@ function CanvasTextBlock({ block, index, width, left, freeY, layer, height, full
         }
         onEditorKeyDown(event);
       }}
-    /> : <div className={`books-canvas-text-preview ${empty ? "empty" : ""}`} tabIndex={0} role="textbox" aria-label={`${label} text`} onClick={(event) => { if (event.shiftKey || event.metaKey) return; pointerRef.current = { x: event.clientX, y: event.clientY }; beginEditing(); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === "F2") { event.preventDefault(); beginEditing(); } }} dangerouslySetInnerHTML={{ __html: empty ? "Begin writing here…" : applyGrepStyle(markdownToHtml(block.source, undefined, inlineTypography), style) }} />}
+    /> : <div className={`books-canvas-text-preview ${empty ? "empty" : ""}`} tabIndex={0} role="textbox" aria-label={`${label} text`} onClick={(event) => { if (event.shiftKey || event.metaKey) return; pointerRef.current = { x: event.clientX, y: event.clientY }; beginEditing(); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === "F2") { event.preventDefault(); beginEditing(); } }} dangerouslySetInnerHTML={{ __html: empty ? "Begin writing here…" : highlightManuscriptMatches(block.source, searchMatches.filter((match) => match.blockStart === block.start), block.start, activeFindStart, (source) => applyGrepStyle(markdownToHtml(source, undefined, inlineTypography), style)) }} />}
     {selected && <CanvasResizeHandles label={label} full={fullResize} onResizeStart={(event, direction) => onResizeStart(event, block, direction)} />}
     {resizing && <span className="books-canvas-resize-badge">{roundCanvasPercent(width)}% wide{height !== undefined ? ` · ${roundCanvasPercent(height)}% tall` : ""}</span>}
     {moving && <span className="books-canvas-move-badge">{roundCanvasPercent(richPresentationLeft({ ...block.presentation, width, x: left }))}% left · {roundCanvasPercent(width)}% wide</span>}
   </div>;
 }
 
-function ManuscriptCanvas({ content, selection, selectedStarts, typography, paragraphStyles, freeLayout, freeMargins, bleedLeft, bleedWidth, onSelectVisual, onTextChange, onTextSelection, onEditorKeyDown, onEditorDragOver, onEditorDrop, onEditorPaste, onResizeStart, onDeleteBlock, onInsertArtwork, onChangePresentation, onMoveRange, onMoveBlocks, onPlaceBlock, onParagraphBreak, onContextMenu, focusRequest, onFocusHandled, resizing }: {
+function ManuscriptCanvas({ content, selection, selectedStarts, searchMatches = [], activeFindStart, typography, paragraphStyles, freeLayout, freeMargins, bleedLeft, bleedWidth, onSelectVisual, onTextChange, onTextSelection, onEditorKeyDown, onEditorDragOver, onEditorDrop, onEditorPaste, onResizeStart, onDeleteBlock, onInsertArtwork, onChangePresentation, onMoveRange, onMoveBlocks, onPlaceBlock, onParagraphBreak, onContextMenu, focusRequest, onFocusHandled, resizing }: {
+  searchMatches?: ManuscriptMatch[];
+  activeFindStart?: number;
   content: string;
   selection: { start: number; end: number };
   selectedStarts: number[];
@@ -836,7 +838,7 @@ function ManuscriptCanvas({ content, selection, selectedStarts, typography, para
       return <Fragment key={`${block.start}-${index}`}>
         {blockDrag && !freeLayout && blockDrag.dropIndex === index && dropLine(index)}
         {block.kind === "text" ? (
-          <CanvasTextBlock block={block} index={index} width={width} left={left} freeY={freeY} layer={layer} height={liveHeight ?? block.presentation.height} fullResize={fullResize} selected={selected} moving={moving} resizing={Boolean(liveResize)} typography={blockTypography} focusRequest={focusRequest?.start === block.start ? focusRequest : null} onFocusHandled={onFocusHandled} onTextChange={onTextChange} onTextSelection={onTextSelection} onEditorKeyDown={onEditorKeyDown} onResizeStart={onResizeStart} onMoveStart={beginBlockMove} onParagraphBreak={onParagraphBreak} onContextMenu={onContextMenu} />
+          <CanvasTextBlock searchMatches={searchMatches} activeFindStart={activeFindStart} block={block} index={index} width={width} left={left} freeY={freeY} layer={layer} height={liveHeight ?? block.presentation.height} fullResize={fullResize} selected={selected} moving={moving} resizing={Boolean(liveResize)} typography={blockTypography} focusRequest={focusRequest?.start === block.start ? focusRequest : null} onFocusHandled={onFocusHandled} onTextChange={onTextChange} onTextSelection={onTextSelection} onEditorKeyDown={onEditorKeyDown} onResizeStart={onResizeStart} onMoveStart={beginBlockMove} onParagraphBreak={onParagraphBreak} onContextMenu={onContextMenu} />
         ) : (
           <div className={`books-canvas-visual ${block.kind === "image" ? "is-image" : ""} ${selected ? "selected" : ""} ${moving ? "is-moving" : ""} align-${block.presentation.align} ${block.presentation.bleed ? "bleed" : ""} ${flowClasses}`} style={{ ...canvasBlockStyle(width, left, freeY, moving, layer), ...(imageWrap ? { marginRight: imageWrap === "left" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined, marginLeft: imageWrap === "right" ? `${block.image?.presentation.wrapGap ?? 1.4}em` : undefined } : {}) }} role="button" tabIndex={0} data-canvas-block data-block-start={block.start} onContextMenu={(event) => onContextMenu(event, block)} onPointerDown={(event) => beginBlockMove(event, block)} onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
@@ -930,6 +932,8 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [findIndex, setFindIndex] = useState(0);
+  const [findOptions, setFindOptions] = useState<ManuscriptSearchOptions>({});
+  const [replaceMessage, setReplaceMessage] = useState("");
   const [assetOpen, setAssetOpen] = useState(false);
   const [artworkReplaceTarget, setArtworkReplaceTarget] = useState<{ start: number; end: number; source: string } | null>(null);
   const [canvasPrefs] = useState(readCanvasPrefs);
@@ -947,6 +951,8 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [title, setTitle] = useState(activeChapter?.title ?? "");
   const [content, setContent] = useState(activeChapter?.content ?? "");
   const freeLayout = chapterUsesFreeLayout(content);
+  const findMatches = useMemo(() => findOpen ? findManuscriptMatches(content, findQuery, findOptions) : [], [findOpen, content, findQuery, findOptions]);
+  const activeFindIndex = Math.min(findIndex, Math.max(0, findMatches.length - 1));
   const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving">("saved");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [snapshots, setSnapshots] = useState<ChapterSnapshot[]>([]);
@@ -980,6 +986,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const canvasMenuRef = useRef<HTMLDivElement>(null);
   const activeEditorMapRef = useRef({ sourceStart: 0, prefixLength: 0 });
   const findInputRef = useRef<HTMLInputElement>(null);
+  const findButtonRef = useRef<HTMLButtonElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<number | null>(null);
   const historyRef = useRef<EditorHistoryEntry[]>([]);
@@ -1046,6 +1053,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setFindOpen(false);
     setFindQuery("");
     setFindIndex(0);
+    setReplaceMessage("");
     setReplaceOpen(false);
     setReplaceQuery("");
     setAssetOpen(false);
@@ -2391,39 +2399,48 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     void insertImageFile(file);
   };
 
-  const focusFindMatch = (query: string, index: number) => {
-    const match = findOccurrences(content, query)[index];
+  const focusFindMatch = (index: number) => {
+    const match = findMatches[index];
     if (!match) return;
-    const block = canvasBlocks(content).find((item) => match.start >= item.start && match.start <= item.end);
-    if (block) {
-      setEditorSelection({ start: block.start, end: block.end, titleFocused: false });
-      requestAnimationFrame(() => {
-        canvasRef.current?.querySelector<HTMLElement>(`[data-block-start="${block.start}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
-      });
-      return;
-    }
-    requestAnimationFrame(() => {
-      const editor = editorRef.current;
-      editor?.focus();
-      if (editor instanceof HTMLTextAreaElement) editor.setSelectionRange(match.start, match.end);
-    });
+    const block = canvasBlocks(content).find((item) => item.start === match.blockStart);
+    if (block) setEditorSelection({ start: block.start, end: block.end, titleFocused: false });
   };
 
   const moveFindMatch = (direction: -1 | 1) => {
-    const matches = findOccurrences(content, findQuery);
-    if (matches.length === 0) return;
-    const nextIndex = (findIndex + direction + matches.length) % matches.length;
-    setFindIndex(nextIndex);
-    focusFindMatch(findQuery, nextIndex);
+    if (!findMatches.length) return;
+    const index = (activeFindIndex + direction + findMatches.length) % findMatches.length;
+    setFindIndex(index);
+    focusFindMatch(index);
   };
+
+  useEffect(() => {
+    if (!findOpen) return;
+    const frame = requestAnimationFrame(() => {
+      canvasRef.current?.querySelector<HTMLElement>('[data-manuscript-find-current="true"]')?.scrollIntoView({ block: "center", inline: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [findOpen, findMatches, activeFindIndex]);
 
   const closeFind = () => {
     setFindOpen(false);
-    requestAnimationFrame(() => editorRef.current?.focus());
+    setReplaceMessage("");
+    const match = findMatches[activeFindIndex];
+    const block = canvasBlocks(content).find((item) => item.kind === "text" && (match
+      ? item.start === match.blockStart
+      : selectionRef.current.start >= item.start && selectionRef.current.start <= item.end));
+    if (block) {
+      setEditorSelection({ start: block.start, end: block.end, titleFocused: false });
+    }
+    requestAnimationFrame(() => {
+      const preview = block && canvasRef.current?.querySelector<HTMLElement>(`[data-block-start="${block.start}"] .books-canvas-text-preview`);
+      const target = preview || (editorRef.current?.isConnected ? editorRef.current : findButtonRef.current);
+      target?.focus();
+    });
   };
 
   const openFind = (withReplace = false) => {
     setFindOpen(true);
+    setReplaceMessage("");
     if (withReplace) setReplaceOpen(true);
     requestAnimationFrame(() => requestAnimationFrame(() => (withReplace ? replaceInputRef.current : findInputRef.current)?.focus()));
   };
@@ -2435,31 +2452,22 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     });
   };
 
-  const replaceCurrentMatch = () => {
-    const matches = findOccurrences(content, findQuery);
-    if (matches.length === 0) return;
-    const match = matches[Math.min(findIndex, matches.length - 1)];
-    const nextContent = content.slice(0, match.start) + replaceQuery + content.slice(match.end);
-    setContent(nextContent);
-    markDraft({ content: nextContent });
-    const remainingMatches = findOccurrences(nextContent, findQuery).length;
-    setFindIndex((value) => Math.min(value, Math.max(0, remainingMatches - 1)));
-    const cursor = match.start + replaceQuery.length;
-    setEditorSelection({ start: cursor, end: cursor, titleFocused: false });
-  };
-
-  const replaceAllMatches = () => {
-    const matches = findOccurrences(content, findQuery);
-    if (matches.length === 0) return;
-    let nextContent = content;
-    for (let index = matches.length - 1; index >= 0; index -= 1) {
-      const match = matches[index];
-      nextContent = nextContent.slice(0, match.start) + replaceQuery + nextContent.slice(match.end);
+  const replaceMatches = (all = false) => {
+    const result = replaceManuscriptText(content, findQuery, replaceQuery, findOptions, all ? undefined : activeFindIndex);
+    if (!result.count) return;
+    if (result.content !== content) {
+      flushHistory();
+      contentRef.current = result.content;
+      setContent(result.content);
+      markDraft({ content: result.content });
+      selectedStartsRef.current = [];
+      setSelectedStarts([]);
+      selectionRef.current = { start: 0, end: 0, titleFocused: false };
+      setEditorSelection(selectionRef.current);
+      commitHistory();
     }
-    setContent(nextContent);
-    markDraft({ content: nextContent });
-    setFindIndex(0);
-    setEditorSelection({ start: 0, end: 0, titleFocused: false });
+    setFindIndex(result.nextIndex);
+    setReplaceMessage(`Replaced ${result.count} ${result.count === 1 ? "match" : "matches"}.`);
   };
 
   const startSprint = () => {
@@ -2607,12 +2615,13 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
 
   const chapterWords = wordCount(content);
   const totalWords = currentManuscriptWords;
-  const findMatches = findOccurrences(content, findQuery);
   const wordGoal = Math.max(1, book.word_goal || 50000);
   const manuscriptBody = (
     <div ref={canvasRef} className="books-canvas-host">
       <ManuscriptCanvas
         content={content}
+        searchMatches={findOpen ? findMatches : undefined}
+        activeFindStart={findOpen ? findMatches[activeFindIndex]?.start : undefined}
         selection={editorSelection}
         selectedStarts={selectedStarts}
         typography={inspectorLayout.typography}
@@ -2661,7 +2670,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
               <button className="books-quiet-button" onClick={undo} disabled={!undoState.canUndo} title="Undo (⌘Z)" aria-label="Undo"><Undo2 size={15} /></button>
               <button className="books-quiet-button" onClick={redo} disabled={!undoState.canRedo} title="Redo (⌘⇧Z)" aria-label="Redo"><Redo2 size={15} /></button>
             </div>
-            <button className="books-quiet-button" onClick={() => openFind()} title="Find in section (Ctrl/Cmd+F)" aria-label="Find in section"><Search size={15} /></button>
+            <button ref={findButtonRef} className="books-quiet-button" onClick={() => openFind()} title="Find in section (Ctrl/Cmd+F)" aria-label="Find in section"><Search size={15} /></button>
             <button className={`books-quiet-button ${inspectorOpen ? "active" : ""}`} onClick={() => setInspectorOpen((value) => !value)} title={inspectorOpen ? "Hide contextual tools" : "Show contextual tools"} aria-label={inspectorOpen ? "Hide contextual tools" : "Show contextual tools"} aria-pressed={inspectorOpen}>{inspectorOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>
             <button className={`books-quiet-button ${focusMode ? "active" : ""}`} onClick={() => onFocusModeChange(!focusMode)} title={focusMode ? "Exit focus mode" : "Enter focus mode"} aria-label={focusMode ? "Exit focus mode" : "Enter focus mode"} aria-pressed={focusMode}><WandSparkles size={15} /></button>
           <button className="books-outline-button" onClick={() => void saveNow()} disabled={saveState !== "dirty"} title="Save chapter and keep a checkpoint (⌘S)"><Save size={13} /> Save</button>
@@ -2720,24 +2729,30 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
               {hasSectionLayoutOverride(activeChapter.layout_json) && <button className="books-page-master-chip" onClick={() => { setSelectedStarts([]); setEditorSelection({ start: -1, end: -1, titleFocused: false }); setInspectorOpen(true); }} title="This section uses a custom page master"><LayoutTemplate size={12} /> Custom page</button>}
             </ScrollableBar>
              {findOpen && (
-              <div className="books-find-bar">
+              <div className="books-find-bar" role="search" aria-label="Find and replace manuscript prose">
                 <div className="books-find-row">
                   <Search size={14} />
-                  <input ref={findInputRef} value={findQuery} onChange={(event) => { setFindQuery(event.target.value); setFindIndex(0); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveFindMatch(event.shiftKey ? -1 : 1); } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); } }} placeholder="Find in this section…" aria-label="Find in this section" />
-                  <span className="books-find-count" aria-live="polite">{findQuery ? (findMatches.length ? `${findIndex + 1} of ${findMatches.length}` : "No matches") : "Type to search"}</span>
+                  <input ref={findInputRef} value={findQuery} onChange={(event) => { setFindQuery(event.target.value); setFindIndex(0); setReplaceMessage(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveFindMatch(event.shiftKey ? -1 : 1); } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); } }} placeholder="Find in text frames…" aria-label="Find in text frames" aria-describedby="books-find-scope" />
+                  <span className="books-find-count" aria-live="polite">{findQuery ? (findMatches.length ? `${activeFindIndex + 1} of ${findMatches.length}` : "No matches") : "Type to search"}</span>
                   <button onClick={() => moveFindMatch(-1)} disabled={!findMatches.length} title="Previous match" aria-label="Previous match"><ArrowUp size={13} /></button>
                   <button onClick={() => moveFindMatch(1)} disabled={!findMatches.length} title="Next match" aria-label="Next match"><ArrowDown size={13} /></button>
                   <button className={replaceOpen ? "active" : ""} onClick={toggleReplace} title="Toggle replace" aria-label="Toggle replace" aria-expanded={replaceOpen}><Replace size={13} /></button>
                   <button onClick={closeFind} title="Close find" aria-label="Close find"><X size={13} /></button>
                 </div>
+                <div className="books-find-options">
+                  <button type="button" aria-label="Match case" aria-pressed={Boolean(findOptions.matchCase)} onClick={() => { setFindOptions((current) => ({ ...current, matchCase: !current.matchCase })); setFindIndex(0); setReplaceMessage(""); }}>Aa <span>Match case</span></button>
+                  <button type="button" aria-label="Whole words" aria-pressed={Boolean(findOptions.wholeWord)} onClick={() => { setFindOptions((current) => ({ ...current, wholeWord: !current.wholeWord })); setFindIndex(0); setReplaceMessage(""); }}><TextCursorInput size={13} /> Whole words</button>
+                  <span id="books-find-scope">Text frames only. Phrases must share formatting.</span>
+                </div>
                 {replaceOpen && (
                   <div className="books-find-row replace">
                     <Replace size={14} />
-                    <input ref={replaceInputRef} value={replaceQuery} onChange={(event) => setReplaceQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); replaceCurrentMatch(); } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); } }} placeholder="Replace with…" aria-label="Replace with" />
-                    <button className="books-find-text-button" onClick={replaceCurrentMatch} disabled={!findMatches.length} title="Replace current match">Replace</button>
-                    <button className="books-find-text-button" onClick={replaceAllMatches} disabled={!findMatches.length} title="Replace every match">All</button>
+                    <input ref={replaceInputRef} value={replaceQuery} onChange={(event) => { setReplaceQuery(event.target.value); setReplaceMessage(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); replaceMatches(); } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeFind(); } }} placeholder="Replace with…" aria-label="Replace with" />
+                    <button className="books-find-text-button" onClick={() => replaceMatches()} disabled={!findMatches.length} title="Replace current match">Replace</button>
+                    <button className="books-find-text-button" onClick={() => replaceMatches(true)} disabled={!findMatches.length} title="Replace every prose match in this section">Replace all</button>
                   </div>
                 )}
+                <span className="books-find-feedback" role="status">{replaceMessage}</span>
               </div>
             )}
               <ScrollableBar className="books-format-toolbar design-toolbar" ariaLabel="Canvas tools">

@@ -31,6 +31,7 @@
     "src/lib/bookCoverPdf.ts",
     "src/lib/bookCover.ts",
     "src/lib/bookPublishing.ts",
+    "src/lib/bookManuscriptSearch.ts",
     "src/lib/bookExport.ts",
     "src/lib/bookLibrary.ts",
     "src/lib/bookSession.ts",

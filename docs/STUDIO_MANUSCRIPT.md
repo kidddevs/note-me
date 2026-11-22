@@ -1,4 +1,52 @@
-# Manuscript checkpoints and recovery
+# Manuscript editing and recovery
+
+## Prose find and replace
+
+Open Find with the toolbar search button or Cmd/Ctrl+F. Cmd/Ctrl+Alt+F opens the
+replacement row. Matches appear on the page, with a stronger highlight for the
+current result. Enter and Shift+Enter move forward and backward with wraparound.
+The query keeps focus while navigating. Escape closes Find and focuses the current
+text frame. With no current match it returns to the selected frame or search
+button. Changing sections clears the query and closes the bar.
+
+**Match case** and **Whole words** combine. Word boundaries recognize Unicode
+letters, numbers and combining marks, along with underscores and apostrophes.
+Queries are literal, not regular expressions. Search covers prose in text frames,
+including headings, quotes, list items, styled text and link labels. It excludes
+section titles, artwork/captions, link destinations, structured tables/charts/
+callouts, fenced code, Markdown markers and portable layout metadata. Phrases must
+stay in one contiguous formatting run, so `quiet **shore**` is found by searching
+`quiet` or `shore`, not `quiet shore`.
+
+**Replace** changes the current match and advances past the inserted text, even
+when the replacement contains the query. **Replace all** affects only matching
+prose in this section. Replacement strings are inserted literally without regex
+substitution, and the normal manuscript Markdown rendering still applies. Each
+action creates one editor undo step and saves through the existing autosave path.
+Feedback reports how many matches changed. No matches disables replacement.
+
+`src/lib/bookManuscriptSearch.ts` owns these public utilities.
+
+- `findManuscriptMatches(content, query, {matchCase?, wholeWord?})` returns ordered,
+  non-overlapping `{start, end, blockStart}` source ranges. It derives editable runs
+  from `canvasBlocks`, keeping offsets in the original UTF-16 source. Unicode regex
+  matching avoids offset drift from lowercasing characters with different lengths.
+- `replaceManuscriptText(content, query, replacement, options?, index?)` recomputes
+  ranges against that revision and returns `{content, count, nextIndex}`. Omit the
+  index for all matches. Invalid indices and empty/whitespace queries change
+  nothing. The input and all bytes outside the selected ranges stay unchanged.
+- `highlightManuscriptMatches(source, matches, blockStart, activeStart, render)`
+  accepts that block's current, ordered match subset and a publishing-renderer
+  callback. Temporary private-use markers locate the exact source occurrences;
+  the returned HTML marks text fragments while retaining nested typography spans.
+  This HTML belongs only in the read-only preview. ContentEditable initialization
+  always uses the original source, and highlights never enter saved Markdown.
+
+The search controls wrap within narrow windows. The editor's flex container must
+retain `min-width: 0` so its fixed-size page and toolbars cannot stretch the search
+bar beyond the window.
+
+## Checkpoints
 
 The manuscript's **History** button opens local version history for the active
 section. **Save checkpoint** preserves its current title and portable content,
@@ -107,3 +155,24 @@ build, formatting and diff checks. Isolated browser checks covered draft preview
 safety restore, failure/retry, undo/redo, checkpoints after autosave, delayed history
 and restore across section navigation, retention/deletion, focus and mobile themes.
 The native application was not reinstalled or exercised in this pass.
+
+## Prose search verification — November 22, 2026
+
+`tests/book-manuscript-search.test.cjs` covers protected source ranges, Unicode
+offsets and word boundaries, literal queries, formatted runs, fenced code, regex
+replacement characters, replacement navigation and preview HTML with nested
+typography. Browser checks use only the isolated fixture described above.
+
+Exercise case/word combinations, Enter/Shift+Enter, single replacement and Replace
+all, individual undo/redo, autosave/reload, Escape focus return and section changes.
+Enter and leave a highlighted text frame to verify no highlight markup enters
+ContentEditable or persisted text. Compare artwork, destinations and layout bytes
+before and after replacement. Check dark/light themes and 375/1024/1440 px widths.
+These checks exercise the React/store/fixture path and do not establish native
+Tauri interaction results.
+
+Validation passed with 238 Node tests, 12 Rust tests, the production web build and
+the diff check. The existing Vite chunk-size warning remains. Isolated browser QA
+covered the interactions above, including byte-preserving media/layout handling,
+one-step undo/redo, autosave/reload and all search controls fitting at narrow widths.
+No native app was reinstalled and no user database was changed.

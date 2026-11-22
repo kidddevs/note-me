@@ -8,7 +8,7 @@ For library cards, export choices, save dialogs or print output, read
 `docs/STUDIO_PUBLISHING.md`.
 For canvas selection, transforms, arrangement or undo, read `docs/STUDIO_SELECTION.md`.
 For section status, word budgets, due dates or chapter saves, read `docs/STUDIO_PLANNING.md`.
-For manuscript checkpoints, recovery or save ordering, read `docs/STUDIO_MANUSCRIPT.md`.
+For manuscript find/replace, checkpoints, recovery or save ordering, read `docs/STUDIO_MANUSCRIPT.md`.
 
 ## Conventions
 
