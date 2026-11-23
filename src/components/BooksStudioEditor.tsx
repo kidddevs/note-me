@@ -55,7 +55,7 @@ import {
 import type * as React from "react";
 import type { Book, Chapter, ChapterKind, ChapterSnapshot, ChapterSnapshotReason } from "../lib/types";
 import { BOOK_GRAPHICS, BOOK_GRAPHIC_CATEGORIES, graphicDataUri, type BookGraphic, type BookGraphicVariant } from "../lib/bookAssets";
-import { hasSectionLayoutOverride, layoutForBook, layoutForChapter, layoutSectionKey, mergeEditorialStyles, parseBookLayout, sectionLayoutOverrideJson, sectionPageMasterLayout, serializeBookLayout, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTypography } from "../lib/bookLayout";
+import { hasSectionLayoutOverride, layoutForBook, layoutForChapter, layoutSectionKey, mergeEditorialStyles, parseBookLayout, sectionLayoutOverrideJson, sectionPageMasterLayout, serializeBookLayout, titleStyleForLayout, patchTitleStyle, type BookLayout, type BookParagraphStyle, type BookTextRole, type BookTextStyle, type BookTypography } from "../lib/bookLayout";
 import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVars } from "../lib/bookStyles";
 import { api } from "../lib/api";
 import { readBookImageFile, readBookImageSource, saveCoverImageAsset } from "../lib/bookImageLibrary";
@@ -980,6 +980,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [inspectorLayout, setInspectorLayout] = useState(() => layoutForChapter(book, activeChapter));
   const editorRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const pageEditorRef = useRef<HTMLDivElement>(null);
   const pageFrameRef = useRef<HTMLDivElement>(null);
   const pageSheetRef = useRef<HTMLDivElement>(null);
@@ -1103,6 +1104,26 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       }
     };
   }, [activeChapter?.id, updateChapter]);
+
+  const titleStyle = useMemo(() => titleStyleForLayout(inspectorLayout), [inspectorLayout]);
+  useLayoutEffect(() => {
+    const input = titleInputRef.current;
+    if (!input) return;
+    const resize = () => {
+      input.style.height = "0px";
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    resize();
+    // Wrapping changes when the inspector, window or canvas width changes.
+    let width = input.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const nextWidth = input.getBoundingClientRect().width;
+      if (nextWidth !== width) { width = nextWidth; resize(); }
+    });
+    observer.observe(input);
+    document.fonts.ready.then(resize);
+    return () => observer.disconnect();
+  }, [title, titleStyle]);
 
   useEffect(() => {
     const nextBookLayout = layoutForBook(book);
@@ -2521,6 +2542,20 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     return () => window.removeEventListener("keydown", onWindowKeyDown);
   }, [findOpen, sprintOpen]);
 
+  const onTitleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (["z", "y", "s"].includes(key)) { onEditorKeyDown(event); return; }
+    const style = titleStyleForLayout(bookLayoutRef.current);
+    const patch: Partial<BookTextStyle> | null = key === "b" ? { fontWeight: style.fontWeight >= 600 ? 400 : 700 }
+      : key === "i" ? { fontStyle: style.fontStyle === "italic" ? "normal" : "italic" }
+      : key === "u" ? { underline: !style.underline } : null;
+    if (!patch) return;
+    event.preventDefault();
+    event.stopPropagation();
+    changeLayout((current) => patchTitleStyle(current, patch));
+  };
+
   const onEditorKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     const modifier = event.metaKey || event.ctrlKey;
     if (modifier && !event.altKey && event.key.toLowerCase() === "z") {
@@ -2822,7 +2857,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
                       {activeChrome.header.some(Boolean) && <div className="books-page-chrome-row header">{activeChrome.header.map((slot, index) => <span key={`header-${index}`}>{slot}</span>)}</div>}
                       {activeChrome.footer.some(Boolean) && <div className="books-page-chrome-row footer">{activeChrome.footer.map((slot, index) => <span key={`footer-${index}`}>{slot}</span>)}</div>}
                     </div>}
-                    <div className="books-chapter-heading-row"><input className="books-chapter-title-input" value={title} onFocus={() => { setSelectedStarts([]); setEditorSelection({ start: 0, end: title.length, titleFocused: true }); }} onChange={(event) => { const value = event.target.value; setTitle(value); setEditorSelection({ start: 0, end: value.length, titleFocused: true }); markDraft({ title: value }); }} placeholder="Section title" aria-label="Section title" /></div>
+                    <div className={`books-chapter-heading-row ${textStyleClasses(titleStyle)}`} style={textStyleVars(titleStyle)}><textarea ref={titleInputRef} rows={1} className="books-chapter-title-input books-canvas-text" value={title} onKeyDown={onTitleKeyDown} onFocus={() => { setSelectedStarts([]); setEditorSelection({ start: 0, end: title.length, titleFocused: true }); }} onChange={(event) => { const value = event.target.value; setTitle(value); setEditorSelection({ start: 0, end: value.length, titleFocused: true }); markDraft({ title: value }); }} placeholder="Section title" aria-label="Section title" /></div>
                     {manuscriptBody}
                   </div>
                 </div>

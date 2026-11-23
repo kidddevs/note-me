@@ -34,7 +34,7 @@ const SPELL_KEY = "ui.spellcheck";
 const SOUND_KEY = "ui.soundEffects";
 const MEASUREMENT_KEY = "ui.measurementUnit";
 
-const FONT_PX: Record<FontSize, string> = { sm: "13px", md: "14px", lg: "16px" };
+const FONT_PX: Record<FontSize, string> = { sm: "14px", md: "16px", lg: "18px" };
 
 function applyFontSize(f: FontSize) {
   document.documentElement.style.setProperty("--editor-font-size", FONT_PX[f]);

@@ -35,7 +35,7 @@ import { layoutForBook, layoutForChapter, layoutSectionKey, serializeBookLayout 
 import { coverMetrics, hasCoverDocument, renderCoverCanvas } from "../lib/bookCoverDoc";
 import { readBookImageSource } from "../lib/bookImageLibrary";
 import { backMatterSections, buildBookToc, frontMatterSections, matterAnchorId, orderBookChapters, sectionAnchorId, type TocEntry } from "../lib/bookToc";
-import { chapterBandOrdinal, chapterDisplayLabel, chapterHasDistinctTitle, chapterIsOpeningPage, chapterPageBand, chapterTitleHeading, bookMarkdown, bookText, isDocxImageSource, markdownToHtml, parseImageLine, paragraphStylesCss, tocTitle, trimCssSize, TRIM_SIZES } from "../lib/bookPublishing";
+import { chapterBandOrdinal, chapterDisplayLabel, chapterHasDistinctTitle, chapterIsOpeningPage, chapterPageBand, chapterTitleHeading, bookMarkdown, bookText, isDocxImageSource, markdownToHtml, manuscriptTitleHtml, parseImageLine, paragraphStylesCss, tocTitle, trimCssSize, TRIM_SIZES } from "../lib/bookPublishing";
 import { notify } from "../store/toast";
 import {
   BooksPageChrome,
@@ -86,7 +86,7 @@ function InteriorPreview({ book, chapters, chapterId, format }: {
     <div className="books-interior-preview" style={manuscriptStyle({ ...book, layout_json: serializeBookLayout(layout) })}>
       <BooksPageChrome book={book} layout={layout} keyName={layoutSectionKey(band, chapter.id)} section={label} band={band} ordinal={chapterBandOrdinal(chapters, chapterIndex)} />
       {showKicker && <span className="books-preview-kicker">{chapterDisplayLabel(chapter, chapterIndex, chapters)}</span>}
-      <h2 className="book-heading-1">{label}</h2>
+      <div dangerouslySetInnerHTML={{ __html: manuscriptTitleHtml(label, layout) }} />
       <article dangerouslySetInnerHTML={{ __html: markdownToHtml(content, sectionAnchorId(chapter.id), layout.typography, layout.paragraphStyles) }} />
     </div>
   );
@@ -379,7 +379,7 @@ export const PrintBook = memo(function PrintBook({ book, chapters, toc, coverIma
         </section>
         <section id={titlePage ? sectionAnchorId(titlePage.id) : undefined} className={"print-title-page " + (titlePage ? `book-page-${titlePage.id}` : "")} style={pageStyle(titleLayout)}>
           <BooksPageChrome book={book} layout={titleLayout} keyName={titlePage ? layoutSectionKey("opening", titlePage.id) : layoutSectionKey("opening")} section={titlePage?.title || "Title page"} band="opening" ordinal={0} />
-          <h1 className="book-title">{titlePage?.title || book.title}</h1>
+          <div dangerouslySetInnerHTML={{ __html: manuscriptTitleHtml(titlePage?.title || book.title, titleLayout, 1) }} />
           {!titlePage && book.subtitle && <p className="print-subtitle">{book.subtitle}</p>}
           {!titlePage && book.author && <p className="print-author">{book.author}</p>}
           {titlePage && <div dangerouslySetInnerHTML={{ __html: markdownToHtml(titlePage.content, sectionAnchorId(titlePage.id), titleLayout.typography, titleLayout.paragraphStyles) }} />}
@@ -392,7 +392,7 @@ export const PrintBook = memo(function PrintBook({ book, chapters, toc, coverIma
           const label = chapterTitleHeading(chapter, index, orderedChapters);
           const showKicker = band === "story" && chapterHasDistinctTitle(chapter, index, orderedChapters);
           const chapterLayout = chapterLayouts.get(chapter.id) ?? layout;
-          return <section key={chapter.id} id={sectionAnchorId(chapter.id)} className={`${band === "story" ? "" : "print-matter "}print-page-break book-page-${chapter.id}`} style={pageStyle(chapterLayout)}><BooksPageChrome book={book} layout={chapterLayout} keyName={layoutSectionKey(band, chapter.id)} section={label} band={band} ordinal={chapterBandOrdinal(orderedChapters, index)} />{showKicker && <p className="print-chapter-kicker">{chapterDisplayLabel(chapter, index, orderedChapters)}</p>}<h2 className="book-heading-1">{label}</h2><div dangerouslySetInnerHTML={{ __html: markdownToHtml(chapter.content, sectionAnchorId(chapter.id), chapterLayout.typography, chapterLayout.paragraphStyles) }} /></section>;
+          return <section key={chapter.id} id={sectionAnchorId(chapter.id)} className={`${band === "story" ? "" : "print-matter "}print-page-break book-page-${chapter.id}`} style={pageStyle(chapterLayout)}><BooksPageChrome book={book} layout={chapterLayout} keyName={layoutSectionKey(band, chapter.id)} section={label} band={band} ordinal={chapterBandOrdinal(orderedChapters, index)} />{showKicker && <p className="print-chapter-kicker">{chapterDisplayLabel(chapter, index, orderedChapters)}</p>}<div dangerouslySetInnerHTML={{ __html: manuscriptTitleHtml(label, chapterLayout) }} /><div dangerouslySetInnerHTML={{ __html: markdownToHtml(chapter.content, sectionAnchorId(chapter.id), chapterLayout.typography, chapterLayout.paragraphStyles) }} /></section>;
         })}
         {back.map((section, index) => <section key={section.title} className="print-matter print-page-break" style={pageStyle(layout)}><BooksPageChrome book={book} layout={layout} keyName="closing" section={section.title} band="closing" ordinal={index} /><h2 className="book-heading-1">{section.title}</h2><div dangerouslySetInnerHTML={{ __html: markdownToHtml(section.content, matterAnchorId(section.key), layout.typography, layout.paragraphStyles) }} /></section>)}
       </div>

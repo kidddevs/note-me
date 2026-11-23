@@ -230,6 +230,7 @@ export interface BookLayout {
   freeMargins: boolean;
   typography: BookTypography;
   paragraphStyles: BookParagraphStyle[];
+  titleStyleId: string;
 }
 
 export const BOOK_PAGE_PATTERNS: { value: BookPagePattern; label: string; description: string }[] = [
@@ -328,7 +329,7 @@ const DEFAULT_STYLE: BookTextStyle = {
 };
 
 export const DEFAULT_BOOK_TYPOGRAPHY: BookTypography = {
-  title: { ...DEFAULT_STYLE, fontSize: 30, fontWeight: 600, textAlign: "left", lineHeight: 1.08 },
+  title: { ...DEFAULT_STYLE, fontSize: 30, fontWeight: 600, textAlign: "left", lineHeight: 1.08, spaceAfter: 0.7, keepWithNext: true },
   heading1: { ...DEFAULT_STYLE, fontSize: 25, fontWeight: 600, textAlign: "left", lineHeight: 1.12 },
   heading2: { ...DEFAULT_STYLE, fontSize: 21, fontWeight: 600, textAlign: "left", lineHeight: 1.16 },
   heading3: { ...DEFAULT_STYLE, fontSize: 18, fontWeight: 600, textAlign: "left", lineHeight: 1.2 },
@@ -557,6 +558,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   freeMargins: false,
   typography: DEFAULT_BOOK_TYPOGRAPHY,
   paragraphStyles: DEFAULT_PARAGRAPH_STYLES,
+  titleStyleId: "",
 };
 
 const PAGE_STYLES: BookPageNumberStyle[] = ["arabic", "roman-lower", "roman-upper", "custom"];
@@ -931,11 +933,26 @@ export function parseBookLayout(value?: string, typographyFallback: BookTypograp
     freeMargins: boolean(source.freeMargins, DEFAULT_BOOK_LAYOUT.freeMargins),
     typography: Object.fromEntries((Object.keys(typographyFallback) as BookTextRole[]).map((role) => [role, textStyle(sourceTypography[role], typographyFallback[role])])) as BookTypography,
     paragraphStyles: paragraphStyles(source.paragraphStyles),
+    titleStyleId: typeof source.titleStyleId === "string" ? source.titleStyleId.slice(0, 100) : "",
   };
 }
 
 export function serializeBookLayout(layout: BookLayout) {
   return JSON.stringify(layout);
+}
+
+/** Resolve shared title typography; prose-only effects do not apply to plain titles. */
+export function titleStyleForLayout(layout: BookLayout): BookTextStyle {
+  const style = layout.paragraphStyles.find((preset) => preset.id === layout.titleStyleId)?.style ?? layout.typography.title;
+  return { ...style, columns: 1, dropCap: false, nestedStyle: "none", bullets: { ...style.bullets, enabled: false }, grep: { ...style.grep, enabled: false } };
+}
+
+/** Edit the shared preset when linked, otherwise the book's base title role. */
+export function patchTitleStyle(layout: BookLayout, patch: Partial<BookTextStyle>): BookLayout {
+  const linked = layout.paragraphStyles.some((preset) => preset.id === layout.titleStyleId);
+  return linked
+    ? { ...layout, paragraphStyles: layout.paragraphStyles.map((preset) => preset.id === layout.titleStyleId ? { ...preset, style: { ...preset.style, ...patch } } : preset) }
+    : { ...layout, typography: { ...layout.typography, title: { ...layout.typography.title, ...patch } } };
 }
 
 export function pagePatternBackgroundCss(layout: BookLayout) {
@@ -955,7 +972,11 @@ export function pagePatternBackgroundCss(layout: BookLayout) {
 }
 
 export function layoutForBook(book: Book) {
-  const typographyFallback = Object.fromEntries((Object.keys(DEFAULT_BOOK_TYPOGRAPHY) as BookTextRole[]).map((role) => [role, { ...DEFAULT_BOOK_TYPOGRAPHY[role], fontFamily: book.font_family, fontSize: book.font_size, lineHeight: book.line_height }])) as BookTypography;
+  const typographyFallback = Object.fromEntries((Object.keys(DEFAULT_BOOK_TYPOGRAPHY) as BookTextRole[]).map((role) => [role, {
+    ...DEFAULT_BOOK_TYPOGRAPHY[role],
+    fontFamily: book.font_family,
+    ...(role === "paragraph" || role === "quote" ? { fontSize: book.font_size, lineHeight: book.line_height } : {}),
+  }])) as BookTypography;
   const margin = Number.isFinite(book.margin) ? Math.min(3, Math.max(0.2, book.margin)) : 1;
   const marginsFallback: BookPageMargins = { top: margin, right: margin, bottom: margin, left: margin };
   return parseBookLayout(book.layout_json, typographyFallback, marginsFallback);

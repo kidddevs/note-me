@@ -4,6 +4,7 @@ import { chapterGroup, chapterIsOpeningPage, chapterKindLabel } from "./chapterK
 import {
   DEFAULT_BOOK_TYPOGRAPHY,
   layoutForBook,
+  titleStyleForLayout,
   layoutForChapter,
   layoutSectionKey,
   layoutTokenText,
@@ -1460,9 +1461,9 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
   const titlePageHtml = titlePageChapter
      ? (() => {
          const titleLayout = chapterLayouts.get(titlePageChapter.id) ?? layout;
-         return `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page book-page-${titlePageChapter.id}" style="${sectionPageStyle(titleLayout)}">${bookChromeHtml(book, titleLayout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), titleLayout)}</section>`;
+         return `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page book-page-${titlePageChapter.id}" style="${sectionPageStyle(titleLayout)}">${bookChromeHtml(book, titleLayout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}${manuscriptTitleHtml(titlePageChapter.title || book.title || "Untitled manuscript", titleLayout, 1)}${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), titleLayout)}</section>`;
        })()
-    : `<section class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening"), "Title page", "opening", 0)}<h1 class="book-title">${title}</h1>${subtitle}${author}</section>`;
+    : `<section class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening"), "Title page", "opening", 0)}${manuscriptTitleHtml(book.title || "Untitled manuscript", layout, 1)}${subtitle}${author}</section>`;
   const frontMatterHtml = frontMatterSections(book, chapters).map((section, index) => `
     <section id="${matterAnchorId(section.key)}" class="book-matter page-break">
        ${bookChromeHtml(book, layout, "opening", section.title, "opening", index)}
@@ -1485,7 +1486,7 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
      <section id="${sectionAnchorId(chapter.id)}" class="${band === "story" ? "chapter" : "book-matter"} book-page-${chapter.id} ${index ? "page-break" : ""}" style="${sectionPageStyle(chapterLayout)}">
         ${bookChromeHtml(book, chapterLayout, layoutSectionKey(band, chapter.id), libraryLabel, band, chapterBandOrdinal(orderedChapters, orderedIndex))}
         ${showKicker ? `<p class="chapter-kicker">${chapterDisplayLabel(chapter, orderedIndex, orderedChapters)}</p>` : ""}
-        <h2 class="book-heading-1">${escapeHtml(libraryLabel)}</h2>
+        ${manuscriptTitleHtml(libraryLabel, chapterLayout)}
          ${renderMarkdown(chapter.content, sectionAnchorId(chapter.id), chapterLayout)}
       </section>`;
   }).join("\n");
@@ -1577,11 +1578,15 @@ function docxRunsWithProperties(value: string, layout: BookLayout, properties: s
   }).join("");
 }
 
+function docxTitleRuns(title: string) {
+  return title.split(/\r?\n/).map((line, index) => `<w:r>${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${docxXml(line)}</w:t></w:r>`).join("");
+}
+
 function docxFontFamily(style: BookTextStyle) {
   return (fontCss(style.fontFamily).split(",")[0] ?? "Georgia").trim().replace(/^['"]|['"]$/g, "") || "Georgia";
 }
 
-function docxStyleXml(styleId: string, name: string, style: BookTextStyle, afterTwips = 0, basedOn?: string) {
+function docxStyleXml(styleId: string, name: string, style: BookTextStyle, afterTwips = 0, basedOn?: string, accent = "#a56b3e") {
   const alignment = style.textAlign === "justify" ? "both" : style.textAlign;
   const font = docxXml(docxFontFamily(style));
   const fontSize = Math.max(12, Math.round(style.fontSize * 2));
@@ -1593,7 +1598,7 @@ function docxStyleXml(styleId: string, name: string, style: BookTextStyle, after
   const left = Math.round(style.leftIndent * style.fontSize * 20);
   const right = Math.round(style.rightIndent * style.fontSize * 20);
   const indent = firstLine || left || right ? `<w:ind${firstLine ? ` w:firstLine="${firstLine}"` : ""}${left ? ` w:left="${left}"` : ""}${right ? ` w:right="${right}"` : ""}/>` : "";
-  return `<w:style w:type="paragraph" w:styleId="${styleId}"><w:name w:val="${name}"/>${basedOn ? `<w:basedOn w:val="${basedOn}"/>` : ""}<w:pPr>${style.keepWithNext ? "<w:keepNext/>" : ""}${style.keepLines ? "<w:keepLines/>" : ""}${style.breakBefore ? "<w:pageBreakBefore/>" : ""}<w:widowControl/><w:jc w:val="${alignment}"/><w:spacing w:line="${lineHeight}" w:lineRule="auto"${before ? ` w:before="${before}"` : ""}${after ? ` w:after="${after}"` : ""}/>${indent}</w:pPr><w:rPr><w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/>${style.fontWeight >= 600 ? "<w:b/>" : ""}${style.fontStyle === "italic" ? "<w:i/>" : ""}${style.textCase === "small-caps" ? "<w:smallCaps/>" : ""}${style.textCase === "uppercase" ? "<w:caps/>" : ""}${style.underline ? "<w:u w:val=\"single\"/>" : ""}${style.strikethrough ? "<w:strike/>" : ""}${letterSpacing ? `<w:spacing w:val="${letterSpacing}"/>` : ""}</w:rPr></w:style>`;
+  return `<w:style w:type="paragraph" w:styleId="${styleId}"><w:name w:val="${name}"/>${basedOn ? `<w:basedOn w:val="${basedOn}"/>` : ""}<w:pPr>${style.keepWithNext ? "<w:keepNext/>" : ""}${style.keepLines ? "<w:keepLines/>" : ""}${style.breakBefore ? "<w:pageBreakBefore/>" : ""}<w:widowControl/><w:jc w:val="${alignment}"/><w:spacing w:line="${lineHeight}" w:lineRule="auto"${before || styleId === "Title" ? ` w:before="${before}"` : ""}${after || styleId === "Title" ? ` w:after="${after}"` : ""}/>${indent}</w:pPr><w:rPr><w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/>${style.color !== "inherit" ? `<w:color w:val="${(style.color === "accent" ? accent : style.color).slice(1).toUpperCase()}"/>` : ""}${style.fontWeight >= 600 ? "<w:b/>" : ""}${style.fontStyle === "italic" ? "<w:i/>" : ""}${style.textCase === "small-caps" ? "<w:smallCaps/>" : ""}${style.textCase === "uppercase" ? "<w:caps/>" : ""}${style.underline ? "<w:u w:val=\"single\"/>" : ""}${style.strikethrough ? "<w:strike/>" : ""}${letterSpacing ? `<w:spacing w:val="${letterSpacing}"/>` : ""}</w:rPr></w:style>`;
 }
 
 function docxTextParagraph(line: string, layout: BookLayout) {
@@ -1757,11 +1762,11 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
   const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   const titleParagraphs = titlePageChapter
     ? [
-        `<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${docxXml(titlePageChapter.title || book.title)}</w:t></w:r></w:p>`,
+        `<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr>${docxTitleRuns(titlePageChapter.title || book.title)}</w:p>`,
           ...docxContentParagraphs(titlePageChapter.content, assets, layout),
       ]
     : [
-        `<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${docxXml(book.title)}</w:t></w:r></w:p>`,
+        `<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr>${docxTitleRuns(book.title)}</w:p>`,
         ...(book.subtitle ? [`<w:p><w:r><w:t>${docxXml(book.subtitle)}</w:t></w:r></w:p>`] : []),
         ...(book.author ? [`<w:p><w:r><w:t>${docxXml(book.author)}</w:t></w:r></w:p>`] : []),
       ];
@@ -1776,7 +1781,7 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
        (() => {
          const index = orderedChapters.indexOf(chapter);
          const pageBreak = "<w:pageBreakBefore/>";
-         return `<w:p><w:pPr><w:pStyle w:val="Heading1"/>${pageBreak}</w:pPr><w:r><w:t>${docxXml(chapterHeading(chapter, index, orderedChapters))}</w:t></w:r></w:p>`;
+         return `<w:p><w:pPr><w:pStyle w:val="Title"/>${pageBreak}</w:pPr>${docxTitleRuns(chapterHeading(chapter, index, orderedChapters))}</w:p>`;
        })(),
          ...docxContentParagraphs(chapter.content, assets, layout),
     ]),
@@ -1789,7 +1794,7 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
   const pageNumberType = layout.pageNumbering.enabled ? `<w:pgNumType w:fmt="${pageFormat}" w:start="${layout.pageNumbering.start}"/>` : "";
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${paragraphs}<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="${pageSize.width}" w:h="${pageSize.height}"/><w:pgMar w:top="${Math.round(layout.pageMargins.top * 1440)}" w:right="${Math.round(layout.pageMargins.right * 1440)}" w:bottom="${Math.round(layout.pageMargins.bottom * 1440)}" w:left="${Math.round(layout.pageMargins.left * 1440)}"/>${pageNumberType}</w:sectPr></w:body></w:document>`;
   const captionStyle: BookTextStyle = { ...layout.typography.heading3, fontSize: Math.max(8, layout.typography.heading3.fontSize - 2), fontWeight: 400, fontStyle: "italic", textAlign: "left" };
-  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr>${docxStyleXml("NormalDefaults", "Normal defaults", layout.typography.paragraph).match(/<w:rPr>([\s\S]*)<\/w:rPr>/)?.[1] ?? ""}</w:rPr></w:rPrDefault></w:docDefaults>${docxStyleXml("Normal", "Normal", layout.typography.paragraph, paragraphAfter)}${docxStyleXml("Title", "Title", layout.typography.title, paragraphAfter, "Normal")}${([1, 2, 3, 4, 5, 6] as const).map((level) => docxStyleXml(`Heading${level}`, `heading ${level}`, layout.typography[`heading${level}`], paragraphAfter, "Normal")).join("")}${docxStyleXml("Quote", "Quote", layout.typography.quote, paragraphAfter, "Normal")}${docxStyleXml("Caption", "Caption", captionStyle, 40, "Normal")}</w:styles>`;
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr>${docxStyleXml("NormalDefaults", "Normal defaults", layout.typography.paragraph).match(/<w:rPr>([\s\S]*)<\/w:rPr>/)?.[1] ?? ""}</w:rPr></w:rPrDefault></w:docDefaults>${docxStyleXml("Normal", "Normal", layout.typography.paragraph, paragraphAfter)}${docxStyleXml("Title", "Title", titleStyleForLayout(layout), 0, "Normal", layout.accentColor)}${([1, 2, 3, 4, 5, 6] as const).map((level) => docxStyleXml(`Heading${level}`, `heading ${level}`, layout.typography[`heading${level}`], paragraphAfter, "Normal")).join("")}${docxStyleXml("Quote", "Quote", layout.typography.quote, paragraphAfter, "Normal")}${docxStyleXml("Caption", "Caption", captionStyle, 40, "Normal")}</w:styles>`;
   return zipSync({
      "[Content_Types].xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Default Extension="svg" ContentType="image/svg+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`),
     "_rels/.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`),
@@ -1858,9 +1863,9 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   const titlePageChapter = orderedChapters.find((chapter) => chapterIsOpeningPage(chapter.chapter_kind));
   if (titlePageChapter) {
      const titleLayout = chapterLayouts.get(titlePageChapter.id) ?? layout;
-     addSection("title-page", titlePageChapter.title || book.title || "Untitled manuscript", `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, titleLayout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(titlePageChapter.title || book.title || "Untitled manuscript")}</h1>${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), titleLayout)}</section>`, titleLayout);
+     addSection("title-page", titlePageChapter.title || book.title || "Untitled manuscript", `<section id="${sectionAnchorId(titlePageChapter.id)}" class="title-page">${bookChromeHtml(book, titleLayout, layoutSectionKey("opening", titlePageChapter.id), titlePageChapter.title || "Title page", "opening", 0)}${manuscriptTitleHtml(titlePageChapter.title || book.title || "Untitled manuscript", titleLayout, 1)}${renderMarkdown(titlePageChapter.content, sectionAnchorId(titlePageChapter.id), titleLayout)}</section>`, titleLayout);
   } else {
-    addSection("title-page", book.title || "Untitled manuscript", `<section class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening"), "Title page", "opening", 0)}<h1 class="book-title">${escapeHtml(book.title || "Untitled manuscript")}</h1>${book.subtitle ? `<p class="book-paragraph">${escapeHtml(book.subtitle)}</p>` : ""}${book.author ? `<p class="book-paragraph">${escapeHtml(book.author)}</p>` : ""}</section>`);
+    addSection("title-page", book.title || "Untitled manuscript", `<section class="title-page">${bookChromeHtml(book, layout, layoutSectionKey("opening"), "Title page", "opening", 0)}${manuscriptTitleHtml(book.title || "Untitled manuscript", layout, 1)}${book.subtitle ? `<p class="book-paragraph">${escapeHtml(book.subtitle)}</p>` : ""}${book.author ? `<p class="book-paragraph">${escapeHtml(book.author)}</p>` : ""}</section>`);
   }
   const front = frontMatterSections(book, chapters);
    if (front.length) addSection("front-matter", "Front matter", `<section class="matter">${front.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "opening", section.title, "opening", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${renderMarkdown(section.content, matterAnchorId(section.key))}</section>`).join("")}</section>`);
@@ -1871,7 +1876,7 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
     const label = chapterTitleHeading(chapter, index, orderedChapters);
     const showKicker = band === "story" && chapterHasDistinctTitle(chapter, index, orderedChapters);
     const chapterLayout = chapterLayouts.get(chapter.id) ?? layout;
-     addSection(id, label, `<section id="${sectionAnchorId(chapter.id)}">${bookChromeHtml(book, chapterLayout, layoutSectionKey(band, chapter.id), label, band, chapterBandOrdinal(orderedChapters, index))}${showKicker ? `<p>${escapeHtml(chapterDisplayLabel(chapter, index, orderedChapters))}</p>` : ""}<h1>${escapeHtml(label)}</h1>${renderMarkdown(chapter.content, sectionAnchorId(chapter.id), chapterLayout)}</section>`, chapterLayout);
+     addSection(id, label, `<section id="${sectionAnchorId(chapter.id)}">${bookChromeHtml(book, chapterLayout, layoutSectionKey(band, chapter.id), label, band, chapterBandOrdinal(orderedChapters, index))}${showKicker ? `<p>${escapeHtml(chapterDisplayLabel(chapter, index, orderedChapters))}</p>` : ""}${manuscriptTitleHtml(label, chapterLayout, 1)}${renderMarkdown(chapter.content, sectionAnchorId(chapter.id), chapterLayout)}</section>`, chapterLayout);
   });
   const back = backMatterSections(book, chapters);
    if (back.length) addSection("back-matter", "Back matter", `<section class="matter">${back.map((section, index) => `<section id="${matterAnchorId(section.key)}">${bookChromeHtml(book, layout, "closing", section.title, "closing", index)}<h1 class="book-heading-1">${escapeHtml(section.title)}</h1>${renderMarkdown(section.content, matterAnchorId(section.key))}</section>`).join("")}</section>`);
@@ -2005,6 +2010,12 @@ export function paragraphStylesCss(layout: BookLayout, scope = "") {
     }
     return rules.join("");
   }).join("");
+}
+
+/** Render a plain section title with its linked paragraph preset or title role defaults. */
+export function manuscriptTitleHtml(title: string, layout: BookLayout, level: 1 | 2 = 2) {
+  const style = titleStyleForLayout(layout);
+  return `<h${level} class="book-title manuscript-title" style="${escapeHtml(paragraphStyleDeclarations(style))};white-space:pre-wrap">${escapeHtml(title)}</h${level}>`;
 }
 
 export function imagePresentationCss() {

@@ -2,6 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   DEFAULT_BOOK_LAYOUT,
+  DEFAULT_BOOK_TYPOGRAPHY,
+  layoutForBook,
+  serializeBookLayout,
+  titleStyleForLayout,
+  patchTitleStyle,
   EDITORIAL_PARAGRAPH_STYLES,
   SECTION_PAGE_MASTERS,
   hasEditorialStyles,
@@ -301,4 +306,49 @@ test("page numbering honors start bands, overrides, and roman/custom styles", ()
   assert.equal(pageNumberForSection(layout, "story", "story", 2), "5");
   assert.equal(pageNumberForSection(layout, "story:12", "story", 0), "Leaf 7");
   assert.equal(pageNumberText(14, "roman-upper", "{n}"), "XIV");
+});
+
+
+test("title styles persist by reference, inherit preset edits and fall back after deletion", () => {
+  const source = parseBookLayout();
+  source.titleStyleId = "display-title";
+  const parsed = parseBookLayout(serializeBookLayout(source));
+  const preset = parsed.paragraphStyles.find((style) => style.id === "display-title");
+  assert.equal(parsed.titleStyleId, "display-title");
+  assert.equal(titleStyleForLayout(parsed).fontSize, preset.style.fontSize);
+  preset.style = { ...preset.style, fontSize: 42, spaceAfter: 1.2 };
+  assert.equal(titleStyleForLayout(parsed).fontSize, 42);
+  assert.equal(parsed.typography.title.fontSize, DEFAULT_BOOK_TYPOGRAPHY.title.fontSize);
+  parsed.paragraphStyles = parsed.paragraphStyles.filter((style) => style.id !== parsed.titleStyleId);
+  assert.equal(titleStyleForLayout(parsed).fontSize, parsed.typography.title.fontSize);
+  assert.equal(titleStyleForLayout(parseBookLayout('{"titleStyleId":5}')).fontSize, DEFAULT_BOOK_TYPOGRAPHY.title.fontSize);
+});
+
+test("unconfigured headings keep their hierarchy and saved sizes remain authoritative", () => {
+  const layout = layoutForBook(publishingBook({ layout_json: "", font_size: 14, line_height: 1.7 }));
+  assert.equal(layout.typography.paragraph.fontSize, 14);
+  assert.equal(layout.typography.quote.lineHeight, 1.7);
+  assert.equal(layout.typography.title.fontSize, DEFAULT_BOOK_TYPOGRAPHY.title.fontSize);
+  assert.equal(layout.typography.heading1.fontSize, DEFAULT_BOOK_TYPOGRAPHY.heading1.fontSize);
+  const saved = layoutForBook(publishingBook({ layout_json: JSON.stringify({ typography: { title: { fontSize: 18 } } }) }));
+  assert.equal(saved.typography.title.fontSize, 18);
+});
+
+
+test("title formatting edits the linked preset or base role without touching other roles", () => {
+  const original = parseBookLayout();
+  const base = patchTitleStyle(original, { underline: true });
+  assert.equal(base.typography.title.underline, true);
+  assert.equal(original.typography.title.underline, false);
+  assert.equal(base.typography.paragraph, original.typography.paragraph);
+  const linked = { ...original, titleStyleId: "display-title" };
+  const next = patchTitleStyle(linked, { fontWeight: 700 });
+  assert.equal(titleStyleForLayout(next).fontWeight, 700);
+  assert.equal(next.typography.title, linked.typography.title);
+  assert.equal(next.paragraphStyles.find((style) => style.id === "caption"), linked.paragraphStyles.find((style) => style.id === "caption"));
+  const prose = patchTitleStyle(linked, { columns: 3, dropCap: true, nestedStyle: "bold" });
+  assert.equal(titleStyleForLayout(prose).columns, 1);
+  assert.equal(titleStyleForLayout(prose).dropCap, false);
+  assert.equal(titleStyleForLayout(prose).nestedStyle, "none");
+  assert.equal(prose.paragraphStyles.find((style) => style.id === "display-title").style.columns, 3);
 });

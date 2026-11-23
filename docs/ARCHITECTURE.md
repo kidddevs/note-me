@@ -132,5 +132,5 @@ Publishing utility regressions run through Node's built-in test runner after a s
 - Flat design only — no gradients. Surfaces: `--bg / --surface / --surface-2 / --surface-3`, 1px borders, subtle shadows, 6–14px radii.
 - Lucide icons only; 15px default in controls, 12–13px in dense rows.
 - System font stack (`-apple-system, …`) with `-webkit-font-smoothing: antialiased`.
-- Theme tokens are CSS custom properties switched via `data-theme` on `<html>`; system default.
+- Theme tokens are CSS custom properties switched via `data-theme` on `<html>`; system default. See [UI readability](UI_READABILITY.md) for contrast and text-size contracts.
 - `prefers-reduced-motion` globally disables animations.

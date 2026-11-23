@@ -25,7 +25,7 @@ import {
   X,
 } from "lucide-react";
 import type { Book, Chapter, ChapterKind } from "../lib/types";
-import { layoutForBook, type BookLayout } from "../lib/bookLayout";
+import { layoutForBook, titleStyleForLayout, type BookLayout } from "../lib/bookLayout";
 import {
   buildBookToc,
   orderBookChapters,
@@ -212,7 +212,7 @@ function colorWithAlpha(value: string, alpha: number) {
 
 export function manuscriptStyle(book: Book): CSSProperties {
   const layout = layoutForBook(book);
-  const typography = layout.typography;
+  const typography = { ...layout.typography, title: titleStyleForLayout(layout) };
   const typographyVars = Object.fromEntries(Object.entries(typography).flatMap(([role, style]) => [
     [`--book-${role}-font`, fontCss(style.fontFamily)],
     [`--book-${role}-size`, `${style.fontSize}pt`],

@@ -9,6 +9,7 @@ import {
   BarChart3,
   Baseline,
   BookOpen,
+  Check,
   BringToFront,
   CaseUpper,
   ChevronRight,
@@ -217,31 +218,35 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
         <Field label="Last line"><select value={style.lastLineAlign} onChange={(event) => onPatch({ lastLineAlign: event.target.value as BookTextStyle["lastLineAlign"] })}><option value="auto">Automatic</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></Field>
         <Field label="Widows"><NumberField value={style.widows} min={0} max={5} onChange={(widows) => onPatch({ widows })} /></Field>
         <Field label="Orphans"><NumberField value={style.orphans} min={0} max={5} onChange={(orphans) => onPatch({ orphans })} /></Field>
-        <Field label="Columns"><NumberField value={style.columns} min={1} max={4} onChange={(columns) => onPatch({ columns })} /></Field>
-        <Field label="Column gap"><NumberField value={style.columnGap} min={0} max={4} step={0.1} onChange={(columnGap) => onPatch({ columnGap })} suffix="em" /></Field>
+        {role !== "title" && <>
+          <Field label="Columns"><NumberField value={style.columns} min={1} max={4} onChange={(columns) => onPatch({ columns })} /></Field>
+          <Field label="Column gap"><NumberField value={style.columnGap} min={0} max={4} step={0.1} onChange={(columnGap) => onPatch({ columnGap })} suffix="em" /></Field>
+        </>}
       </div>
       <div className="design-inline-row">
         <Toggle checked={style.breakBefore} onChange={(breakBefore) => onPatch({ breakBefore })} label="Break before" />
         <Toggle checked={style.breakAfter} onChange={(breakAfter) => onPatch({ breakAfter })} label="Break after" />
       </div>
-      {style.columns > 1 && <p className="design-help">Columns fill the frame height set in Frame &amp; position. Select the frame to see its column guides.</p>}
-      <div className="design-subgroup">
-        <div className="design-subgroup-head"><strong>Drop cap</strong><Toggle checked={style.dropCap} onChange={(dropCap) => onPatch({ dropCap })} label={style.dropCap ? "On" : "Off"} /></div>
-        {style.dropCap && <div className="design-grid">
-          <Field label="Lines"><NumberField value={style.dropCapLines} min={2} max={6} onChange={(dropCapLines) => onPatch({ dropCapLines })} /></Field>
-          <Field label="Gap"><NumberField value={style.dropCapGap} min={0} max={1} step={0.05} onChange={(dropCapGap) => onPatch({ dropCapGap })} suffix="em" /></Field>
-          <Field label="Font" wide><select value={dropCapFont ? style.dropCapFontFamily : "custom"} onChange={(event) => onPatch({ dropCapFontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font</option></select></Field>
-          <Field label="Color" wide><ColorField value={style.dropCapColor} onChange={(dropCapColor) => onPatch({ dropCapColor })} /></Field>
-        </div>}
-      </div>
-      <div className="design-subgroup">
-        <div className="design-subgroup-head"><strong>Nested opening</strong><select className="design-mini-select" value={style.nestedStyle} onChange={(event) => onPatch({ nestedStyle: event.target.value as BookNestedStyle })}><option value="none">None</option><option value="small-caps">Small caps</option><option value="bold">Bold</option><option value="italic">Italic</option><option value="accent">Accent</option></select></div>
-        {style.nestedStyle !== "none" && <div className="design-grid">
-          <Field label="Words"><NumberField value={style.nestedWords} min={1} max={12} onChange={(nestedWords) => onPatch({ nestedWords })} /></Field>
-          <Field label="Font"><select value={nestedFont ? style.nestedFontFamily : "custom"} onChange={(event) => onPatch({ nestedFontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font</option></select></Field>
-          <Field label="Color" wide><ColorField value={style.nestedColor} onChange={(nestedColor) => onPatch({ nestedColor })} /></Field>
-        </div>}
-      </div>
+      {role !== "title" && <>
+        {style.columns > 1 && <p className="design-help">Columns fill the frame height set in Frame &amp; position. Select the frame to see its column guides.</p>}
+        <div className="design-subgroup">
+          <div className="design-subgroup-head"><strong>Drop cap</strong><Toggle checked={style.dropCap} onChange={(dropCap) => onPatch({ dropCap })} label={style.dropCap ? "On" : "Off"} /></div>
+          {style.dropCap && <div className="design-grid">
+            <Field label="Lines"><NumberField value={style.dropCapLines} min={2} max={6} onChange={(dropCapLines) => onPatch({ dropCapLines })} /></Field>
+            <Field label="Gap"><NumberField value={style.dropCapGap} min={0} max={1} step={0.05} onChange={(dropCapGap) => onPatch({ dropCapGap })} suffix="em" /></Field>
+            <Field label="Font" wide><select value={dropCapFont ? style.dropCapFontFamily : "custom"} onChange={(event) => onPatch({ dropCapFontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font</option></select></Field>
+            <Field label="Color" wide><ColorField value={style.dropCapColor} onChange={(dropCapColor) => onPatch({ dropCapColor })} /></Field>
+          </div>}
+        </div>
+        <div className="design-subgroup">
+          <div className="design-subgroup-head"><strong>Nested opening</strong><select className="design-mini-select" value={style.nestedStyle} onChange={(event) => onPatch({ nestedStyle: event.target.value as BookNestedStyle })}><option value="none">None</option><option value="small-caps">Small caps</option><option value="bold">Bold</option><option value="italic">Italic</option><option value="accent">Accent</option></select></div>
+          {style.nestedStyle !== "none" && <div className="design-grid">
+            <Field label="Words"><NumberField value={style.nestedWords} min={1} max={12} onChange={(nestedWords) => onPatch({ nestedWords })} /></Field>
+            <Field label="Font"><select value={nestedFont ? style.nestedFontFamily : "custom"} onChange={(event) => onPatch({ nestedFontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font</option></select></Field>
+            <Field label="Color" wide><ColorField value={style.nestedColor} onChange={(nestedColor) => onPatch({ nestedColor })} /></Field>
+          </div>}
+        </div>
+      </>}
     </InspectorSection>
 
     <InspectorSection icon={<Frame size={14} />} title="Rules & shading" summary="Paragraph rules, border, background">
@@ -263,7 +268,7 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
       </div>
     </InspectorSection>
 
-    <InspectorSection icon={<ListOrdered size={14} />} title="Bullets, numbering & GREP" summary="Markers, patterns, inline emphasis">
+    {role !== "title" && <InspectorSection icon={<ListOrdered size={14} />} title="Bullets, numbering & GREP" summary="Markers, patterns, inline emphasis">
       <div className="design-subgroup">
         <div className="design-subgroup-head"><strong>Bullets & numbering</strong><Toggle checked={style.bullets.enabled} onChange={(enabled) => onPatch({ bullets: { ...style.bullets, enabled } })} label={style.bullets.enabled ? "On" : "Off"} /></div>
         {style.bullets.enabled && <div className="design-grid">
@@ -280,18 +285,22 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
           <Field label="Color" wide><ColorField value={style.grep.color} onChange={(color) => onPatch({ grep: { ...style.grep, color } })} /></Field>
         </div>}
       </div>
-    </InspectorSection>
+    </InspectorSection>}
   </div>;
 }
 
 function StyleLibrary({ layout, context, onLayoutChange, onReplaceRange }: { layout: BookLayout; context: EditorContext; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void }) {
   const role = context.role;
-  const isText = Boolean(role && context.kind !== "none" && context.kind !== "title");
+  const isText = Boolean(role && context.kind !== "none");
   const [browseOpen, setBrowseOpen] = useState(false);
-  const activeId = context.presentation?.styleId;
+  const activeId = context.kind === "title" ? layout.titleStyleId : context.presentation?.styleId;
   const activePreset = layout.paragraphStyles.find((style) => style.id === activeId) ?? null;
 
   const applyStyle = (styleId?: string) => {
+    if (context.kind === "title") {
+      onLayoutChange((current) => ({ ...current, titleStyleId: styleId ?? "" }));
+      return;
+    }
     if (!isText || !context.presentation) return;
     onReplaceRange(context.start, context.end, canvasTextSource(context.source, { ...context.presentation, styleId }));
   };
@@ -300,24 +309,25 @@ function StyleLibrary({ layout, context, onLayoutChange, onReplaceRange }: { lay
     if (!base) return;
     const id = uniqueStyleId(layout, "custom-style");
     const preset = cloneParagraphStyle(base, id, "Untitled paragraph style");
-    onLayoutChange((current) => ({ ...current, paragraphStyles: [...current.paragraphStyles, preset] }));
-    applyStyle(id);
+    onLayoutChange((current) => ({ ...current, titleStyleId: context.kind === "title" ? id : current.titleStyleId, paragraphStyles: [...current.paragraphStyles, preset] }));
+    if (context.kind !== "title") applyStyle(id);
   };
   const duplicateStyle = (preset: BookParagraphStyle) => {
     const id = uniqueStyleId(layout, `${preset.id}-copy`);
     const copy = cloneParagraphStyle(preset, id, `${preset.name} copy`);
-    onLayoutChange((current) => ({ ...current, paragraphStyles: [...current.paragraphStyles, copy] }));
-    applyStyle(id);
+    onLayoutChange((current) => ({ ...current, titleStyleId: context.kind === "title" ? id : current.titleStyleId, paragraphStyles: [...current.paragraphStyles, copy] }));
+    if (context.kind !== "title") applyStyle(id);
   };
   const deleteStyle = (preset: BookParagraphStyle) => {
-    if (activeId === preset.id) applyStyle(undefined);
-    onLayoutChange((current) => ({ ...current, paragraphStyles: current.paragraphStyles.filter((style) => style.id !== preset.id) }));
+    if (activeId === preset.id && context.kind !== "title") applyStyle(undefined);
+    onLayoutChange((current) => ({ ...current, titleStyleId: current.titleStyleId === preset.id ? "" : current.titleStyleId, paragraphStyles: current.paragraphStyles.filter((style) => style.id !== preset.id) }));
   };
   const renameStyle = (preset: BookParagraphStyle, name: string) => {
     onLayoutChange((current) => ({ ...current, paragraphStyles: current.paragraphStyles.map((style) => style.id === preset.id ? { ...style, name } : style) }));
   };
 
   return <InspectorSection icon={<Palette size={14} />} title="Paragraph style" summary={activePreset?.name ?? "Role default"} defaultOpen>
+    {context.kind === "title" && <p className="design-help">Applies to titles throughout this book. Editing a preset updates every linked text block.</p>}
     <div className="design-style-picker">
       <label className="design-style-select">
         <Palette size={13} />
@@ -346,7 +356,7 @@ function StyleLibrary({ layout, context, onLayoutChange, onReplaceRange }: { lay
         return <button key={preset.id} className={`design-style-card ${activeId === preset.id ? "active" : ""}`} onClick={() => applyStyle(preset.id)} disabled={!isText}>
           <span className="design-style-aa" style={{ fontFamily: fontCss(preset.style.fontFamily), fontSize: `${Math.max(13, Math.min(22, preset.style.fontSize))}px`, fontWeight: preset.style.fontWeight, fontStyle: preset.style.fontStyle, color: sampleColor === "inherit" ? undefined : sampleColor }}>Aa</span>
           <span><strong>{preset.name}</strong><small>{preset.style.fontFamily} · {preset.style.fontSize}pt · {preset.style.textAlign}</small></span>
-          {activeId === preset.id && <i className="design-style-active-dot" aria-hidden="true" />}
+          {activeId === preset.id && <Check size={14} className="design-style-active-icon" aria-hidden="true" />}
         </button>;
       })}
     </div>}
@@ -651,7 +661,8 @@ export interface LayerEntry {
 export function BooksInspector({ context, layout, bookLayout, sectionLayoutActive, sectionKind, sectionLabel, sectionKey, freeLayout, selectionCount, onAlignSelection, onDistributeSelection, onEnableFreeLayout, onClearSelection, layers, onSelectLayer, onLayerFront, onLayerBack, onLayoutChange, onSectionLayoutChange, onResetSectionLayout, onApplySectionPageMaster, onApplySectionPageToBook, onApplySectionPageToKind, onReplaceRange, onMoveRange, onDeleteRange, onDuplicateRange, onBringToFront, onSendToBack, onReplaceImage, onReplaceArtwork, onInlineFormat, onConvertRole, chapterWords, totalWords, wordGoal }: { context: EditorContext; layout: BookLayout; bookLayout: BookLayout; sectionLayoutActive: boolean; sectionKind?: string; sectionLabel?: string; sectionKey: string; freeLayout: boolean; selectionCount?: number; onAlignSelection?: (mode: StudioAlign, reference: StudioArrangeReference) => void; onDistributeSelection?: (axis: StudioAxis, spacing: StudioSpacing) => void; onEnableFreeLayout?: () => void; onClearSelection?: () => void; layers?: LayerEntry[]; onSelectLayer?: (start: number, end: number, additive?: boolean) => void; onLayerFront?: (start: number, end: number) => void; onLayerBack?: (start: number, end: number) => void; onLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onSectionLayoutChange: (change: (layout: BookLayout) => BookLayout) => void; onResetSectionLayout: () => void; onApplySectionPageMaster: (masterId: string) => void; onApplySectionPageToBook: () => void; onApplySectionPageToKind: () => void; onReplaceRange: (start: number, end: number, replacement: string, focusEditor?: boolean) => void; onMoveRange: (start: number, end: number, direction: -1 | 1) => void; onDeleteRange: (start: number, end: number, restoreFocus?: HTMLElement | null) => void; onDuplicateRange: (start: number, end: number) => void; onBringToFront?: () => void; onSendToBack?: () => void; onReplaceImage?: () => void; onReplaceArtwork?: () => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; chapterWords: number; totalWords: number; wordGoal: number }) {
   const role = context.role;
   const roleStyle = role ? layout.typography[role] : null;
-  const activePreset = context.presentation?.styleId ? layout.paragraphStyles.find((preset) => preset.id === context.presentation?.styleId) ?? null : null;
+  const presetId = context.kind === "title" ? layout.titleStyleId : context.presentation?.styleId;
+  const activePreset = layout.paragraphStyles.find((preset) => preset.id === presetId) ?? null;
   const editingStyle = activePreset?.style ?? roleStyle;
   const goalProgress = Math.min(100, Math.round((totalWords / Math.max(1, wordGoal)) * 100));
   const isText = context.kind === "paragraph" || context.kind === "heading" || context.kind === "quote";
@@ -694,13 +705,13 @@ export function BooksInspector({ context, layout, bookLayout, sectionLayoutActiv
   const deleteStyle = () => {
     if (!activePreset) return;
     if (context.presentation) onReplaceRange(context.start, context.end, canvasTextSource(context.source, { ...context.presentation, styleId: undefined }));
-    onLayoutChange((current) => ({ ...current, paragraphStyles: current.paragraphStyles.filter((preset) => preset.id !== activePreset.id) }));
+    onLayoutChange((current) => ({ ...current, titleStyleId: current.titleStyleId === activePreset.id ? "" : current.titleStyleId, paragraphStyles: current.paragraphStyles.filter((preset) => preset.id !== activePreset.id) }));
   };
   const duplicateStyle = () => {
     if (!activePreset) return;
     const id = uniqueStyleId(layout, `${activePreset.id}-copy`);
     const copy = cloneParagraphStyle(activePreset, id, `${activePreset.name} copy`);
-    onLayoutChange((current) => ({ ...current, paragraphStyles: [...current.paragraphStyles, copy] }));
+    onLayoutChange((current) => ({ ...current, titleStyleId: context.kind === "title" ? id : current.titleStyleId, paragraphStyles: [...current.paragraphStyles, copy] }));
     if (context.presentation) onReplaceRange(context.start, context.end, canvasTextSource(context.source, { ...context.presentation, styleId: id }));
   };
 
@@ -718,8 +729,8 @@ export function BooksInspector({ context, layout, bookLayout, sectionLayoutActiv
     </div>}
     <div className="design-inspector-body">
       {context.kind === "none" ? <DocumentPanel layout={layout} bookLayout={bookLayout} sectionLayoutActive={sectionLayoutActive} sectionKind={sectionKind} sectionLabel={sectionLabel} sectionKey={sectionKey} onLayoutChange={onLayoutChange} onSectionLayoutChange={onSectionLayoutChange} onResetSectionLayout={onResetSectionLayout} onApplySectionPageMaster={onApplySectionPageMaster} onApplySectionPageToBook={onApplySectionPageToBook} onApplySectionPageToKind={onApplySectionPageToKind} /> : <>
-        {isText && <StyleLibrary layout={layout} context={context} onLayoutChange={onLayoutChange} onReplaceRange={onReplaceRange} />}
-        {(isText || context.kind === "title") && editingStyle && <TextStyleEditor style={editingStyle} preset={context.kind === "title" ? null : activePreset} role={role} showInlineFormatting={isText} onPatch={patchStyle} onInlineFormat={onInlineFormat} onConvertRole={onConvertRole} onDelete={deleteStyle} onDuplicate={duplicateStyle} />}
+        {(isText || context.kind === "title") && <StyleLibrary layout={layout} context={context} onLayoutChange={onLayoutChange} onReplaceRange={onReplaceRange} />}
+        {(isText || context.kind === "title") && editingStyle && <TextStyleEditor style={editingStyle} preset={activePreset} role={role} showInlineFormatting={isText} onPatch={patchStyle} onInlineFormat={onInlineFormat} onConvertRole={onConvertRole} onDelete={deleteStyle} onDuplicate={duplicateStyle} />}
         {isText && <FrameControls context={context} freeLayout={freeLayout} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} />}
         {context.kind === "image" && <ImageInspector context={context} freeLayout={freeLayout} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} onReplaceImage={onReplaceImage} onReplaceArtwork={onReplaceArtwork} />}
         {context.kind === "table" && <TableInspector context={context} freeMargins={layout.freeMargins} onReplaceRange={onReplaceRange} />}

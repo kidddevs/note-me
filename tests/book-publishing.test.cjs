@@ -18,6 +18,7 @@ const {
   formatUpdated,
   imageMarkdown,
   markdownToHtml,
+  manuscriptTitleHtml,
   paragraphStylesCss,
   restyleCanvasTextSource,
   richPresentationLeft,
@@ -31,7 +32,7 @@ const {
   EMPTY_CANVAS_PARAGRAPH,
   DEFAULT_RICH_PRESENTATION,
 } = require("./.compiled/src/lib/bookPublishing.js");
-const { DEFAULT_BOOK_LAYOUT, DEFAULT_BOOK_TYPOGRAPHY } = require("./.compiled/src/lib/bookLayout.js");
+const { DEFAULT_BOOK_LAYOUT, DEFAULT_BOOK_TYPOGRAPHY, parseBookLayout, serializeBookLayout } = require("./.compiled/src/lib/bookLayout.js");
 
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
@@ -791,4 +792,61 @@ test("photo attributes remain literal and XML-safe when they contain Markdown pu
   assert.equal(dom.window.document.querySelector("strong"), null);
   dom.window.close();
   assert.doesNotMatch(markdownToHtml('`![example](https://example.com/a.png)`'), /<figure/);
+});
+
+
+test("section title presets carry character and paragraph styling through HTML, print, EPUB and Word", async () => {
+  const layout = parseBookLayout();
+  const preset = layout.paragraphStyles.find((style) => style.id === "display-title");
+  layout.titleStyleId = preset.id;
+  preset.style = { ...preset.style, fontSize: 37, color: "#164c3d", textAlign: "center", spaceBefore: 0.7, spaceAfter: 1.25, leftIndent: 0.5,
+    ruleBelow: { ...preset.style.ruleBelow, enabled: true, width: 2, color: "#164c3d" } };
+  const manuscript = book({ layout_json: serializeBookLayout(layout) });
+  const sections = [chapter(1, "Title <one>", "Title body", "title_page"), chapter(2, "North **light** & sea\nA second line", "Body remains plain.")];
+  const { JSDOM } = require("jsdom");
+  const assertTitle = (html, text, level) => {
+    const element = new JSDOM(html).window.document.querySelector(`h${level}.manuscript-title`);
+    assert.ok(element);
+    assert.equal(element.textContent, text);
+    assert.equal(element.style.fontSize, "37pt");
+    assert.equal(element.style.textAlign, "center");
+    assert.equal(element.style.color, "rgb(22, 76, 61)");
+    assert.equal(element.style.marginBottom, "1.25em");
+    assert.equal(element.style.paddingLeft, "0.5em");
+    assert.equal(element.style.borderBottomWidth, "2px");
+    assert.equal(element.style.whiteSpace, "pre-wrap");
+  };
+  const html = bookHtml(manuscript, sections);
+  assertTitle(html, sections[0].title, 1);
+  assertTitle(html, sections[1].title, 2);
+  assertTitle(bookPrintHtml(manuscript, sections), sections[1].title, 2);
+  assert.match(html, /Body remains plain/);
+  const epub = unzipSync(await bookEpub(manuscript, sections));
+  assertTitle(strFromU8(epub["OEBPS/chapter-2.xhtml"]), sections[1].title, 1);
+  assertTitle(strFromU8(epub["OEBPS/title-page.xhtml"]), sections[0].title, 1);
+  const docx = unzipSync(await bookDocx(manuscript, sections));
+  const styles = strFromU8(docx["word/styles.xml"]);
+  const titleStyle = styles.match(/<w:style w:type="paragraph" w:styleId="Title">[\s\S]*?<\/w:style>/)[0];
+  assert.match(titleStyle, /w:sz w:val="74"/);
+  assert.match(titleStyle, /w:color w:val="164C3D"/);
+  assert.match(titleStyle, /w:jc w:val="center"/);
+  assert.match(titleStyle, /w:after="925"/);
+  const doc = strFromU8(docx["word/document.xml"]);
+  assert.equal((doc.match(/w:pStyle w:val="Title"/g) || []).length, 2);
+  assert.match(doc, /North \*\*light\*\* &amp; sea/);
+  assert.match(doc, /<w:br\/>/);
+  preset.style.spaceBefore = preset.style.spaceAfter = 0;
+  const zero = unzipSync(await bookDocx({ ...manuscript, layout_json: serializeBookLayout(layout) }, sections));
+  const zeroTitle = strFromU8(zero["word/styles.xml"]).match(/<w:style w:type="paragraph" w:styleId="Title">[\s\S]*?<\/w:style>/)[0];
+  assert.match(zeroTitle, /w:before="0" w:after="0"/);
+});
+
+test("title renderer escapes literal text and uses base role when a linked preset is missing", () => {
+  const layout = parseBookLayout(JSON.stringify({ titleStyleId: "deleted-style", typography: { title: { fontSize: 23, color: "accent" } } }));
+  const html = manuscriptTitleHtml('<img src=x onerror="alert(1)"> **title**', layout);
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img/);
+  assert.match(html, /\*\*title\*\*/);
+  assert.match(html, /font-size:23pt/);
+  assert.match(html, /color:var\(--document-accent/);
 });

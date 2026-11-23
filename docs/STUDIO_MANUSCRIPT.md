@@ -1,5 +1,33 @@
 # Manuscript editing and recovery
 
+## Titles and paragraph presets
+
+Focus the section title to open its **Paragraph style** picker. Titles can use,
+create, rename, duplicate and delete presets from the same library as body text.
+The assignment applies to titles throughout the book. Editing a linked preset
+also updates body frames that use that preset; choose **New** or **Duplicate**
+before making a separate title design. **Role default** returns to the base title
+style. Creating or duplicating a title preset saves its assignment and definition
+in one layout update.
+
+Titles remain plain text in `chapters.title`, separate from body Markdown. Their
+textarea wraps and grows with the title and page width. Paragraph controls cover
+indents, spacing, alignment, leading, tabs and pagination; character controls,
+rules, borders and shading also apply. Prose-only columns, drop caps, nested
+openings, bullets and GREP are omitted from titles, including when inherited
+from a body preset. The underlying preset is preserved for its body users.
+Cmd/Ctrl+B, I and U toggle the title's shared style. Cmd/Ctrl+S saves the section;
+Cmd/Ctrl+Z and Shift+Z use manuscript history for title text and style changes.
+
+`BookLayout.titleStyleId` stores the preset reference in existing layout JSON.
+`titleStyleForLayout(layout)` returns the resolved title style with prose-only
+effects disabled; missing or deleted references fall back to `typography.title`.
+`patchTitleStyle(layout, patch)` immutably edits the linked preset or the base
+title role. It leaves body content and unrelated styles unchanged. No database
+migration is needed. Unconfigured titles/headings keep their role sizes and
+leading instead of inheriting the body size. New title defaults include space
+after and keep-with-next; explicit saved values still win.
+
 ## Prose find and replace
 
 Open Find with the toolbar search button or Cmd/Ctrl+F. Cmd/Ctrl+Alt+F opens the

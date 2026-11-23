@@ -44,6 +44,17 @@ The EPUB builder packages embedded cover photos and manuscript image data in the
 archive. Reader navigation points to the generated XHTML sections. See
 [EPUB 3.3 navigation](https://www.w3.org/TR/epub-33/#sec-nav-toc).
 
+`manuscriptTitleHtml(title, layout, level = 2)` is the shared plain-title renderer
+for export previews, the print portal, HTML and EPUB. It escapes title text and
+applies `titleStyleForLayout` character and paragraph declarations inline so
+section overrides and preview heading CSS cannot replace the selected design.
+Hard line breaks remain visible. Word's `Title` paragraph style uses the same
+resolved book typography, color, alignment, indents and spacing; titles retain
+literal Markdown characters and use Word line breaks. Word keeps its existing
+chapter-number prefix and book-wide layout limitations. Decorative rules,
+borders and shading are supported in HTML/EPUB/print; Word's existing style
+conversion remains a subset. See [title editing](STUDIO_MANUSCRIPT.md).
+
 `saveBookExport` opens the Tauri save dialog, builds the selected file, and
 writes to the chosen path. Cancellation returns `null`. After a successful
 write, the receipt provides the filename, byte count, and path for **Show file**.

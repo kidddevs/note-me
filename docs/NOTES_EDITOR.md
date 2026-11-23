@@ -7,6 +7,11 @@ in the development fixture below.
 
 ## Spacing contract
 
+Notes use the shared application text palette in both themes. The existing
+small/medium/large preferences now map to 14/16/18 px, with 16 px as the default
+for Markdown, rich text and preview. This changes presentation only; it does not
+rewrite content or spacing. See [UI readability](UI_READABILITY.md).
+
 `notes.content` remains Markdown in the existing SQLite table. There is no schema
 change, migration of user content, additional persistent draft storage or automatic rewrite
 of existing notes.

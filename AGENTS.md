@@ -10,6 +10,7 @@ For canvas selection, transforms, arrangement or undo, read `docs/STUDIO_SELECTI
 For section status, word budgets, due dates or chapter saves, read `docs/STUDIO_PLANNING.md`.
 For manuscript find/replace, checkpoints, recovery or save ordering, read `docs/STUDIO_MANUSCRIPT.md`.
 For Notes rendering, rich-text conversion, autosave or close behavior, read `docs/NOTES_EDITOR.md`.
+For theme colors, text sizes or contrast changes, read `docs/UI_READABILITY.md`.
 
 ## Conventions
 
