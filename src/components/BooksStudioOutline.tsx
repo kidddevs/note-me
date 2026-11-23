@@ -21,6 +21,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import type { ManuscriptDestination } from "../lib/bookManuscriptNavigation";
 import type { Book, Chapter, ChapterKind } from "../lib/types";
 import { buildBookToc, orderBookChapters, type TocEntry } from "../lib/bookToc";
 import { hasSectionLayoutOverride } from "../lib/bookLayout";
@@ -315,7 +316,7 @@ export function SectionsRail({ chapters, activeChapterId, onSelect, onNewChapter
     </>
   );
 }
-export function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOpenChapter }: { book: Book; chapters: Chapter[]; onNewChapter: (kind?: ChapterKind) => void; onOpenMatter: (focus: MatterFocus) => void; onOpenChapter: (id: number) => void }) {
+export function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOpenChapter }: { book: Book; chapters: Chapter[]; onNewChapter: (kind?: ChapterKind) => void; onOpenMatter: (focus: MatterFocus) => void; onOpenChapter: (id: number, destination?: ManuscriptDestination) => void }) {
   const measurementUnit = useTheme((state) => state.measurementUnit);
   const reorderChapters = useBooks((state) => state.reorderChapters);
   const deleteChapter = useBooks((state) => state.deleteChapter);
@@ -474,7 +475,7 @@ export function OutlineScreen({ book, chapters, onNewChapter, onOpenMatter, onOp
         <aside className="books-outline-aside">
           <section className="books-outline-card books-outline-toc-card" aria-labelledby="generated-toc-heading">
             <div className="books-outline-card-heading"><div><span className="books-eyebrow"><LayoutList size={13} /> Generated contents</span><strong id="generated-toc-heading">{tocTitle(book)}</strong></div><span>{visibleTocCount === toc.length ? `${toc.length} entries` : `${visibleTocCount} of ${toc.length} visible`}</span></div>
-            {toc.length === 0 ? <p className="books-generated-toc-empty">Enable contents in Book settings, then add headings to a section to build this map.</p> : <div className="books-generated-toc-list">{toc.map((entry) => <div key={entry.id} className={`books-generated-toc-item ${entry.included === false ? "hidden" : ""}`} style={{ paddingLeft: `${Math.max(0, entry.level - 1) * 18}px` }}><button className={`books-generated-toc-entry ${entry.source === "heading" ? "heading" : "section"}`} onClick={() => entry.chapterId !== undefined && onOpenChapter(entry.chapterId)}><span>{entry.label}</span>{entry.source === "heading" && <small>H{entry.headingLevel}</small>}</button>{entry.source === "heading" && entry.chapterId !== undefined && <button className="books-generated-toc-toggle" onClick={(event) => { event.stopPropagation(); void toggleHeading(entry); }} aria-label={entry.included === false ? `Include ${entry.label} in contents` : `Hide ${entry.label} from contents`} aria-pressed={entry.included !== false} title={entry.included === false ? "Include heading in contents" : "Hide heading from contents"}>{entry.included === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>}</div>)}</div>}
+            {toc.length === 0 ? <p className="books-generated-toc-empty">Enable contents in Book settings, then add headings to a section to build this map.</p> : <div className="books-generated-toc-list">{toc.map((entry) => <div key={entry.id} className={`books-generated-toc-item ${entry.included === false ? "hidden" : ""}`} style={{ paddingLeft: `${Math.max(0, entry.level - 1) * 18}px` }}><button className={`books-generated-toc-entry ${entry.source === "heading" ? "heading" : "section"}`} onClick={() => entry.chapterId !== undefined && onOpenChapter(entry.chapterId, entry.source === "heading" && entry.headingKey ? { kind: "heading", key: entry.headingKey } : { kind: "title" })}><span>{entry.label}</span>{entry.source === "heading" && <small>H{entry.headingLevel}</small>}</button>{entry.source === "heading" && entry.chapterId !== undefined && <button className="books-generated-toc-toggle" onClick={(event) => { event.stopPropagation(); void toggleHeading(entry); }} aria-label={entry.included === false ? `Include ${entry.label} in contents` : `Hide ${entry.label} from contents`} aria-pressed={entry.included !== false} title={entry.included === false ? "Include heading in contents" : "Hide heading from contents"}>{entry.included === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>}</div>)}</div>}
             <p className="books-outline-card-note">Section visibility is controlled from the eye toggle in the sections rail. Heading visibility is curated here.</p>
           </section>
           <section className="books-outline-card books-outline-health">

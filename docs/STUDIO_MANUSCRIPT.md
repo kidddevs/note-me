@@ -1,5 +1,67 @@
 # Manuscript editing and recovery
 
+## Manuscript navigator and workspace handoffs
+
+**Navigate** opens a keyboard-accessible section and heading map. It includes
+sections and headings hidden from reader contents without changing their inclusion.
+Filter by section title/type or heading text, then open the section title or the
+matching text frame. Rows show current section words and saved planning status.
+Arrow keys move through results, Enter opens a result, and Escape closes the
+dialog and returns focus to its trigger. Queries remain available while the
+editor stays mounted; section filters and prose searches are independent.
+
+**Find in book**, also Cmd/Ctrl+Shift+F, searches prose across the selected book.
+It shares section Find's literal, case and Unicode whole-word matching. The active
+section's unsaved title/content replace its saved copy in the navigator. Snippets
+stay inside readable prose runs, excluding image bytes, layout attributes, link
+targets and fenced code. Results retain exact counts but render at most 200 rows;
+refine the query for larger result sets. There is no whole-book replace action.
+
+Opening a prose result opens that section's existing Find bar with its query,
+options and exact current match highlighted. Focus lands in Find for keyboard
+navigation or the existing section-scoped Replace controls. A changed source is
+searched again and falls back to its first current match with an explanation;
+stale source offsets never become replacement commands. Results do not persist
+or alter the manuscript until the user edits text normally.
+
+The navigator's **Section plan** and **Export studio** links, plus the editor's
+Outline, settings and Previous/Next controls, save the latest writing draft before
+leaving. They wait for pending checkpoint restoration and save again if a newer
+draft arrives during a write. A failure retains the draft and current section;
+the navigator shows an inline retryable error. These transitions do not create
+manual checkpoints. This guard covers these editor controls; it does not add a
+global navigation guard to unrelated application controls or flush Notes.
+
+Outline's generated contents now opens headings at their text frames instead of
+only opening the containing section. Normal section actions retain their existing
+behavior. Page placement, section order, contents choices and planning data are
+unchanged by navigation.
+
+Implementation contracts:
+
+- `ManuscriptDestination` distinguishes title, heading-key and prose-result targets.
+  `ManuscriptLocation` adds book/section identity. The workspace and development
+  fixture pass these transient requests through the same editor props; they are
+  never saved to SQLite or settings.
+- `manuscriptSections(chapters, query?)` orders/filter sections and headings, including
+  ones omitted from reader contents. It does not mutate source records.
+- `searchBookManuscript(chapters, query, options?, limit = 200)` returns exact
+  `total`, bounded `shown` and per-section counts/matches with plain-text excerpts.
+- `resolveManuscriptDestination(content, destination)` resolves a current text
+  block and search index. Missing headings fall back to the section title.
+- `manuscriptMatchExcerpts(content, matches, radius = 56)` parses blocks once and
+  returns corresponding `{before, match, after}` objects or `null` for invalid
+  ranges. It preserves surrogate pairs at snippet boundaries.
+- `extractMarkdownHeadings` now supplies original UTF-16 source `start` offsets,
+  including CRLF. Display labels omit canvas layout comments. Its existing key
+  format retains those comments when present so saved heading exclusions remain
+  compatible; navigating never rewrites them.
+
+Use fresh `/cover-preview.html?screen=manuscript` fixtures for search, headings,
+keyboard focus, draft-save failure/retry, delayed-write edits, Replace/undo,
+Outline and planning/export handoffs. Never use user notes or a native database
+for these checks. Browser results do not prove native desktop navigation.
+
 ## Titles and paragraph presets
 
 Focus the section title to open its **Paragraph style** picker. Titles can use,

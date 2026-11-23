@@ -16,6 +16,7 @@ import {
   ImagePlus,
   Images,
   LayoutList,
+  ListTree,
   LayoutTemplate,
   Lock,
   Minus,
@@ -60,6 +61,8 @@ import { applyGrepStyle, resolvedBlockTypography, textStyleClasses, textStyleVar
 import { api } from "../lib/api";
 import { readBookImageFile, readBookImageSource, saveCoverImageAsset } from "../lib/bookImageLibrary";
 import { BookImageLibrary } from "./BookImageLibrary";
+import { ManuscriptNavigator } from "./ManuscriptNavigator";
+import { resolveManuscriptDestination, type ManuscriptDestination, type ManuscriptLocation } from "../lib/bookManuscriptNavigation";
 import { ManuscriptHistory, snapshotTime } from "./ManuscriptHistory";
 import { findManuscriptMatches, replaceManuscriptText, highlightManuscriptMatches, type ManuscriptMatch, type ManuscriptSearchOptions } from "../lib/bookManuscriptSearch";
 import { ChapterWorkflowPopover } from "./BookWorkflowControls";
@@ -923,12 +926,19 @@ function ScrollableBar({ className, ariaLabel, children }: { className: string; 
   </div>;
 }
 
-export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onFocusModeChange, onOpenOutline, onOpenSettings, onNewChapter, onNavigateSection }: { book: Book; chapters: Chapter[]; activeChapter: Chapter | null; focusMode: boolean; onFocusModeChange: (focused: boolean) => void; onOpenOutline: () => void; onOpenSettings: () => void; onNewChapter: () => void; onNavigateSection: (direction: -1 | 1) => void }) {
+export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onFocusModeChange, onOpenOutline, onOpenSettings, onNewChapter, onNavigateSection, onOpenChapter, onOpenPlan, onOpenExport, location, onLocationHandled }: { book: Book; chapters: Chapter[]; activeChapter: Chapter | null; focusMode: boolean; onFocusModeChange: (focused: boolean) => void; onOpenOutline: () => void; onOpenSettings: () => void; onNewChapter: () => void; onNavigateSection: (direction: -1 | 1) => void; onOpenChapter: (id: number, destination?: ManuscriptDestination) => void; onOpenPlan: () => void; onOpenExport: () => void; location?: ManuscriptLocation; onLocationHandled?: () => void }) {
   const updateChapter = useBooks((state) => state.updateChapter);
   const restoreChapterSnapshot = useBooks((state) => state.restoreChapterSnapshot);
   const updateChapterLayout = useBooks((state) => state.updateChapterLayout);
   const updateBook = useBooks((state) => state.updateBook);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [navigatorOpen, setNavigatorOpen] = useState(false);
+  const [navigatorMode, setNavigatorMode] = useState<"sections" | "search">("sections");
+  const [locationFocus, setLocationFocus] = useState<{ request: ManuscriptLocation; blockStart?: number; stale: boolean } | null>(null);
+  const [navigating, setNavigating] = useState(false);
+  const navigationBusyRef = useRef(false);
+  const locationHandledRef = useRef(onLocationHandled);
+  locationHandledRef.current = onLocationHandled;
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [findIndex, setFindIndex] = useState(0);
@@ -950,6 +960,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const [pendingCanvasFocus, setPendingCanvasFocus] = useState<{ start: number; cursor: number } | null>(null);
   const [title, setTitle] = useState(activeChapter?.title ?? "");
   const [content, setContent] = useState(activeChapter?.content ?? "");
+  const navigationChapters = useMemo(() => chapters.map((chapter) => chapter.id === activeChapter?.id ? { ...chapter, title, content } : chapter), [chapters, activeChapter?.id, title, content]);
   const freeLayout = chapterUsesFreeLayout(content);
   const findMatches = useMemo(() => findOpen ? findManuscriptMatches(content, findQuery, findOptions) : [], [findOpen, content, findQuery, findOptions]);
   const activeFindIndex = Math.min(findIndex, Math.max(0, findMatches.length - 1));
@@ -1061,6 +1072,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     setArtworkReplaceTarget(null);
     setCanvasResize(null);
     setPendingCanvasFocus(null);
+    setLocationFocus(null);
     editorRef.current = null;
     activeEditorMapRef.current = { sourceStart: 0, prefixLength: 0 };
     setEditorSelection({ start: 0, end: 0, titleFocused: false });
@@ -1104,6 +1116,35 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
       }
     };
   }, [activeChapter?.id, updateChapter]);
+
+  useEffect(() => {
+    if (!location || location.bookId !== book.id || location.chapterId !== activeChapter?.id) { setLocationFocus(null); return; }
+    const resolved = resolveManuscriptDestination(contentRef.current, location.destination);
+    setSelectedStarts([]);
+    if (location.destination.kind === "search") {
+      setFindOpen(true);
+      setFindQuery(location.destination.query);
+      setFindOptions(location.destination.options);
+      setFindIndex(resolved.findIndex);
+      setReplaceMessage(resolved.stale ? "Section changed; showing the first current match." : "");
+    } else setFindOpen(false);
+    if (resolved.block) setEditorSelection({ start: resolved.block.start, end: resolved.block.end, titleFocused: false });
+    else setEditorSelection({ start: 0, end: titleRef.current.length, titleFocused: true });
+    setLocationFocus({ request: location, blockStart: resolved.block?.start, stale: resolved.stale });
+  }, [location, book.id, activeChapter?.id]);
+
+  useLayoutEffect(() => {
+    if (!locationFocus || navigatorOpen || locationFocus.request.bookId !== book.id || locationFocus.request.chapterId !== activeChapter?.id) return;
+    const { request, blockStart, stale } = locationFocus;
+    const target = request.destination.kind === "search" ? findInputRef.current
+      : blockStart !== undefined ? canvasRef.current?.querySelector<HTMLElement>(`[data-block-start="${blockStart}"] .books-canvas-text-preview, [data-block-start="${blockStart}"] [contenteditable="true"]`) : titleInputRef.current;
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    if (request.destination.kind !== "search") target.scrollIntoView({ block: "center", inline: "nearest" });
+    setLocationFocus(null);
+    locationHandledRef.current?.();
+    if (request.destination.kind === "heading" && stale) notify("info", "Heading changed", "The section title is open; choose the updated heading in Navigate.");
+  }, [locationFocus, navigatorOpen, findOpen, content, book.id, activeChapter?.id]);
 
   const titleStyle = useMemo(() => titleStyleForLayout(inspectorLayout), [inspectorLayout]);
   useLayoutEffect(() => {
@@ -1268,6 +1309,37 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   }, [sprintOpen]);
 
 
+
+  async function saveDraftBeforeNavigation() {
+    if (restorePendingRef.current) await restorePendingRef.current;
+    while (draftRef.current.id !== null && draftRef.current.dirty) {
+      const draft = { ...draftRef.current };
+      const version = draftVersionRef.current;
+      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+      setSaveState("saving");
+      try {
+        await updateChapter(draft.id!, draft.title.trim() || "Untitled chapter", draft.content, draft.chapterKind, draft.tocInclude, draft.tocHeadingExclusions);
+        if (draftRef.current.id !== draft.id) throw new Error("The active section changed while saving.");
+        if (draftVersionRef.current === version) {
+          draftRef.current.dirty = false;
+          setSaveState("saved");
+        }
+      } catch (error) { setSaveState("dirty"); throw error; }
+    }
+  }
+
+  async function leaveEditor(action: () => void) {
+    if (navigationBusyRef.current) throw new Error("A section save is already in progress.");
+    navigationBusyRef.current = true;
+    setNavigating(true);
+    const chapterId = draftRef.current.id, session = snapshotSessionRef.current;
+    try {
+      await saveDraftBeforeNavigation();
+      if (chapterId === null || !snapshotSessionCurrent(chapterId, session)) throw new Error("The original section is no longer open.");
+      action();
+    } finally { navigationBusyRef.current = false; setNavigating(false); }
+  }
+  const navigateFromToolbar = (action: () => void) => { void leaveEditor(action).catch((error) => notify("error", "Save before leaving failed", String(error))); };
 
   useEffect(() => registerBookStudioCloseTask({
     hasChanges: () => Boolean(restorePendingRef.current) || draftRef.current.id !== null && draftRef.current.dirty,
@@ -2524,7 +2596,10 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     const onWindowKeyDown = (event: KeyboardEvent) => {
       const modifier = event.metaKey || event.ctrlKey;
       const findKey = event.code === "KeyF" || event.key.toLowerCase() === "f";
-      if (modifier && event.altKey && findKey) {
+      if (modifier && event.shiftKey && !event.altKey && findKey) {
+        event.preventDefault();
+        setNavigatorMode("search"); setNavigatorOpen(true);
+      } else if (modifier && event.altKey && findKey) {
         event.preventDefault();
         openFind(true);
       } else if (modifier && findKey) {
@@ -2573,7 +2648,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
     }
     if (modifier && event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
       event.preventDefault();
-      onNavigateSection(event.key === "ArrowUp" ? -1 : 1);
+      navigateFromToolbar(() => onNavigateSection(event.key === "ArrowUp" ? -1 : 1));
       return;
     }
     if (modifier && event.altKey) {
@@ -2695,6 +2770,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   const canvasBook = { ...book, layout_json: serializeBookLayout(inspectorLayout) };
   return (
     <>
+    <ManuscriptNavigator open={navigatorOpen} mode={navigatorMode} onModeChange={setNavigatorMode} chapters={navigationChapters} activeChapterId={activeChapter.id} onOpen={(id, destination) => leaveEditor(() => onOpenChapter(id, destination))} onPlan={() => leaveEditor(onOpenPlan)} onExport={() => leaveEditor(onOpenExport)} onClose={() => setNavigatorOpen(false)} />
     <div className={`books-editor-screen ${focusMode ? "focus-mode" : ""}`} style={manuscriptStyle(canvasBook)}>
       <div className="books-editor-toolbar">
           <div className="books-editor-context"><span>{chapterDisplayLabel(activeChapter, chapters.findIndex((chapter) => chapter.id === activeChapter.id), chapters)}</span><ChevronRight size={13} /><strong>{title || "Untitled chapter"}</strong></div>
@@ -2705,20 +2781,21 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
               <button className="books-quiet-button" onClick={undo} disabled={!undoState.canUndo} title="Undo (⌘Z)" aria-label="Undo"><Undo2 size={15} /></button>
               <button className="books-quiet-button" onClick={redo} disabled={!undoState.canRedo} title="Redo (⌘⇧Z)" aria-label="Redo"><Redo2 size={15} /></button>
             </div>
+            <button className="books-outline-button" onClick={() => { setNavigatorMode("sections"); setNavigatorOpen(true); }} title="Navigate manuscript; find in book (Ctrl/Cmd+Shift+F)" aria-haspopup="dialog"><ListTree size={14} /> Navigate</button>
             <button ref={findButtonRef} className="books-quiet-button" onClick={() => openFind()} title="Find in section (Ctrl/Cmd+F)" aria-label="Find in section"><Search size={15} /></button>
             <button className={`books-quiet-button ${inspectorOpen ? "active" : ""}`} onClick={() => setInspectorOpen((value) => !value)} title={inspectorOpen ? "Hide contextual tools" : "Show contextual tools"} aria-label={inspectorOpen ? "Hide contextual tools" : "Show contextual tools"} aria-pressed={inspectorOpen}>{inspectorOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>
             <button className={`books-quiet-button ${focusMode ? "active" : ""}`} onClick={() => onFocusModeChange(!focusMode)} title={focusMode ? "Exit focus mode" : "Enter focus mode"} aria-label={focusMode ? "Exit focus mode" : "Enter focus mode"} aria-pressed={focusMode}><WandSparkles size={15} /></button>
           <button className="books-outline-button" onClick={() => void saveNow()} disabled={saveState !== "dirty"} title="Save chapter and keep a checkpoint (⌘S)"><Save size={13} /> Save</button>
           <button className={`books-outline-button ${historyOpen ? "active" : ""}`} onClick={() => void openHistory()} title="Version history" aria-haspopup="dialog"><History size={14} /> History</button>
-           <button className="books-outline-button" onClick={onOpenOutline}><LayoutList size={14} /> Outline</button>
+           <button className="books-outline-button" onClick={() => navigateFromToolbar(onOpenOutline)} disabled={navigating}><LayoutList size={14} /> Outline</button>
            <span className={`book-status-pill ${book.status}`}>{book.status.replace("revising", "in revision")}</span>
-           <button className="books-quiet-button" onClick={onOpenSettings} title="Book settings" aria-label="Book settings"><Settings2 size={15} /></button>
+           <button className="books-quiet-button" onClick={() => navigateFromToolbar(onOpenSettings)} disabled={navigating} title="Book settings" aria-label="Book settings"><Settings2 size={15} /></button>
          </div>
       </div>
        <div className="books-editor-workspace">
          <div className="books-writing-column">
             <ScrollableBar className="books-writing-topline" ariaLabel="Section controls">
-              <div className="books-section-stepper" aria-label="Section navigation"><button onClick={() => onNavigateSection(-1)} disabled={activeChapterIndex <= 0} aria-label="Previous section" title="Previous section (⌘⌥↑)"><ArrowLeft size={12} /> Previous</button><button onClick={() => onNavigateSection(1)} disabled={activeChapterIndex < 0 || activeChapterIndex >= chapters.length - 1} aria-label="Next section" title="Next section (⌘⌥↓)">Next <ChevronRight size={12} /></button></div>
+              <div className="books-section-stepper" aria-label="Section navigation"><button onClick={() => navigateFromToolbar(() => onNavigateSection(-1))} disabled={navigating || activeChapterIndex <= 0} aria-label="Previous section" title="Previous section (⌘⌥↑)"><ArrowLeft size={12} /> Previous</button><button onClick={() => navigateFromToolbar(() => onNavigateSection(1))} disabled={navigating || activeChapterIndex < 0 || activeChapterIndex >= chapters.length - 1} aria-label="Next section" title="Next section (⌘⌥↓)">Next <ChevronRight size={12} /></button></div>
               <span className="books-doc-stats">{chapterWords.toLocaleString()} words <i>·</i> {Math.max(1, Math.ceil(chapterWords / 250))} min read</span>
               <div className="books-sprint-control">
                 <button className={`books-sprint-chip ${sprintRunning ? "running" : sprintPaused ? "paused" : sprintFinished ? "finished" : ""}`} onClick={() => setSprintOpen((value) => !value)} title="Writing sprint timer" aria-label="Writing sprint timer" aria-expanded={sprintOpen}>

@@ -33,6 +33,7 @@
     "src/lib/bookCover.ts",
     "src/lib/bookPublishing.ts",
     "src/lib/bookManuscriptSearch.ts",
+    "src/lib/bookManuscriptNavigation.ts",
     "src/lib/noteRichtext.tsx",
     "src/lib/noteSaves.ts",
     "src/store/notes.ts",

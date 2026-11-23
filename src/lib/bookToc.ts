@@ -70,6 +70,7 @@ export interface MarkdownHeading {
   ordinal: number;
   id: string;
   key: string;
+  start: number;
 }
 
 function plainHeading(value: string) {
@@ -107,7 +108,11 @@ export function extractMarkdownHeadings(markdown: string, prefix: string): Markd
   let ordinal = 0;
   const occurrences = new Map<string, number>();
 
-  for (const line of markdown.replace(/\r\n/g, "\n").split("\n")) {
+  let offset = 0;
+  for (const rawLine of markdown.split("\n")) {
+    const line = rawLine.replace(/\r$/, "");
+    const start = offset;
+    offset += rawLine.length + 1;
     const updatedFence = nextFence(line, fence);
     if (updatedFence !== fence) {
       fence = updatedFence;
@@ -118,18 +123,21 @@ export function extractMarkdownHeadings(markdown: string, prefix: string): Markd
     const match = /^ {0,3}(#{1,6})[\t ]+(.+)$/.exec(line);
     if (!match) continue;
     ordinal += 1;
-    const label = plainHeading(match[2]);
+    // Keep persisted exclusion identities compatible while hiding canvas metadata.
+    const identityLabel = plainHeading(match[2]);
+    const label = plainHeading(match[2].replace(/<!--\s*note-me:layout\b.*?-->/gi, ""));
     if (!label) continue;
     const level = match[1].length;
-    const occurrenceKey = `${level}:${label}`;
+    const occurrenceKey = `${level}:${identityLabel}`;
     const occurrence = (occurrences.get(occurrenceKey) ?? 0) + 1;
     occurrences.set(occurrenceKey, occurrence);
     headings.push({
+      start,
       level,
       label,
       ordinal,
       id: headingAnchorId(prefix, ordinal),
-      key: JSON.stringify([level, label, occurrence]),
+      key: JSON.stringify([level, identityLabel, occurrence]),
     });
   }
 

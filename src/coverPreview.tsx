@@ -19,6 +19,7 @@ import { createPreviewSnapshot, deletePreviewSnapshot, listPreviewSnapshots, res
 import { loadCoverPreviewBook, saveCoverPreviewBook, loadCoverPreviewChapters, saveCoverPreviewChapter, patchCoverPreviewChapter, createCoverPreviewChapter, deleteCoverPreviewChapter, reorderCoverPreviewChapters } from "./lib/bookCoverPreview";
 import { useBooks } from "./store/books";
 import { notify } from "./store/toast";
+import type { ManuscriptDestination, ManuscriptLocation } from "./lib/bookManuscriptNavigation";
 import type { Book, Chapter } from "./lib/types";
 
 // Development fixture only. It never opens a native database or uses real book ids.
@@ -53,7 +54,8 @@ function Preview() {
   const activeChapter = chapters.find((chapter) => chapter.id === activeChapterId) ?? chapters[0];
   const requested = new URLSearchParams(window.location.search).get("screen");
   const [screen, setScreen] = useState<StudioScreen>(requested && PREVIEW_SCREENS.includes(requested) ? requested as StudioScreen : "cover");
-  const openChapter = (id: number) => { useBooks.setState({ activeChapterId: id }); setScreen("manuscript"); };
+  const [manuscriptLocation, setManuscriptLocation] = useState<ManuscriptLocation>();
+  const openChapter = (id: number, destination?: ManuscriptDestination) => { setManuscriptLocation(destination ? { bookId: PREVIEW_BOOK_ID, chapterId: id, destination } : undefined); useBooks.setState({ activeChapterId: id }); setScreen("manuscript"); };
   const newChapter = () => void useBooks.getState().createChapter(PREVIEW_BOOK_ID, "New section")
     .then((chapter) => openChapter(chapter.id))
     .catch((error) => notify("error", "Section could not be created", String(error)));
@@ -65,7 +67,7 @@ function Preview() {
       ] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={screen === value} onClick={() => setScreen(value)}><Icon size={14} />{label}</button>)}</nav>
       <div className="app-body books-studio">
         {screen === "library" ? <LibraryScreen books={[currentBook]} selectedBookId={PREVIEW_BOOK_ID} creating={false} deletingBookId={null} onNew={() => undefined} onOpen={() => { const id = activeChapterId ?? chapters[0]?.id; if (id !== undefined) openChapter(id); }} onOpenScreen={(_id, next) => setScreen(next)} onDelete={() => undefined} />
-          : screen === "manuscript" ? <ManuscriptScreen book={currentBook} chapters={chapters} activeChapter={activeChapter} focusMode={focusMode} onFocusModeChange={setFocusMode} onOpenOutline={() => setScreen("outline")} onOpenSettings={() => setScreen("settings")} onNewChapter={newChapter} onNavigateSection={(direction) => { const index = chapters.findIndex((chapter) => chapter.id === activeChapterId); const next = chapters[index + direction]; if (next) openChapter(next.id); }} />
+          : screen === "manuscript" ? <ManuscriptScreen book={currentBook} chapters={chapters} activeChapter={activeChapter} focusMode={focusMode} onFocusModeChange={setFocusMode} onOpenOutline={() => setScreen("outline")} onOpenSettings={() => setScreen("settings")} onNewChapter={newChapter} onOpenChapter={openChapter} location={manuscriptLocation} onLocationHandled={() => setManuscriptLocation(undefined)} onOpenPlan={() => setScreen("plan")} onOpenExport={() => setScreen("export")} onNavigateSection={(direction) => { const index = chapters.findIndex((chapter) => chapter.id === activeChapterId); const next = chapters[index + direction]; if (next) openChapter(next.id); }} />
           : screen === "plan" ? <PlanScreen book={currentBook} chapters={chapters} activeChapterId={activeChapterId} onNewChapter={newChapter} onOpenChapter={openChapter} />
           : screen === "outline" ? <OutlineScreen book={currentBook} chapters={chapters} onNewChapter={newChapter} onOpenChapter={openChapter} onOpenMatter={() => setScreen("settings")} />
           : screen === "settings" ? <SettingsScreen book={currentBook} chapters={chapters} />

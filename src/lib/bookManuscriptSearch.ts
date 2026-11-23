@@ -49,10 +49,29 @@ function adjacentWord(text: string, visible: Uint8Array, index: number, directio
   return WORD.test(String.fromCodePoint(text.codePointAt(index)!));
 }
 
+function fencedCodeRanges(content: string) {
+  const ranges: Array<{ start: number; end: number }> = [];
+  let fence: { marker: string; length: number; start: number } | null = null;
+  let offset = 0;
+  for (const line of content.split("\n")) {
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (match) {
+      if (!fence) fence = { marker: match[1][0], length: match[1].length, start: offset };
+      else if (fence.marker === match[1][0] && match[1].length >= fence.length && !match[2].trim()) {
+        ranges.push({ start: fence.start, end: offset + line.length });
+        fence = null;
+      }
+    }
+    offset += line.length + 1;
+  }
+  if (fence) ranges.push({ start: fence.start, end: content.length });
+  return ranges;
+}
+
 export function findManuscriptMatches(content: string, query: string, options: ManuscriptSearchOptions = {}): ManuscriptMatch[] {
   if (!query.trim()) return [];
   const pattern = new RegExp(literalPattern(query), options.matchCase ? "gu" : "giu");
-  const fences = Array.from(content.matchAll(/^[ \t]*```[^\n]*(?:\n|$)[\s\S]*?(?:^[ \t]*```[ \t]*(?:\n|$)|$(?![\s\S]))/gm), (match) => ({ start: match.index!, end: match.index! + match[0].length }));
+  const fences = fencedCodeRanges(content);
   const matches: ManuscriptMatch[] = [];
   for (const block of canvasBlocks(content)) {
     if (block.kind !== "text") continue;
@@ -65,6 +84,27 @@ export function findManuscriptMatches(content: string, query: string, options: M
     }
   }
   return matches;
+}
+
+/** Snippets stay inside the matching prose run; artwork and link targets stay hidden. */
+export function manuscriptMatchExcerpts(content: string, matches: ManuscriptMatch[], radius = 56) {
+  const blocks = new Map(canvasBlocks(content).filter((block) => block.kind === "text").map((block) => [block.start, block]));
+  const cache = new Map<number, ReturnType<typeof proseRuns>>();
+  const distance = Number.isFinite(radius) ? Math.max(0, Math.floor(radius)) : 56;
+  return matches.map((match) => {
+    const block = blocks.get(match.blockStart);
+    if (!block) return null;
+    if (!cache.has(block.start)) cache.set(block.start, proseRuns(block, []));
+    const { text, offset, runs } = cache.get(block.start)!;
+    const start = match.start - offset, end = match.end - offset;
+    const run = runs.find((item) => item.start <= start && item.end >= end);
+    if (!run || start >= end) return null;
+    let left = Math.max(run.start, start - distance), right = Math.min(run.end, end + distance);
+    // Do not cut emoji/supplementary characters at the edge of a snippet.
+    if (left > run.start && /[\uDC00-\uDFFF]/.test(text[left])) left -= 1;
+    if (right < run.end && /[\uDC00-\uDFFF]/.test(text[right])) right += 1;
+    return { before: `${left > run.start ? "…" : ""}${text.slice(left, start)}`, match: text.slice(start, end), after: `${text.slice(end, right)}${right < run.end ? "…" : ""}` };
+  });
 }
 
 /** Recompute ranges against the supplied revision; replacement strings are literal. */

@@ -8,6 +8,8 @@ Shared selection geometry, cover transforms and page arrangement are documented
 in [Studio selection](STUDIO_SELECTION.md).
 Section planning, its native SQLite contract and independent chapter saves are
 documented in [Studio planning](STUDIO_PLANNING.md).
+Manuscript navigation, whole-book prose search and draft-safe editor handoffs are
+documented in [Manuscript editing](STUDIO_MANUSCRIPT.md).
 Library cards, export choices, and file and print output are documented in
 [Studio publishing](STUDIO_PUBLISHING.md).
 

@@ -24,6 +24,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import type { ManuscriptDestination, ManuscriptLocation } from "../lib/bookManuscriptNavigation";
 import type { Book, Chapter, ChapterKind } from "../lib/types";
 import { layoutForBook, titleStyleForLayout, type BookLayout } from "../lib/bookLayout";
 import {
@@ -594,6 +595,7 @@ export function BooksStudio() {
   const bookTabs = useBookTabs((state) => state.tabs);
   const activeBookTabId = useBookTabs((state) => state.activeId);
   const [screen, setScreen] = useState<StudioScreen>("library");
+  const [manuscriptLocation, setManuscriptLocation] = useState<ManuscriptLocation>();
   const [settingsFocus, setSettingsFocus] = useState<MatterFocus | undefined>();
   const [commandOpen, setCommandOpen] = useState(false);
   const [newBookOpen, setNewBookOpen] = useState(false);
@@ -725,7 +727,7 @@ export function BooksStudio() {
     }
   };
   const openMatter = (focus: MatterFocus) => { setSettingsFocus(focus); switchScreen("settings"); };
-  const openChapter = (id: number) => { selectChapter(id); setCommandOpen(false); setSettingsFocus(undefined); switchScreen("manuscript"); };
+  const openChapter = (id: number, destination?: ManuscriptDestination) => { setManuscriptLocation(destination && selectedBook ? { bookId: selectedBook.id, chapterId: id, destination } : undefined); selectChapter(id); setCommandOpen(false); setSettingsFocus(undefined); switchScreen("manuscript"); };
   const navigateSection = (direction: -1 | 1) => {
     if (!activeChapter) return;
     const index = orderedChapters.findIndex((chapter) => chapter.id === activeChapter.id);
@@ -799,7 +801,7 @@ export function BooksStudio() {
        </aside>
        <main className="books-main">
          {screen !== "manuscript" && screen !== "cover" && <div className="books-main-header"><div className="books-breadcrumb"><button onClick={() => switchScreen("library")}>Books Studio</button>{selectedBook && <><ChevronRight size={13} /><strong>{selectedBook.title || "Untitled manuscript"}</strong></>}</div>{selectedBook && <div className="books-header-actions"><span className={`book-status-pill ${selectedBook.status}`}>{selectedBook.status.replace("revising", "in revision")}</span><button className="books-header-icon" onClick={() => switchScreen("settings")} title="Book settings" aria-label="Book settings"><Settings2 size={15} /></button></div>}</div>}
-            {!selectedBook && screen !== "library" ? <div className="books-no-selection"><ArrowLeft size={20} /><h2>Choose a manuscript first.</h2><button className="books-primary-action" onClick={() => switchScreen("library")}>Back to library</button></div> : screen === "library" ? <LibraryScreen books={books} selectedBookId={selectedBookId} creating={creatingBook} deletingBookId={deletingBookId} onNew={() => void newBook()} onOpen={(id) => void openBook(id)} onOpenScreen={(id, next) => void openBookScreen(id, next)} onDelete={(book) => void removeBook(book)} /> : selectedBook && screen === "manuscript" ? <ManuscriptScreen book={selectedBook} chapters={orderedChapters} activeChapter={activeChapter} focusMode={editorFocusMode} onFocusModeChange={setEditorFocusMode} onOpenOutline={() => switchScreen("outline")} onOpenSettings={() => switchScreen("settings")} onNewChapter={() => void newChapter()} onNavigateSection={navigateSection} /> : selectedBook && screen === "cover" ? <CoverScreen book={selectedBook} chapters={orderedChapters} onOpenChapter={openChapter} onNavigate={switchScreen} /> : selectedBook && screen === "outline" ? <OutlineScreen book={selectedBook} chapters={chapters} onNewChapter={(kind) => void newChapter(kind)} onOpenMatter={openMatter} onOpenChapter={openChapter} /> : selectedBook && screen === "plan" ? <PlanScreen book={selectedBook} chapters={chapters} activeChapterId={activeChapterId} onNewChapter={() => void newChapter()} onOpenChapter={openChapter} /> : selectedBook && screen === "settings" ? <SettingsScreen book={selectedBook} chapters={chapters} focus={settingsFocus} /> : selectedBook ? <ExportScreen key={selectedBook.id} book={selectedBook} chapters={chapters} onNavigate={switchScreen} onOpenChapter={openChapter} /> : null}
+            {!selectedBook && screen !== "library" ? <div className="books-no-selection"><ArrowLeft size={20} /><h2>Choose a manuscript first.</h2><button className="books-primary-action" onClick={() => switchScreen("library")}>Back to library</button></div> : screen === "library" ? <LibraryScreen books={books} selectedBookId={selectedBookId} creating={creatingBook} deletingBookId={deletingBookId} onNew={() => void newBook()} onOpen={(id) => void openBook(id)} onOpenScreen={(id, next) => void openBookScreen(id, next)} onDelete={(book) => void removeBook(book)} /> : selectedBook && screen === "manuscript" ? <ManuscriptScreen book={selectedBook} chapters={orderedChapters} activeChapter={activeChapter} focusMode={editorFocusMode} onFocusModeChange={setEditorFocusMode} onOpenOutline={() => switchScreen("outline")} onOpenSettings={() => switchScreen("settings")} onNewChapter={() => void newChapter()} onNavigateSection={navigateSection} onOpenChapter={openChapter} location={manuscriptLocation} onLocationHandled={() => setManuscriptLocation(undefined)} onOpenPlan={() => switchScreen("plan")} onOpenExport={() => switchScreen("export")} /> : selectedBook && screen === "cover" ? <CoverScreen book={selectedBook} chapters={orderedChapters} onOpenChapter={openChapter} onNavigate={switchScreen} /> : selectedBook && screen === "outline" ? <OutlineScreen book={selectedBook} chapters={chapters} onNewChapter={(kind) => void newChapter(kind)} onOpenMatter={openMatter} onOpenChapter={openChapter} /> : selectedBook && screen === "plan" ? <PlanScreen book={selectedBook} chapters={chapters} activeChapterId={activeChapterId} onNewChapter={() => void newChapter()} onOpenChapter={openChapter} /> : selectedBook && screen === "settings" ? <SettingsScreen book={selectedBook} chapters={chapters} focus={settingsFocus} /> : selectedBook ? <ExportScreen key={selectedBook.id} book={selectedBook} chapters={chapters} onNavigate={switchScreen} onOpenChapter={openChapter} /> : null}
           </main>
           {selectedBook && screen !== "export" && <PrintBook book={selectedBook} chapters={chapters} toc={selectedToc} />}
            <BooksCommandPalette open={commandOpen} bookTitle={selectedBook ? (selectedBook.title || "Untitled manuscript") : undefined} chapters={orderedChapters} onClose={() => setCommandOpen(false)} onNavigate={switchScreen} onNewChapter={(kind) => void newChapter(kind)} onOpenChapter={openChapter} />
