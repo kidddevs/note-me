@@ -11,6 +11,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     category: "General & Navigation",
     shortcuts: [
       { keys: ["⌘", "N"], description: "New note" },
+      { keys: ["⌘", "⌥", "N"], description: "New manuscript" },
       { keys: ["⌘", "T"], description: "New tab / Browse all" },
       { keys: ["⌘", "W"], description: "Close active tab" },
       { keys: ["⌘", "K"], description: "Command palette" },

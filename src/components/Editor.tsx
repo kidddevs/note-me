@@ -373,16 +373,24 @@ export function Editor({ noteId, tabId }: { noteId: number; tabId: string }) {
   };
 
   useEffect(() => {
+    const openFind = () => {
+      if (mode !== "edit" && mode !== "split") return;
+      setFindOpen(true);
+      setTimeout(() => findInputRef.current?.focus(), 20);
+    };
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f" && (mode === "edit" || mode === "split")) {
         e.preventDefault();
-        setFindOpen(true);
-        setTimeout(() => findInputRef.current?.focus(), 20);
+        openFind();
       }
       if (e.key === "Escape" && findOpen) setFindOpen(false);
     };
+    window.addEventListener("open-find", openFind);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("open-find", openFind);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [mode, findOpen]);
 
   const richInsertLink = () => {

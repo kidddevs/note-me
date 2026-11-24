@@ -79,6 +79,9 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
+    let release_notes =
+        MenuItem::with_id(handle, "release-notes", "Release Notes", true, None::<&str>)?;
+    let preferences = MenuItem::with_id(handle, "settings", "Preferences…", true, Some("Cmd+,"))?;
 
     let app_menu = Submenu::with_items(
         handle,
@@ -87,6 +90,9 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
         &[
             &about,
             &check_updates,
+            &release_notes,
+            &sep()?,
+            &preferences,
             &sep()?,
             &PredefinedMenuItem::services(handle, None)?,
             &sep()?,
@@ -99,7 +105,25 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
     )?;
 
     let new_note = MenuItem::with_id(handle, "new-note", "New Note", true, Some("Cmd+N"))?;
+    let new_book = MenuItem::with_id(
+        handle,
+        "new-book",
+        "New Manuscript…",
+        true,
+        Some("Cmd+Alt+N"),
+    )?;
     let new_tab = MenuItem::with_id(handle, "new-tab", "New Tab", true, Some("Cmd+T"))?;
+    let new_daily = MenuItem::with_id(handle, "new-daily", "Daily Note", true, None::<&str>)?;
+    let new_meeting =
+        MenuItem::with_id(handle, "new-meeting", "Meeting Notes", true, None::<&str>)?;
+    let new_journal =
+        MenuItem::with_id(handle, "new-journal", "Journal Entry", true, None::<&str>)?;
+    let new_template_menu = Submenu::with_items(
+        handle,
+        "New from Template",
+        true,
+        &[&new_daily, &new_meeting, &new_journal],
+    )?;
     let close_tab = MenuItem::with_id(handle, "close-tab", "Close Tab", true, Some("Cmd+W"))?;
     let close_window = PredefinedMenuItem::close_window(handle, None)?;
     let export_all = MenuItem::with_id(
@@ -118,7 +142,10 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
         true,
         &[
             &new_note,
+            &new_book,
             &new_tab,
+            &sep()?,
+            &new_template_menu,
             &sep()?,
             &import_files,
             &export_all,
@@ -142,6 +169,14 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
             &PredefinedMenuItem::copy(handle, None)?,
             &PredefinedMenuItem::paste(handle, None)?,
             &PredefinedMenuItem::select_all(handle, None)?,
+            &sep()?,
+            &MenuItem::with_id(
+                handle,
+                "find",
+                "Find in Current Note or Section…",
+                true,
+                Some("Cmd+F"),
+            )?,
         ],
     )?;
 
@@ -219,11 +254,20 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
     )?;
     let minimize = PredefinedMenuItem::minimize(handle, None)?;
     let zoom = PredefinedMenuItem::maximize(handle, Some("Zoom"))?;
+    let bring_all_to_front = PredefinedMenuItem::bring_all_to_front(handle, None)?;
     let window_menu = Submenu::with_items(
         handle,
         "Window",
         true,
-        &[&next_tab, &prev_tab, &sep()?, &minimize, &zoom],
+        &[
+            &next_tab,
+            &prev_tab,
+            &sep()?,
+            &minimize,
+            &zoom,
+            &sep()?,
+            &bring_all_to_front,
+        ],
     )?;
 
     let shortcuts_item = MenuItem::with_id(
@@ -233,7 +277,26 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
         true,
         Some("Cmd+/"),
     )?;
-    let help_menu = Submenu::with_items(handle, "Help", true, &[&shortcuts_item])?;
+    let documentation = MenuItem::with_id(
+        handle,
+        "help-docs",
+        "NoteMe Documentation",
+        true,
+        None::<&str>,
+    )?;
+    let report_issue = MenuItem::with_id(
+        handle,
+        "help-report",
+        "Report an Issue…",
+        true,
+        None::<&str>,
+    )?;
+    let help_menu = Submenu::with_items(
+        handle,
+        "Help",
+        true,
+        &[&shortcuts_item, &sep()?, &documentation, &report_issue],
+    )?;
 
     let menu = Menu::with_items(
         handle,

@@ -21,12 +21,15 @@ import { useTabs } from "./store/tabs";
 import { useTheme } from "./store/theme";
 import { useWorkspace } from "./store/workspace";
 import { notify } from "./store/toast";
-import { importFilesAsNotes } from "./lib/actions";
+import { createFromTemplate, importFilesAsNotes } from "./lib/actions";
 import { api } from "./lib/api";
 import { bootSurfaceForSettings, RELEASE_NOTES_SEEN_VERSION_KEY, WELCOME_SEEN_VERSION_KEY, type BootSurface } from "./lib/appBoot";
 import { CURRENT_VERSION } from "./lib/releaseNotes";
+import { openExternal } from "./lib/openExternal";
 
 const BooksStudio = lazy(() => import("./components/BooksStudio").then(({ BooksStudio: Studio }) => ({ default: Studio })));
+const DOCUMENTATION_URL = "https://github.com/kidddevs/note-me#readme";
+const ISSUE_URL = "https://github.com/kidddevs/note-me/issues/new";
 
 async function exportAllNotes() {
   try {
@@ -70,6 +73,8 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updatesRequested, setUpdatesRequested] = useState(0);
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
+  const [newBookRequest, setNewBookRequest] = useState(0);
   const [bootSurface, setBootSurface] = useState<BootSurface | "checking">("checking");
   const [releasePending, setReleasePending] = useState(false);
   const clipboardWatch = useRef<number | null>(null);
@@ -110,6 +115,10 @@ export default function App() {
           useWorkspace.getState().setMode("notes");
           useNotes.getState().createNote().then((n) => n && openNoteInTab(n));
           break;
+        case "new-book":
+          useWorkspace.getState().setMode("books");
+          setNewBookRequest((request) => request + 1);
+          break;
         case "new-tab":
           useWorkspace.getState().setMode("notes");
           useTabs.getState().openHome();
@@ -139,6 +148,13 @@ export default function App() {
           setAboutOpen(true);
           setUpdatesRequested((count) => count + 1);
           break;
+        case "release-notes":
+          setBootSurface("ready");
+          setReleaseNotesOpen(true);
+          break;
+        case "find":
+          window.dispatchEvent(new CustomEvent("open-find"));
+          break;
         case "toggle-theme":
           useTheme.getState().cycleTheme();
           break;
@@ -159,6 +175,24 @@ export default function App() {
           break;
         case "import-files":
           importFilesAsNotes();
+          break;
+        case "help-docs":
+          void openExternal(DOCUMENTATION_URL);
+          break;
+        case "help-report":
+          void openExternal(ISSUE_URL);
+          break;
+        case "new-daily":
+          useWorkspace.getState().setMode("notes");
+          void createFromTemplate("daily");
+          break;
+        case "new-meeting":
+          useWorkspace.getState().setMode("notes");
+          void createFromTemplate("meeting");
+          break;
+        case "new-journal":
+          useWorkspace.getState().setMode("notes");
+          void createFromTemplate("journal");
           break;
       }
     }).then((u) => unlisteners.push(u));
@@ -199,6 +233,7 @@ export default function App() {
   const closeReleaseNotes = () => {
     void api.setSetting(RELEASE_NOTES_SEEN_VERSION_KEY, CURRENT_VERSION).catch(() => {});
     setReleasePending(false);
+    setReleaseNotesOpen(false);
     setBootSurface("ready");
   };
 
@@ -280,7 +315,7 @@ export default function App() {
         {workspace === "books" ? (
           <>
             <Suspense fallback={<div className="books-loading"><div className="spinner" /><span>Opening Books Studio...</span></div>}>
-              <BooksStudio />
+              <BooksStudio openNewBookRequest={newBookRequest} onNewBookRequestHandled={() => setNewBookRequest(0)} />
             </Suspense>
             {clipboardOpen && <ClipboardPanel />}
           </>
@@ -330,6 +365,7 @@ export default function App() {
       )}
       {bootSurface === "welcome" && <WelcomeSplash onClose={closeWelcome} />}
       {bootSurface === "release-notes" && <ReleaseNotesModal onClose={closeReleaseNotes} />}
+      {releaseNotesOpen && <ReleaseNotesModal onClose={closeReleaseNotes} />}
     </div>
   );
 }

@@ -2593,6 +2593,7 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
   };
 
   useEffect(() => {
+    const onOpenFind = () => openFind();
     const onWindowKeyDown = (event: KeyboardEvent) => {
       const modifier = event.metaKey || event.ctrlKey;
       const findKey = event.code === "KeyF" || event.key.toLowerCase() === "f";
@@ -2613,8 +2614,12 @@ export function ManuscriptScreen({ book, chapters, activeChapter, focusMode, onF
         setSprintOpen(false);
       }
     };
+    window.addEventListener("open-find", onOpenFind);
     window.addEventListener("keydown", onWindowKeyDown);
-    return () => window.removeEventListener("keydown", onWindowKeyDown);
+    return () => {
+      window.removeEventListener("open-find", onOpenFind);
+      window.removeEventListener("keydown", onWindowKeyDown);
+    };
   }, [findOpen, sprintOpen]);
 
   const onTitleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {

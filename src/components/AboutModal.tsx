@@ -9,8 +9,8 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import packageJson from "../../package.json";
+import { openExternal } from "../lib/openExternal";
 
 const CURRENT_VERSION = packageJson.version;
 const RELEASE_API_URL = "https://api.github.com/repos/kidddevs/note-me/releases/latest";
@@ -56,14 +56,6 @@ function releaseDownloadUrl(release: GithubRelease) {
     /\.dmg$/i.test(asset.name) && /(aarch64|arm64|apple|mac)/i.test(asset.name),
   );
   return macAsset?.browser_download_url ?? assets.find((asset) => /\.dmg$/i.test(asset.name))?.browser_download_url ?? release.html_url;
-}
-
-async function openExternal(url: string) {
-  try {
-    await openUrl(url);
-  } catch {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
 }
 
 function formatReleaseDate(value?: string) {

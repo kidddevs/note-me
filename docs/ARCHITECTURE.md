@@ -139,6 +139,20 @@ For portable EPUB, HTML, and DOCX exports, the native host can also expose TTF/O
 
 After the theme and notes stores are ready, `App.tsx` reads two version markers from the existing `settings` table: `app.welcomeSeenVersion` and `app.releaseNotesSeenVersion`. A fresh profile opens `WelcomeSplash`, which explains the Notes, Books Studio, and publishing flow and provides the first-run keyboard shortcuts. Completing or skipping it records the current app version, then opens `ReleaseNotesModal` when the current release has not been acknowledged. Later launches go straight to the workspace once both markers match the bundled version. The release summary is bundled for offline-first startup; the About dialog remains the place for an optional live GitHub update check. Both boot surfaces use the same `data-theme` tokens as the rest of the app, with a system-color-scheme fallback before the theme store has applied its saved setting.
 
+### Native macOS menus
+
+`src-tauri/src/lib.rs` owns the native macOS menu bar. Custom menu items emit a
+small `menu` event into the main webview; `App.tsx` maps those IDs to existing
+workspace actions, modal surfaces, template creation, external help links, and
+the Books Studio new-manuscript request. The app menu keeps About, update
+checking, Release Notes, and Preferences together; File covers note and
+manuscript creation, templates, import/export, tab/window close, and printing;
+Edit adds contextual Find alongside native clipboard actions; View and Window
+retain workspace, appearance, tab, window, and fullscreen controls; Help exposes
+the shortcut sheet, documentation, and issue tracker. Native predefined items
+such as Undo, Cut, Minimize, and Zoom remain owned by macOS so they follow the
+active responder and window state.
+
 ## Conventions
 
 - Flat design only — no gradients. Surfaces: `--bg / --surface / --surface-2 / --surface-3`, 1px borders, subtle shadows, 6–14px radii.

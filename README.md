@@ -128,6 +128,8 @@ macOS release artifacts are published for both architectures: `NoteMe_<version>_
 
 To check for updates inside the app, use **NoteMe → Check for Updates…**. NoteMe only offers a download action when a GitHub release is newer than the installed version.
 
+On macOS, the native menu also exposes **Release Notes**, **Preferences**, **New Manuscript**, template notes, contextual **Find**, keyboard shortcuts, documentation, and issue reporting. These commands are wired to the same local workspace, modal surfaces, and Books Studio actions as the in-app controls.
+
 ### Build from source
 
 Requirements:
@@ -156,6 +158,7 @@ Installers are written to `src-tauri/target/<target>/release/bundle/`.
 | Shortcut | Action |
 | --- | --- |
 | `Cmd+N` | Create a note, or a book while Books Studio is active |
+| `Cmd+Alt+N` | Open the New Manuscript dialog |
 | `Cmd+T` | Open a new tab: all notes, or the Books library |
 | `Cmd+W` | Close the active tab |
 | `Cmd+Shift+D` | Duplicate the active note |

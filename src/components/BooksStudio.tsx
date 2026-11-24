@@ -577,7 +577,7 @@ export function LibraryScreen({ books, selectedBookId, creating, deletingBookId,
   );
 }
 
-export function BooksStudio() {
+export function BooksStudio({ openNewBookRequest = 0, onNewBookRequestHandled }: { openNewBookRequest?: number; onNewBookRequestHandled?: () => void }) {
   const books = useBooks((state) => state.books);
   const chapters = useBooks((state) => state.chapters);
   const selectedBookId = useBooks((state) => state.selectedBookId);
@@ -614,6 +614,13 @@ export function BooksStudio() {
   );
 
   useEffect(() => { void init(); }, [init]);
+
+  useEffect(() => {
+    if (openNewBookRequest > 0) {
+      setNewBookOpen(true);
+      onNewBookRequestHandled?.();
+    }
+  }, [onNewBookRequestHandled, openNewBookRequest]);
 
   useEffect(() => {
     if (screen !== "cover") {
