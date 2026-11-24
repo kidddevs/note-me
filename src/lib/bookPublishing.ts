@@ -29,10 +29,18 @@ import {
   type TocEntry,
 } from "./bookToc";
 import { coverCss, coverPageHtml } from "./bookCover";
+import { fontCss } from "./fontFamilies";
+import { docxFontPackage, embeddedFontFaceCss, fontMimeType, type EmbeddedFont } from "./fontEmbedding";
+
+export { FONT_OPTIONS, fontCss, normalizeFontFamily } from "./fontFamilies";
 
 export type BookExportFormat = "markdown" | "html" | "epub" | "docx" | "txt";
 type ExportFormat = BookExportFormat;
 export type PageBand = "opening" | "contents" | "story" | "closing";
+
+export interface BookPublishingOptions {
+  embeddedFonts?: EmbeddedFont[];
+}
 
 export const TRIM_SIZES = [
   { value: "5x8", label: "5 x 8 in", description: "Compact trade" },
@@ -45,13 +53,6 @@ export const TRIM_SIZES = [
   { value: "8.27x11.69", label: "A4", description: "Workbook / newsletter" },
   { value: "8.5x11", label: "US Letter", description: "Magazine / print" },
   { value: "9x12", label: "9 x 12 in", description: "Portfolio / art book" },
-];
-
-export const FONT_OPTIONS = [
-  { value: "serif", label: "Editorial Serif", css: "Georgia, 'Times New Roman', serif" },
-  { value: "humanist", label: "Humanist", css: "Palatino, 'Palatino Linotype', serif" },
-  { value: "sans", label: "Modern Sans", css: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif" },
-  { value: "mono", label: "Typewriter", css: "'SF Mono', 'Courier New', monospace" },
 ];
 
 export const STATUS_OPTIONS = [
@@ -88,13 +89,6 @@ export const PAGE_START_OPTIONS = [
 export function trimCssSize(trimSize: string) {
   const [width, height] = trimSize.split("x");
   return `${width ?? 6}in ${height ?? 9}in`;
-}
-
-export function fontCss(fontFamily: string) {
-  const preset = FONT_OPTIONS.find((font) => font.value === fontFamily);
-  if (preset) return preset.css;
-  const custom = fontFamily.replace(/[^a-z0-9\s,'"_-]/gi, "").trim();
-  return custom || FONT_OPTIONS[0].css;
 }
 
 export function wordCount(text: string) {
@@ -1446,7 +1440,7 @@ function sectionPageRules(book: Book, chapters: Chapter[], layouts: Map<number, 
   }).join("");
 }
 
-export function bookHtml(book: Book, chapters: Chapter[]) {
+export function bookHtml(book: Book, chapters: Chapter[], options: BookPublishingOptions = {}) {
   const title = escapeHtml(book.title || "Untitled manuscript");
   const layout = layoutForBook(book);
   const coverPage = layout.cover.enabled ? coverPageHtml(book, layout) : "";
@@ -1492,12 +1486,14 @@ export function bookHtml(book: Book, chapters: Chapter[]) {
   }).join("\n");
   const contentsHtml = tocEntriesHtml(book, chapters);
   const contentsWithChrome = contentsHtml ? `${bookChromeHtml(book, layout, "contents", tocTitle(book), "contents", 0)}${contentsHtml}` : "";
+  const embeddedFontsCss = embeddedFontFaceCss(options.embeddedFonts ?? [], (font) => `data:${fontMimeType(font.format)};base64,${bytesToBase64(font.bytes)}`);
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>${title}</title>
 <style>
 @page { size: ${trimCssSize(book.trim_size)}; margin: ${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in; }
 @page book-cover { size: ${trimCssSize(book.trim_size)}; margin: 0; }
 ${pageRules}
+${embeddedFontsCss}
 * { box-sizing: border-box; }
  body { --document-accent: ${layout.accentColor}; margin: 0; color: #24211e; background-color: ${layout.pageColor}; ${pagePatternBackgroundCss(layout)} print-color-adjust: exact; -webkit-print-color-adjust: exact; font-family: ${fontCss(book.font_family)}; font-size: ${book.font_size}pt; line-height: ${book.line_height}; } ${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}${coverCss()}
 .title-page { min-height: 70vh; display: flex; flex-direction: column; justify-content: center; text-align: center; page-break-after: always; }
@@ -1627,6 +1623,7 @@ function docxChromeXml(book: Book, layout: BookLayout, kind: "header" | "footer"
 
 interface DocxAssetState {
   imageCount: number;
+  relationshipOffset: number;
   media: Record<string, Uint8Array>;
   relationships: string[];
 }
@@ -1634,7 +1631,7 @@ interface DocxAssetState {
 function docxDrawingParagraph(label: string, bytes: Uint8Array, extension: string, assets: DocxAssetState, width = 4572000, height = 3000000) {
   assets.imageCount += 1;
   const mediaPath = `word/media/image${assets.imageCount}.${extension}`;
-  const relationshipId = `rId${assets.imageCount + 3}`;
+  const relationshipId = `rId${assets.imageCount + 3 + assets.relationshipOffset}`;
   assets.media[mediaPath] = bytes;
   assets.relationships.push(`<Relationship Id="${relationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image${assets.imageCount}.${extension}"/>`);
   const safeLabel = docxXml(label || `Image ${assets.imageCount}`);
@@ -1735,11 +1732,12 @@ function docxContentParagraphs(content: string, assets: DocxAssetState, layout: 
   return paragraphs;
 }
 
-export async function bookDocx(book: Book, chapters: Chapter[]) {
+export async function bookDocx(book: Book, chapters: Chapter[], options: BookPublishingOptions = {}) {
   const { zipSync, strToU8 } = await import("fflate");
   const layout = layoutForBook(book);
   const orderedChapters = orderBookChapters(chapters);
-  const assets: DocxAssetState = { imageCount: 0, media: {}, relationships: [] };
+  const embeddedFonts = options.embeddedFonts ?? [];
+  const assets: DocxAssetState = { imageCount: 0, relationshipOffset: embeddedFonts.length, media: {}, relationships: [] };
   const pageSizes: Record<string, { width: number; height: number }> = {
     "5x8": { width: 7200, height: 11520 },
     "5.25x8": { width: 7560, height: 11520 },
@@ -1795,15 +1793,17 @@ export async function bookDocx(book: Book, chapters: Chapter[]) {
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${paragraphs}<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="${pageSize.width}" w:h="${pageSize.height}"/><w:pgMar w:top="${Math.round(layout.pageMargins.top * 1440)}" w:right="${Math.round(layout.pageMargins.right * 1440)}" w:bottom="${Math.round(layout.pageMargins.bottom * 1440)}" w:left="${Math.round(layout.pageMargins.left * 1440)}"/>${pageNumberType}</w:sectPr></w:body></w:document>`;
   const captionStyle: BookTextStyle = { ...layout.typography.heading3, fontSize: Math.max(8, layout.typography.heading3.fontSize - 2), fontWeight: 400, fontStyle: "italic", textAlign: "left" };
   const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr>${docxStyleXml("NormalDefaults", "Normal defaults", layout.typography.paragraph).match(/<w:rPr>([\s\S]*)<\/w:rPr>/)?.[1] ?? ""}</w:rPr></w:rPrDefault></w:docDefaults>${docxStyleXml("Normal", "Normal", layout.typography.paragraph, paragraphAfter)}${docxStyleXml("Title", "Title", titleStyleForLayout(layout), 0, "Normal", layout.accentColor)}${([1, 2, 3, 4, 5, 6] as const).map((level) => docxStyleXml(`Heading${level}`, `heading ${level}`, layout.typography[`heading${level}`], paragraphAfter, "Normal")).join("")}${docxStyleXml("Quote", "Quote", layout.typography.quote, paragraphAfter, "Normal")}${docxStyleXml("Caption", "Caption", captionStyle, 40, "Normal")}</w:styles>`;
+  const fontPackage = docxFontPackage(embeddedFonts);
   return zipSync({
-     "[Content_Types].xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Default Extension="svg" ContentType="image/svg+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`),
+     "[Content_Types].xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Default Extension="svg" ContentType="image/svg+xml"/>${fontPackage?.contentTypeDefaults ?? ""}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>${fontPackage?.contentTypeOverride ?? ""}</Types>`),
     "_rels/.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`),
-    "word/_rels/document.xml.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>${assets.relationships.join("")}</Relationships>`),
+    "word/_rels/document.xml.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>${fontPackage?.documentRelationship ?? ""}${assets.relationships.join("")}</Relationships>`),
     "word/document.xml": strToU8(documentXml),
     "word/styles.xml": strToU8(stylesXml),
     "word/header1.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${docxChromeXml(book, layout, "header")}</w:hdr>`),
     "word/footer1.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${docxChromeXml(book, layout, "footer")}</w:ftr>`),
     ...assets.media,
+    ...(fontPackage ? { "word/fontTable.xml": strToU8(fontPackage.fontTableXml), "word/_rels/fontTable.xml.rels": strToU8(fontPackage.fontTableRelationshipsXml), ...fontPackage.files } : {}),
   });
 }
 
@@ -1827,7 +1827,7 @@ async function embedBundledCoverImages(markup: string) {
   return markup.replace(references, (match, prefix: string, source: string) => images.has(source) ? `${prefix}${images.get(source)}` : match);
 }
 
-export async function bookEpub(book: Book, chapters: Chapter[]) {
+export async function bookEpub(book: Book, chapters: Chapter[], options: BookPublishingOptions = {}) {
   const { zipSync, strToU8 } = await import("fflate");
   const bookId = `noteme-book-${book.id}`;
   const layout = layoutForBook(book);
@@ -1839,7 +1839,14 @@ export async function bookEpub(book: Book, chapters: Chapter[]) {
   const epubImages = new Map<string, string>();
   const manifest: string[] = [];
   const spine: string[] = [];
-  const epubCss = `body{--document-accent:${layout.accentColor};font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;background-color:${layout.pageColor};${pagePatternBackgroundCss(layout)}}${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}${coverCss()}`;
+  const embeddedFonts = options.embeddedFonts ?? [];
+  embeddedFonts.forEach((font, index) => {
+    const filename = `font${index + 1}.${font.format}`;
+    chapterFiles[`OEBPS/fonts/${filename}`] = font.bytes;
+    manifest.push(`<item id="font-${index + 1}" href="fonts/${filename}" media-type="${fontMimeType(font.format)}"/>`);
+  });
+  const epubFontCss = embeddedFontFaceCss(embeddedFonts, (_font, index) => `fonts/font${index + 1}.${embeddedFonts[index].format}`);
+  const epubCss = `${epubFontCss}body{--document-accent:${layout.accentColor};font-family:${fontCss(book.font_family)};font-size:${book.font_size}pt;line-height:${book.line_height};margin:${layout.pageMargins.top}in ${layout.pageMargins.right}in ${layout.pageMargins.bottom}in ${layout.pageMargins.left}in;background-color:${layout.pageColor};${pagePatternBackgroundCss(layout)}}${typographyCss(layout)}${paragraphStylesCss(layout)}${imagePresentationCss()}h1{font-size:1.8em}h2{font-size:1.4em}p{margin-bottom:${book.paragraph_spacing}em}img{display:block;max-width:100%;height:auto;margin:1.4em auto}.title-page{text-align:center;margin-top:30vh}.matter{text-align:left}.book-toc li{margin:.35em 0;margin-left:calc(var(--toc-indent) * 1.2em);list-style:none}.book-chrome{margin:0 0 2em;font-size:.68em;letter-spacing:.08em;text-transform:uppercase}.book-chrome-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1em;min-height:1.4em}.book-chrome-row span:nth-child(2){text-align:center}.book-chrome-row span:last-child{text-align:right}.book-chrome-row.footer{margin-top:.7em;color:#6f6259}${coverCss()}`;
   const embedImages = (body: string) => body.replace(/(src="|url\(')(data:(image\/(?:png|jpeg|jpg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=]+))(?="|'\))/gi, (_match, prefix: string, dataUri: string, mime: string, encoded: string) => {
     const existingPath = epubImages.get(dataUri);
     if (existingPath) return `${prefix}${existingPath}`;
@@ -1907,12 +1914,12 @@ export function filenameFor(book: Book, extension: string) {
   return `${title || "untitled-manuscript"}${extension}`;
 }
 
-export async function bookExportPayload(book: Book, chapters: Chapter[], format: BookExportFormat): Promise<string | Uint8Array> {
+export async function bookExportPayload(book: Book, chapters: Chapter[], format: BookExportFormat, options: BookPublishingOptions = {}): Promise<string | Uint8Array> {
   if (format === "markdown") return bookMarkdown(book, chapters);
-  if (format === "html") return embedBundledCoverImages(bookHtml(book, chapters));
+  if (format === "html") return embedBundledCoverImages(bookHtml(book, chapters, options));
   if (format === "txt") return bookText(book, chapters);
-  if (format === "epub") return bookEpub(book, chapters);
-  if (format === "docx") return bookDocx(book, chapters);
+  if (format === "epub") return bookEpub(book, chapters, options);
+  if (format === "docx") return bookDocx(book, chapters, options);
   throw new Error(`Unsupported book export format: ${format}`);
 }
 

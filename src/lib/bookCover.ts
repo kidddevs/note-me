@@ -1,6 +1,7 @@
 import type { Book } from "./types";
 import type { BookCoverDesign, BookCoverLine, BookCoverTemplate, BookLayout, BookPublication } from "./bookLayout";
 import { coverDocCss, coverDocPageHtml, hasCoverDocument } from "./bookCoverDoc";
+import { fontCss } from "./fontFamilies";
 
 export interface ResolvedBookCover {
   template: BookCoverTemplate;
@@ -31,13 +32,6 @@ export const BOOK_COVER_TEMPLATES: { id: BookCoverTemplate; label: string; descr
 
 function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-
-function fontFamily(value: string) {
-  if (value === "sans") return "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif";
-  if (value === "mono") return "'SF Mono', 'Courier New', monospace";
-  if (value === "humanist") return "Palatino, 'Palatino Linotype', serif";
-  return "Georgia, 'Times New Roman', serif";
 }
 
 function hexChannels(hex: string) {
@@ -101,7 +95,7 @@ export function coverMarkup(book: Book, layout: BookLayout) {
   const background = book.cover_color || "#a56b3e";
   const lines = cover.coverLines.map((line) => `<div class="book-cover-line">${line.label.trim() ? `<span class="book-cover-line-label">${escapeHtml(line.label)}</span>` : ""}${line.text.trim() ? `<span class="book-cover-line-text">${escapeHtml(line.text)}</span>` : ""}</div>`).join("");
   const image = cover.image ? `<div class="book-cover-image" style="background-image:url('${escapeHtml(cover.image)}');background-size:${cover.imageFit};"></div>` : "";
-  return `<section class="book-cover-art template-${cover.template} align-${cover.alignment} ${cover.image ? "has-image" : ""} ${cover.vignette ? "has-vignette" : ""}" style="--cover-bg:${escapeHtml(background)};--cover-ink:${cover.textColor};--cover-accent:${cover.accentColor};--cover-font:${fontFamily(book.font_family)};--cover-aspect:${trimWidth} / ${trimHeight};">
+  return `<section class="book-cover-art template-${cover.template} align-${cover.alignment} ${cover.image ? "has-image" : ""} ${cover.vignette ? "has-vignette" : ""}" style="--cover-bg:${escapeHtml(background)};--cover-ink:${cover.textColor};--cover-accent:${cover.accentColor};--cover-font:${fontCss(book.font_family)};--cover-aspect:${trimWidth} / ${trimHeight};">
   ${image}
   <div class="book-cover-inner">
     <header class="book-cover-top">

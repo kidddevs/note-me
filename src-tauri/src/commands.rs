@@ -449,6 +449,15 @@ fn validate_text_length(label: &str, value: &str, maximum: usize) -> Result<(), 
     Ok(())
 }
 
+fn valid_font_family(value: &str) -> bool {
+    let trimmed = value.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().count() <= 200
+        && trimmed.chars().all(|character| {
+            character.is_alphanumeric() || character == ' ' || ",._-'\"&()+".contains(character)
+        })
+}
+
 fn validate_book_fields(
     title: &str,
     subtitle: &str,
@@ -480,7 +489,7 @@ fn validate_book_fields(
     if !BOOK_TRIM_SIZES.contains(&trim_size) {
         return Err("invalid trim size".to_string());
     }
-    if !BOOK_FONT_FAMILIES.contains(&font_family) {
+    if !BOOK_FONT_FAMILIES.contains(&font_family) && !valid_font_family(font_family) {
         return Err("invalid book font family".to_string());
     }
     if !font_size.is_finite() || !(6.0..=96.0).contains(&font_size) {
@@ -1728,6 +1737,51 @@ mod tests {
             "{}",
         );
         assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn accepts_installed_font_family_stacks() {
+        let result = validate_book_fields(
+            "Field Notes",
+            "",
+            "",
+            "",
+            "",
+            "draft",
+            "6x9",
+            "Avenir Next, Helvetica Neue, sans-serif",
+            12.0,
+            1.5,
+            0.0,
+            1.0,
+            50_000,
+            "#a56b3e",
+            "Contents",
+            3,
+            "{}",
+        );
+        assert_eq!(result, Ok(()));
+
+        let unsafe_family = validate_book_fields(
+            "Field Notes",
+            "",
+            "",
+            "",
+            "",
+            "draft",
+            "6x9",
+            "Avenir; color: red",
+            12.0,
+            1.5,
+            0.0,
+            1.0,
+            50_000,
+            "#a56b3e",
+            "Contents",
+            3,
+            "{}",
+        );
+        assert_eq!(unsafe_family, Err("invalid book font family".to_string()));
     }
 
     #[test]

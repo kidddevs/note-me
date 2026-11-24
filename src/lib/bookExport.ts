@@ -1,9 +1,15 @@
 import { backMatterSections, buildBookToc, frontMatterSections } from "./bookToc";
-import { layoutForBook, serializeBookLayout } from "./bookLayout";
+import { layoutForBook, layoutForChapter, serializeBookLayout, type BookTextStyle } from "./bookLayout";
 import { downloadBlob, hasCoverDocument } from "./bookCoverDoc";
-import { bookExportPayload, EXPORT_OPTIONS, filenameFor, hasManuscriptContent, isDocxImageSource, parseImageLine, wordCount, type BookExportFormat } from "./bookPublishing";
+import { bookExportPayload, EXPORT_OPTIONS, filenameFor, hasManuscriptContent, isDocxImageSource, parseImageLine, wordCount, type BookExportFormat, type BookPublishingOptions } from "./bookPublishing";
+import { estimateBookPagination } from "./bookPagination";
+import { FONT_OPTIONS, normalizeFontFamily } from "./fontFamilies";
+import { fontAssetMatches, fontRequestKey, primaryFontFamily, type EmbeddedFont, type FontRequest } from "./fontEmbedding";
+import { readSystemFontAsset, type SystemFontAsset } from "./systemFonts";
 import { parseChapterWorkflow } from "./bookWorkflow";
 import type { Book, Chapter } from "./types";
+
+export { estimateBookPagination } from "./bookPagination";
 
 export type BookExportCheckSeverity = "error" | "warning" | "info";
 export type BookExportCheckTarget = "settings" | "outline" | "manuscript";
@@ -26,6 +32,7 @@ export const BOOK_OUTPUT_OPTIONS: BookOutputOption[] = [
 export interface BookExportChoices {
   includeCover?: boolean;
   includeContents?: boolean;
+  embedFonts?: boolean;
 }
 
 /** Resolve one edition without writing the manuscript's publication settings. */
@@ -54,7 +61,91 @@ export interface BookExportCheck {
 
 const STORY_KINDS = new Set(["editorial", "prologue", "chapter", "feature", "department", "column", "profile", "interview", "review", "photo_essay", "recipe", "listing", "interlude"]);
 
-export function bookExportChecks(book: Book, chapters: Chapter[]): BookExportCheck[] {
+function normalizedFontWeight(value: number) {
+  return Math.min(900, Math.max(100, Math.round(value / 100) * 100));
+}
+
+export function customFontRequests(book: Book, layout: ReturnType<typeof layoutForBook>, chapters: Chapter[] = []) {
+  const requests: FontRequest[] = [];
+  const seen = new Set<string>();
+  const add = (value: string, weight = 400, style: "normal" | "italic" = "normal") => {
+    const normalized = normalizeFontFamily(value);
+    if (!normalized || FONT_OPTIONS.some((option) => option.value === value.trim())) return;
+    const request = { family: normalized, weight: normalizedFontWeight(weight), style } satisfies FontRequest;
+    const key = fontRequestKey(request);
+    if (seen.has(key)) return;
+    seen.add(key);
+    requests.push(request);
+  };
+
+  const addStyle = (style: BookTextStyle) => {
+    add(style.fontFamily, style.fontWeight, style.fontStyle);
+    add(style.dropCapFontFamily, Math.max(400, style.fontWeight), style.fontStyle);
+    const nestedWeight = style.nestedStyle === "bold" ? 700 : style.fontWeight;
+    const nestedStyle = style.nestedStyle === "italic" ? "italic" : style.fontStyle;
+    add(style.nestedFontFamily, nestedWeight, nestedStyle);
+  };
+
+  const addLayoutFonts = (source: ReturnType<typeof layoutForBook>) => {
+    for (const style of Object.values(source.typography)) addStyle(style);
+    for (const preset of source.paragraphStyles) addStyle(preset.style);
+    for (const layer of source.cover.doc.layers) {
+      if (layer.type === "text") add(layer.customFont, layer.fontWeight, layer.italic ? "italic" : "normal");
+    }
+  };
+
+  add(book.font_family, 400, "normal");
+  addLayoutFonts(layout);
+  for (const chapter of chapters) addLayoutFonts(layoutForChapter(book, chapter));
+  return requests;
+}
+
+export function customFontFamilies(book: Book, layout: ReturnType<typeof layoutForBook>, chapters: Chapter[] = []) {
+  const families: string[] = [];
+  const seen = new Set<string>();
+  for (const request of customFontRequests(book, layout, chapters)) {
+    const key = primaryFontFamily(request.family).toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    families.push(request.family);
+  }
+  return families;
+}
+
+export function matchingFontAssets(customFonts: string[], assets: SystemFontAsset[]) {
+  return fontAssetMatches(customFonts.map((family) => ({ family, weight: 400, style: "normal" })), assets)
+    .filter((match) => match.exact)
+    .map((match) => match.asset);
+}
+
+export function matchingFontAssetMatches(requests: FontRequest[], assets: SystemFontAsset[]) {
+  return fontAssetMatches(requests, assets);
+}
+
+function paginationRuleWarning(book: Book, layout: ReturnType<typeof layoutForBook>, chapters: Chapter[]) {
+  const layouts = [
+    { label: "Book", layout },
+    ...chapters.map((chapter) => ({ label: chapter.title.trim() || `Section ${chapter.id}`, layout: layoutForChapter(book, chapter) })),
+  ];
+  const styles = layouts.flatMap(({ label: layoutLabel, layout: source }) => [
+    ...Object.entries(source.typography).map(([label, style]) => ({ label: `${layoutLabel} · ${label}`, style })),
+    ...source.paragraphStyles.map((preset) => ({ label: `${layoutLabel} · ${preset.name}`, style: preset.style })),
+  ]);
+  const bothBreaks = styles.filter(({ style }) => style.breakBefore && style.breakAfter).map(({ label }) => label);
+  const keepAfterBreak = styles.filter(({ style }) => style.keepWithNext && style.breakAfter).map(({ label }) => label);
+  if (!bothBreaks.length && !keepAfterBreak.length) return null;
+  const labels = [...new Set([...bothBreaks, ...keepAfterBreak])].slice(0, 3).join(", ");
+  const suffix = labels ? ` (${labels}${bothBreaks.length + keepAfterBreak.length > 3 ? ", …" : ""})` : "";
+  return {
+    id: "pagination-rules",
+    label: "Review pagination rules",
+    detail: `One or more styles force a break alongside another page-keeping rule${suffix}. Check the result in Print / PDF before sharing.`,
+    severity: "warning" as const,
+    target: "settings" as const,
+  };
+}
+
+export function bookExportChecks(book: Book, chapters: Chapter[], format: BookOutputFormat = "html", options: { embedFonts?: boolean; embeddedFontFamilies?: string[]; embeddedFontRequests?: FontRequest[] } = {}): BookExportCheck[] {
   const checks: BookExportCheck[] = [];
   const title = book.title.trim();
 
@@ -98,6 +189,27 @@ export function bookExportChecks(book: Book, chapters: Chapter[]): BookExportChe
     checks.push({ id: "title-page", label: "Consider a title page", detail: "A dedicated title page gives print and editable exports a finished opening.", severity: "info", target: "outline" });
   }
 
+  const layout = layoutForBook(book);
+  const fontRequests = customFontRequests(book, layout, chapters);
+  const embeddedFamilies = new Set((options.embeddedFontFamilies ?? []).map((family) => primaryFontFamily(family).toLocaleLowerCase()));
+  const embeddedRequests = new Set((options.embeddedFontRequests ?? []).map(fontRequestKey));
+  const missingEmbeddedRequests = fontRequests.filter((request) => !embeddedRequests.has(fontRequestKey(request)) && !embeddedFamilies.has(primaryFontFamily(request.family).toLocaleLowerCase()));
+  const missingEmbeddedFonts = [...new Set(missingEmbeddedRequests.map((request) => request.family))];
+  if (missingEmbeddedRequests.length > 0 && ["epub", "docx", "html"].includes(format)) {
+    checks.push({
+      id: "font-portability",
+      label: `${missingEmbeddedFonts.length} custom font ${missingEmbeddedFonts.length === 1 ? "family" : "families"} need a fallback`,
+      detail: options.embedFonts
+        ? "One or more selected families has no matching readable TTF or OTF weight/style asset in this app session. The remaining family names will travel with the export and need a fallback."
+        : "Portable exports preserve the selected family name, but the default export does not embed font binaries. Enable licensed embedding below when you have permission to redistribute the matching files.",
+      severity: "warning",
+      target: "settings",
+    });
+  }
+
+  const paginationWarning = paginationRuleWarning(book, layout, chapters);
+  if (paginationWarning) checks.push(paginationWarning);
+
   return checks;
 }
 
@@ -114,6 +226,8 @@ export interface BookPackageSummary {
   imageReferences: number;
   imageDescriptions: number;
   imageCredits: boolean;
+  estimatedPages: number;
+  customFonts: string[];
 }
 
 /** Describe the selected edition using the same artwork rules as its builder. */
@@ -125,6 +239,7 @@ export function bookPackageSummary(book: Book, chapters: Chapter[], format: Book
   const placedArtwork = format === "docx" ? artwork.filter((image) => isDocxImageSource(image.source))
     : format === "txt" || format === "markdown" ? [] : artwork;
   const supportsCover = Boolean(BOOK_OUTPUT_OPTIONS.find((option) => option.value === format)?.coverPanel);
+  const pagination = estimateBookPagination(book, chapters);
   return {
     sections: chapters.length,
     words,
@@ -136,6 +251,8 @@ export function bookPackageSummary(book: Book, chapters: Chapter[], format: Book
     imageReferences: format === "markdown" ? artwork.length : 0,
     imageDescriptions: format === "txt" || format === "docx" ? artwork.length - placedArtwork.length : 0,
     imageCredits: (format === "txt" ? [] : artwork).some((image) => Boolean(image.presentation.credit)),
+    estimatedPages: pagination.estimatedPages,
+    customFonts: customFontFamilies(book, layout, chapters),
   };
 }
 
@@ -158,13 +275,39 @@ export interface BookExportReceipt {
   bytes: number;
 }
 
+export interface BookExportOptions {
+  embedFonts?: boolean;
+  fontAssets?: SystemFontAsset[];
+}
+
+async function fontOptionsForExport(book: Book, chapters: Chapter[], options: BookExportOptions): Promise<BookPublishingOptions> {
+  if (!options.embedFonts) return {};
+  const requests = customFontRequests(book, layoutForBook(book), chapters);
+  if (requests.length === 0) return {};
+  const matches = matchingFontAssetMatches(requests, options.fontAssets ?? []);
+  const missing = matches.filter((match) => !match.exact).map((match) => `${match.request.family} (${match.request.weight} ${match.request.style})`);
+  const matchedKeys = new Set(matches.map((match) => fontRequestKey(match.request)));
+  const missingRequests = requests.filter((request) => !matchedKeys.has(fontRequestKey(request)));
+  missing.push(...missingRequests.map((request) => `${request.family} (${request.weight} ${request.style})`));
+  if (missing.length > 0) {
+    throw new Error(`Could not match every selected font variant. Choose readable TTF or OTF files for ${missing.join(", ")}, or export with embedding off.`);
+  }
+  const embeddedFonts: EmbeddedFont[] = await Promise.all(matches.map(async (match) => {
+    const data = await readSystemFontAsset(match.asset);
+    if (data.extension !== "ttf" && data.extension !== "otf") throw new Error(`The ${match.asset.family} font file is not embeddable in this export.`);
+    return { family: primaryFontFamily(match.request.family), format: data.extension, bytes: data.bytes, weight: match.request.weight, style: match.request.style };
+  }));
+  return { embeddedFonts };
+}
+
 /** Save the resolved edition using the system dialog or the browser downloader. */
-export async function saveBookExport(book: Book, chapters: Chapter[], format: BookExportFormat): Promise<BookExportReceipt | null> {
+export async function saveBookExport(book: Book, chapters: Chapter[], format: BookExportFormat, options: BookExportOptions = {}): Promise<BookExportReceipt | null> {
   const option = EXPORT_OPTIONS.find((item) => item.value === format);
   if (!option) throw new Error(`Unsupported book export format: ${format}`);
   const filename = filenameFor(book, option.extension);
+  const publishingOptions = await fontOptionsForExport(book, chapters, options);
   if (!("__TAURI_INTERNALS__" in window)) {
-    const payload = await bookExportPayload(book, chapters, format);
+    const payload = await bookExportPayload(book, chapters, format, publishingOptions);
     const blob = new Blob([typeof payload === "string" ? payload : new Uint8Array(payload)], { type: option.mime });
     downloadBlob(blob, filename);
     return { filename, path: null, bytes: blob.size };
@@ -173,7 +316,7 @@ export async function saveBookExport(book: Book, chapters: Chapter[], format: Bo
   const { save } = await import("@tauri-apps/plugin-dialog");
   const path = await save({ defaultPath: filename, filters: [{ name: option.label, extensions: [option.extension.slice(1)] }] });
   if (!path) return null;
-  const payload = await bookExportPayload(book, chapters, format);
+  const payload = await bookExportPayload(book, chapters, format, publishingOptions);
   const { writeFile, writeTextFile } = await import("@tauri-apps/plugin-fs");
   if (typeof payload === "string") await writeTextFile(path, payload);
   else await writeFile(path, payload);

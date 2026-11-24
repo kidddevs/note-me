@@ -32,6 +32,8 @@
     "src/lib/bookCoverPdf.ts",
     "src/lib/bookCover.ts",
     "src/lib/bookPublishing.ts",
+    "src/lib/fontEmbedding.ts",
+    "src/lib/bookPagination.ts",
     "src/lib/bookManuscriptSearch.ts",
     "src/lib/bookManuscriptNavigation.ts",
     "src/lib/noteRichtext.tsx",

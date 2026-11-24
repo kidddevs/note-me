@@ -51,7 +51,6 @@ import {
   CHART_PALETTE_NAMES,
   defaultChartData,
   DEFAULT_RICH_PRESENTATION,
-  FONT_OPTIONS,
   fontCss,
   imageMarkdown,
   imageFrameAspectRatio,
@@ -82,6 +81,7 @@ import { CoverImageFocus } from "./CoverImageFocus";
 import { SaveStudioImageButton } from "./BookImageLibrary";
 import { PagePatternPicker } from "./PagePatternPicker";
 import { StudioArrangeControls } from "./StudioArrangeControls";
+import { FontPicker } from "./FontPicker";
 import type { StudioAlign, StudioArrangeReference, StudioAxis, StudioSpacing } from "../lib/studioGeometry";
 
 function InspectorSection({ icon, title, summary, children, defaultOpen = false }: { icon: ReactNode; title: string; summary?: string; children: ReactNode; defaultOpen?: boolean }) {
@@ -149,10 +149,7 @@ function RuleControls({ title, rule, onChange }: { title: string; rule: BookText
 }
 
 function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, onInlineFormat, onConvertRole, onDelete, onDuplicate }: { style: BookTextStyle; preset: BookParagraphStyle | null; role?: BookTextRole; showInlineFormatting?: boolean; onPatch: (patch: Partial<BookTextStyle>) => void; onInlineFormat?: (prefix: string, suffix?: string) => void; onConvertRole?: (level: number) => void; onDelete?: () => void; onDuplicate?: () => void }) {
-  const presetFont = FONT_OPTIONS.some((option) => option.value === style.fontFamily);
   const headingLevel = role?.startsWith("heading") ? Number(role.slice(-1)) : role === "paragraph" ? 0 : null;
-  const nestedFont = FONT_OPTIONS.some((option) => option.value === style.nestedFontFamily);
-  const dropCapFont = FONT_OPTIONS.some((option) => option.value === style.dropCapFontFamily);
   return <div className="design-editor">
     <div className={`design-editing-badge ${preset ? "preset" : ""}`}>
       <Palette size={13} />
@@ -176,8 +173,7 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
     </div>}
     <InspectorSection icon={<Type size={14} />} title="Character" summary="Font, size, color, case" defaultOpen>
       <div className="design-grid">
-        <Field label="Font" wide><select value={presetFont ? style.fontFamily : "custom"} onChange={(event) => onPatch({ fontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom stack</option></select></Field>
-        {(!presetFont || !style.fontFamily) && <Field label="Custom font" wide><input value={style.fontFamily} onChange={(event) => onPatch({ fontFamily: event.target.value })} placeholder="Baskerville, Georgia, serif" /></Field>}
+        <Field label="Font" wide><FontPicker value={style.fontFamily} onChange={(fontFamily) => onPatch({ fontFamily })} customPlaceholder="e.g. Baskerville, Georgia, serif" /></Field>
         <Field label="Size"><NumberField value={style.fontSize} min={6} max={96} step={0.5} onChange={(fontSize) => onPatch({ fontSize })} suffix="pt" /></Field>
         <Field label="Weight"><select value={style.fontWeight} onChange={(event) => onPatch({ fontWeight: Number(event.target.value) })}><option value={300}>Light</option><option value={400}>Regular</option><option value={500}>Medium</option><option value={600}>Semibold</option><option value={700}>Bold</option><option value={800}>Heavy</option></select></Field>
         <Field label="Leading"><NumberField value={style.lineHeight} min={0.8} max={3} step={0.05} onChange={(lineHeight) => onPatch({ lineHeight })} /></Field>
@@ -234,7 +230,7 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
           {style.dropCap && <div className="design-grid">
             <Field label="Lines"><NumberField value={style.dropCapLines} min={2} max={6} onChange={(dropCapLines) => onPatch({ dropCapLines })} /></Field>
             <Field label="Gap"><NumberField value={style.dropCapGap} min={0} max={1} step={0.05} onChange={(dropCapGap) => onPatch({ dropCapGap })} suffix="em" /></Field>
-            <Field label="Font" wide><select value={dropCapFont ? style.dropCapFontFamily : "custom"} onChange={(event) => onPatch({ dropCapFontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font</option></select></Field>
+            <Field label="Font" wide><FontPicker value={style.dropCapFontFamily} onChange={(dropCapFontFamily) => onPatch({ dropCapFontFamily })} customPlaceholder="e.g. Baskerville, Georgia, serif" /></Field>
             <Field label="Color" wide><ColorField value={style.dropCapColor} onChange={(dropCapColor) => onPatch({ dropCapColor })} /></Field>
           </div>}
         </div>
@@ -242,7 +238,7 @@ function TextStyleEditor({ style, preset, role, showInlineFormatting, onPatch, o
           <div className="design-subgroup-head"><strong>Nested opening</strong><select className="design-mini-select" value={style.nestedStyle} onChange={(event) => onPatch({ nestedStyle: event.target.value as BookNestedStyle })}><option value="none">None</option><option value="small-caps">Small caps</option><option value="bold">Bold</option><option value="italic">Italic</option><option value="accent">Accent</option></select></div>
           {style.nestedStyle !== "none" && <div className="design-grid">
             <Field label="Words"><NumberField value={style.nestedWords} min={1} max={12} onChange={(nestedWords) => onPatch({ nestedWords })} /></Field>
-            <Field label="Font"><select value={nestedFont ? style.nestedFontFamily : "custom"} onChange={(event) => onPatch({ nestedFontFamily: event.target.value === "custom" ? "" : event.target.value })}>{FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value="custom">Custom font</option></select></Field>
+            <Field label="Font"><FontPicker value={style.nestedFontFamily} onChange={(nestedFontFamily) => onPatch({ nestedFontFamily })} customPlaceholder="e.g. Baskerville, Georgia, serif" /></Field>
             <Field label="Color" wide><ColorField value={style.nestedColor} onChange={(nestedColor) => onPatch({ nestedColor })} /></Field>
           </div>}
         </div>

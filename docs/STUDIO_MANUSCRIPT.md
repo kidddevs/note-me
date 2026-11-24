@@ -90,6 +90,14 @@ migration is needed. Unconfigured titles/headings keep their role sizes and
 leading instead of inheriting the body size. New title defaults include space
 after and keep-with-next; explicit saved values still win.
 
+`estimateBookPagination(book, chapters)` turns the selected trim, page margins,
+body leading, columns, generated contents, and section-level overrides into an
+interior-page planning estimate for Export Studio. It intentionally does not
+claim exact browser or print pagination: font metrics, image flow, widow/orphan
+resolution, and the target application's layout engine still require a final
+proof. Export preflight calls out combinations such as a forced break paired
+with a keep-together rule before a reader copy is saved.
+
 ## Prose find and replace
 
 Open Find with the toolbar search button or Cmd/Ctrl+F. Cmd/Ctrl+Alt+F opens the

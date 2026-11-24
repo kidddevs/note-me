@@ -4508,6 +4508,7 @@ textarea:focus-visible,
 .books-export-package-extension { padding: 3px 7px; border-radius: 4px; background: var(--surface-2); color: var(--text-3); font-family: var(--font-mono, monospace); font-size: 9px; }
 .books-export-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 12px 0; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: var(--border); }
 .books-export-metrics > div { display: flex; padding: 8px 9px; background: var(--surface); flex-direction: column; gap: 2px; }
+.books-export-metrics > div:last-child:nth-child(5) { grid-column: 1 / -1; }
 .books-export-metrics strong { color: var(--text); font-size: 12px; font-weight: 680; }
 .books-export-metrics span { color: var(--text-3); font-size: 8.5px; letter-spacing: .02em; }
 .books-export-includes { display: flex; flex-direction: column; gap: 5px; }
@@ -4534,6 +4535,24 @@ textarea:focus-visible,
 .books-export-choices label > span { display: grid; gap: 3px; }
 .books-export-choices strong { color: var(--text-2); font-size: 11px; font-weight: 650; }
 .books-export-choices small { color: var(--text-3); font-size: 10px; line-height: 1.35; }
+.books-export-font-embedding { display: grid; gap: 7px; margin-top: 2px; padding-top: 9px; border-top: 1px solid var(--border); }
+.books-export-font-embedding > label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.books-export-font-embedding > label.disabled { cursor: not-allowed; opacity: .68; }
+.books-export-font-embedding p { margin: 0 0 0 23px; color: var(--text-4); font-size: 9px; line-height: 1.4; }
+.books-export-font-status { display: grid; gap: 5px; margin: 2px 0 0 23px; padding: 7px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2); }
+.books-export-font-status.ready { border-color: color-mix(in srgb, var(--success) 28%, var(--border)); }
+.books-export-font-status.needs-attention { border-color: color-mix(in srgb, var(--warning) 32%, var(--border)); }
+.books-export-font-status-head { display: flex; align-items: center; gap: 5px; color: var(--text-2); font-size: 9.5px; font-weight: 700; }
+.books-export-font-status-icon { display: flex; width: 18px; height: 18px; align-items: center; justify-content: center; border-radius: 50%; background: var(--book-accent-soft); color: var(--book-accent); }
+.books-export-font-status.needs-attention .books-export-font-status-icon { background: var(--warning-soft); color: var(--warning); }
+.books-export-font-status ul { display: grid; max-height: 176px; gap: 2px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.books-export-font-status li { display: grid; grid-template-columns: 17px minmax(0, 1fr); gap: 5px; align-items: start; padding: 4px 3px; border-radius: 5px; }
+.books-export-font-status li.missing { background: color-mix(in srgb, var(--warning) 7%, transparent); }
+.books-export-font-status li > span:last-child { display: grid; min-width: 0; gap: 1px; }
+.books-export-font-status li strong { overflow: hidden; color: var(--text-2); font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.books-export-font-status li small { color: var(--text-4); font-size: 8px; line-height: 1.3; }
+.books-export-font-status-dot { display: flex; width: 17px; height: 17px; align-items: center; justify-content: center; border-radius: 50%; background: var(--success-soft); color: var(--success); }
+.books-export-font-status li.missing .books-export-font-status-dot { background: var(--warning-soft); color: var(--warning); }
 .books-export-setting-link { display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; padding: 3px 0; color: var(--book-accent); font-size: 10px; cursor: pointer; }
 .books-export-option strong { font-size: 11.5px; font-weight: 650; }
 .books-export-option small { max-width: 220px; color: var(--text-3); font-size: 9.5px; line-height: 1.35; }
@@ -5443,6 +5462,55 @@ kbd {
 .design-field select:focus,
 .design-field textarea:focus,
 .design-number input:focus { border-color: var(--book-accent); box-shadow: 0 0 0 3px var(--book-accent-soft); }
+.system-font-picker,
+.system-font-input { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
+.design-field > span.system-font-picker { align-items: stretch; }
+.system-font-hint { color: var(--text-4); font-size: 10px; font-weight: 450; line-height: 1.35; }
+.system-font-trigger { display: grid; width: 100%; min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(72px, auto) 14px; align-items: center; gap: 8px; min-height: 42px; padding: 6px 8px 6px 9px; border: 1px solid var(--border-strong); border-radius: 7px; outline: 0; background: var(--bg); color: var(--text-2); text-align: left; cursor: pointer; }
+.system-font-trigger:hover,
+.system-font-trigger.open { border-color: var(--book-accent); background: var(--surface); box-shadow: 0 0 0 3px var(--book-accent-soft); }
+.system-font-trigger > svg { color: var(--text-4); transition: transform .14s ease, color .14s ease; }
+.system-font-trigger.open > svg { color: var(--book-accent); transform: rotate(180deg); }
+.system-font-trigger-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.system-font-trigger-copy strong { overflow: hidden; color: var(--text); font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.system-font-trigger-copy small { overflow: hidden; color: var(--text-4); font-size: 9px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.system-font-trigger-preview { overflow: hidden; color: var(--text); font-size: 19px; line-height: 1; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.system-font-popover { position: fixed; z-index: 5000; display: flex; max-height: min(560px, calc(100vh - 24px)); flex-direction: column; gap: 8px; padding: 10px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-modal); box-shadow: var(--shadow-modal); color: var(--text); animation: books-popover-in .14s cubic-bezier(.2, 0, 0, 1); }
+.system-font-popover-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 2px 2px 5px; }
+.system-font-popover-head > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.system-font-popover-head strong { color: var(--text); font-size: 12px; font-weight: 700; letter-spacing: -.01em; }
+.system-font-popover-head small { color: var(--text-4); font-size: 10px; line-height: 1.35; }
+.system-font-popover-count { display: inline-flex; min-width: 24px; height: 22px; align-items: center; justify-content: center; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--text-3); font-family: var(--mono); font-size: 9px; font-weight: 650; }
+.system-font-preview-controls { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.system-font-preview-kicker { display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; color: var(--text-3); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.system-font-preview-kicker svg { color: var(--book-accent); }
+.system-font-preview-control { display: inline-flex; min-width: 0; align-items: center; gap: 5px; color: var(--text-4); font-size: 9px; font-weight: 650; }
+.system-font-preview-control select { height: 24px; min-width: 58px; padding: 0 18px 0 6px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg); color: var(--text-2); font: inherit; font-family: var(--mono); font-size: 10px; cursor: pointer; }
+.system-font-preview-italic { display: inline-flex; height: 24px; align-items: center; gap: 4px; padding: 0 7px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg); color: var(--text-3); font: inherit; font-size: 10px; cursor: pointer; }
+.system-font-preview-italic:hover,
+.system-font-preview-italic.active { border-color: var(--book-accent); background: var(--book-accent-soft); color: var(--book-accent); }
+.system-font-search { display: flex; height: 31px; align-items: center; gap: 7px; padding: 0 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2); color: var(--text-4); }
+.system-font-search:focus-within { border-color: var(--book-accent); background: var(--bg); box-shadow: 0 0 0 3px var(--book-accent-soft); color: var(--book-accent); }
+.system-font-search input { width: 100%; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 11px; }
+.system-font-search input::placeholder { color: var(--text-4); }
+.system-font-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--border-strong) transparent; scrollbar-gutter: stable; }
+.system-font-group + .system-font-group { margin-top: 8px; }
+.system-font-group-label { display: flex; align-items: center; justify-content: space-between; padding: 5px 7px 4px; color: var(--text-4); font-size: 9px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+.system-font-group-label span { color: var(--text-4); font-family: var(--mono); font-size: 8px; font-weight: 500; letter-spacing: 0; }
+.system-font-option { display: grid; width: 100%; min-height: 54px; grid-template-columns: minmax(138px, 1fr) minmax(100px, 1.15fr) 24px; align-items: center; gap: 10px; padding: 7px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-2); text-align: left; cursor: pointer; }
+.system-font-option:hover,
+.system-font-option.focused { border-color: var(--border); background: var(--surface-hover); }
+.system-font-option.active { border-color: color-mix(in srgb, var(--book-accent) 32%, var(--border)); background: var(--book-accent-soft); color: var(--text); }
+.system-font-option-name { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.system-font-option-name strong { overflow: hidden; color: inherit; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.system-font-option-name small { overflow: hidden; color: var(--text-4); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.system-font-axis-summary { overflow: hidden; color: var(--book-accent); font-family: var(--mono); font-size: 8px; font-weight: 600; letter-spacing: -.01em; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.system-font-option-preview { overflow: hidden; color: var(--text); font-size: 23px; line-height: 1.05; text-overflow: ellipsis; white-space: nowrap; }
+.system-font-option-mark { display: flex; width: 24px; height: 24px; align-items: center; justify-content: center; color: var(--text-4); }
+.system-font-option.active .system-font-option-mark { color: var(--book-accent); }
+.system-font-empty { margin: 12px 8px; color: var(--text-3); font-size: 11px; line-height: 1.45; }
+.system-font-popover-foot { display: flex; align-items: center; gap: 5px; padding: 6px 2px 0; border-top: 1px solid var(--border-subtle); color: var(--text-4); font-size: 9px; line-height: 1.3; }
+.system-font-popover-foot svg { flex-shrink: 0; color: var(--book-accent); }
 .design-number { display: flex; align-items: center; gap: 4px; }
 .design-number small { flex-shrink: 0; color: var(--text-4); font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; }
 .design-inline-row { display: flex; flex-wrap: wrap; gap: 8px 12px; }
@@ -6559,6 +6627,12 @@ button.cover-pill:hover { border-color: var(--book-accent); color: var(--book-ac
 .cover-text-input input:focus,
 .cover-text-input textarea:focus,
 .cover-color-input-wrap input[type="text"]:focus { border-color: var(--book-accent); box-shadow: 0 0 0 2px var(--book-accent-soft); }
+.cover-select-field > span.system-font-picker,
+.cover-text-input > span.system-font-input { align-items: stretch; }
+.cover-select-field > span.system-font-picker .system-font-trigger { min-height: 26px; grid-template-columns: minmax(0, 1fr) minmax(42px, auto) 12px; gap: 5px; padding: 0 6px; border-radius: 5px; background: var(--surface-2); }
+.cover-select-field > span.system-font-picker .system-font-trigger-copy small { display: none; }
+.cover-select-field > span.system-font-picker .system-font-trigger-copy strong { font-size: 10px; font-weight: 500; }
+.cover-select-field > span.system-font-picker .system-font-trigger-preview { font-size: 15px; }
 .cover-text-input input::placeholder,
 .cover-text-input textarea::placeholder { color: var(--text-4); }
 .cover-color-field { min-width: 0; }

@@ -1,4 +1,4 @@
-import { memo, useId, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import {
   AlertTriangle,
@@ -17,6 +17,7 @@ import {
   LoaderCircle,
   NotebookPen,
   Printer,
+  Type,
 } from "lucide-react";
 import type { Book, Chapter } from "../lib/types";
 import {
@@ -25,6 +26,8 @@ import {
   bookForExport,
   bookPackageSummary,
   groupBookExportChecks,
+  customFontRequests,
+  matchingFontAssetMatches,
   saveBookExport,
   type BookExportCheck,
   type BookExportChoices,
@@ -34,6 +37,8 @@ import {
 import { layoutForBook, layoutForChapter, layoutSectionKey, serializeBookLayout } from "../lib/bookLayout";
 import { coverMetrics, hasCoverDocument, renderCoverCanvas } from "../lib/bookCoverDoc";
 import { readBookImageSource } from "../lib/bookImageLibrary";
+import { loadSystemFontAssets, type SystemFontAsset } from "../lib/systemFonts";
+import { fontRequestKey, type FontRequest } from "../lib/fontEmbedding";
 import { backMatterSections, buildBookToc, frontMatterSections, matterAnchorId, orderBookChapters, sectionAnchorId, type TocEntry } from "../lib/bookToc";
 import { chapterBandOrdinal, chapterDisplayLabel, chapterHasDistinctTitle, chapterIsOpeningPage, chapterPageBand, chapterTitleHeading, bookMarkdown, bookText, isDocxImageSource, markdownToHtml, manuscriptTitleHtml, parseImageLine, paragraphStylesCss, tocTitle, trimCssSize, TRIM_SIZES } from "../lib/bookPublishing";
 import { notify } from "../store/toast";
@@ -105,6 +110,18 @@ type PreviewMode = "cover" | "interior" | "contents";
 const PREVIEW_LABELS: Record<PreviewMode, string> = { cover: "Cover", interior: "Interior", contents: "Contents" };
 const SOURCE_PREVIEW_LIMIT = 16000;
 
+function fontVariantLabel(request: FontRequest) {
+  const weight = request.weight === 300 ? "Light" : request.weight === 500 ? "Medium" : request.weight === 600 ? "Semibold" : request.weight === 700 ? "Bold" : request.weight === 800 ? "Heavy" : request.weight === 900 ? "Black" : "Regular";
+  return `${request.family} · ${weight}${request.style === "italic" ? " italic" : ""}`;
+}
+
+function fontVariantMatchDetail(match: ReturnType<typeof matchingFontAssetMatches>[number] | undefined) {
+  if (!match) return "No readable TTF or OTF face was found in this native session.";
+  if (!match.exact) return `Nearest face: ${match.asset.weight} ${match.asset.style}; install the requested variant to embed it.`;
+  if (match.asset.axes && match.asset.axes.length > 0) return `Matched variable ${match.asset.extension.toUpperCase()} face · axis-aware`;
+  return `Matched ${match.asset.extension.toUpperCase()} face`;
+}
+
 export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: {
   book: Book;
   chapters: Chapter[];
@@ -119,6 +136,8 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: {
   const [receipt, setReceipt] = useState<BookExportReceipt | null>(null);
   const [exportError, setExportError] = useState("");
   const [printCover, setPrintCover] = useState<{ book: Book; source: string } | null>(null);
+  const [fontAssets, setFontAssets] = useState<SystemFontAsset[]>([]);
+  const [fontAssetsLoaded, setFontAssetsLoaded] = useState(false);
   const screenRef = useRef<HTMLDivElement>(null);
   const saving = useRef(false);
   const formatName = useId();
@@ -129,7 +148,42 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: {
   const layout = useMemo(() => layoutForBook(edition), [edition]);
   const summary = useMemo(() => bookPackageSummary(edition, chapters, format), [edition, chapters, format]);
   const toc = useMemo(() => buildBookToc(edition, chapters), [edition, chapters]);
-  const preflight = useMemo(() => bookExportChecks(edition, chapters), [edition, chapters]);
+  const portableFontFormat = format === "epub" || format === "docx" || format === "html";
+  useEffect(() => {
+    if (!portableFontFormat || summary.customFonts.length === 0) {
+      setFontAssets([]);
+      setFontAssetsLoaded(false);
+      return;
+    }
+    let active = true;
+    setFontAssetsLoaded(false);
+    void loadSystemFontAssets().then((assets) => {
+      if (active) {
+        setFontAssets(assets);
+        setFontAssetsLoaded(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [portableFontFormat, summary.customFonts.join("\u0000")]);
+  const fontRequests = useMemo(() => customFontRequests(edition, layout, chapters), [edition, layout, chapters]);
+  const fontMatches = useMemo(() => matchingFontAssetMatches(fontRequests, fontAssets), [fontRequests, fontAssets]);
+  const fontDiagnostics = useMemo(() => fontRequests.map((request) => ({
+    request,
+    match: fontMatches.find((candidate) => fontRequestKey(candidate.request) === fontRequestKey(request)),
+  })), [fontMatches, fontRequests]);
+  const canEmbedFonts = fontAssetsLoaded && fontRequests.length > 0 && fontMatches.length === fontRequests.length && fontMatches.every((match) => match.exact);
+  const embeddedFontRequests = useMemo(() => fontMatches.filter((match) => match.exact).map((match) => match.request), [fontMatches]);
+  useEffect(() => {
+    if (choices.embedFonts && !canEmbedFonts) {
+      setChoices((current) => current.embedFonts ? { ...current, embedFonts: false } : current);
+    }
+  }, [canEmbedFonts, choices.embedFonts]);
+  const preflight = useMemo(() => bookExportChecks(edition, chapters, format, {
+    embedFonts: Boolean(choices.embedFonts),
+    embeddedFontRequests: choices.embedFonts ? embeddedFontRequests : [],
+  }), [edition, chapters, format, choices.embedFonts, embeddedFontRequests]);
   const groups = useMemo(() => groupBookExportChecks(preflight), [preflight]);
   const attentionCount = groups.attention.length;
   const orderedChapters = useMemo(() => orderBookChapters(chapters), [chapters]);
@@ -175,7 +229,7 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: {
         await window.print();
         return;
       }
-      const saved = await saveBookExport(edition, chapters, format);
+      const saved = await saveBookExport(edition, chapters, format, choices.embedFonts ? { embedFonts: true, fontAssets } : undefined);
       if (saved) setReceipt(saved);
     } catch (error) {
       setExportError(error instanceof Error ? error.message : String(error));
@@ -261,9 +315,30 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: {
                   <input type="checkbox" checked={edition.toc_enabled} onChange={(event) => setChoices((current) => ({ ...current, includeContents: event.target.checked }))} />
                   <span><strong>Generated contents</strong><small>Use the sections and headings included in Outline</small></span>
                 </label>
-                {(choices.includeCover !== undefined || choices.includeContents !== undefined) && (
+                {(choices.includeCover !== undefined || choices.includeContents !== undefined || choices.embedFonts !== undefined) && (
                   <button type="button" className="books-export-setting-link" onClick={() => setChoices({})}>Use manuscript defaults</button>
                 )}
+                {portableFontFormat && summary.customFonts.length > 0 && <div className="books-export-font-embedding">
+                  <label className={!canEmbedFonts ? "disabled" : undefined}>
+                    <input type="checkbox" checked={Boolean(choices.embedFonts)} disabled={!canEmbedFonts} onChange={(event) => setChoices((current) => ({ ...current, embedFonts: event.target.checked }))} />
+                    <span><strong>Embed selected font files</strong><small>{!fontAssetsLoaded ? "Reading installed font metadata…" : canEmbedFonts ? "I have permission to redistribute these font files with this export." : "Matching readable TTF or OTF weight/style assets are not available in this native session."}</small></span>
+                  </label>
+                  <p>NoteMe cannot determine a font license automatically. Keep this off unless your font license allows redistribution.</p>
+                  {fontAssetsLoaded && fontDiagnostics.length > 0 && <div className={`books-export-font-status ${canEmbedFonts ? "ready" : "needs-attention"}`} aria-live="polite">
+                    <div className="books-export-font-status-head">
+                      <span className="books-export-font-status-icon">{canEmbedFonts ? <Check size={13} /> : <AlertTriangle size={13} />}</span>
+                      <strong>{canEmbedFonts ? "Every selected variant is available" : "Review selected font variants"}</strong>
+                    </div>
+                    <ul>
+                      {fontDiagnostics.map(({ request, match }) => (
+                        <li key={fontRequestKey(request)} className={match?.exact ? "matched" : "missing"}>
+                          <span className="books-export-font-status-dot">{match?.exact ? <Check size={11} /> : <AlertTriangle size={11} />}</span>
+                          <span><strong>{fontVariantLabel(request)}</strong><small>{fontVariantMatchDetail(match)}</small></span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>}
+                </div>}
               </div>
             </fieldset>
             <section className="books-export-package" aria-labelledby="books-export-package-heading">
@@ -275,6 +350,7 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: {
                 <div><strong>{summary.sections}</strong><span>sections</span></div>
                 <div><strong>{summary.words.toLocaleString()}</strong><span>words</span></div>
                 <div><strong>{summary.readingMinutes ? summary.readingMinutes + " min" : "—"}</strong><span>estimated read</span></div>
+                <div><strong>{summary.estimatedPages || "—"}</strong><span>estimated pages</span></div>
                 <div><strong>{summary.readySections} / {summary.sections}</strong><span>marked ready</span></div>
               </div>
               <div className="books-export-includes">
@@ -286,6 +362,11 @@ export function ExportScreen({ book, chapters, onNavigate, onOpenChapter }: {
                 {summary.images > 0 && <span className="ready"><Images size={13} />{summary.images} manuscript {summary.images === 1 ? "image" : "images"}{summary.imageCredits ? " · credits included" : ""}</span>}
                 {summary.imageReferences > 0 && <span className="ready"><Images size={13} />{summary.imageReferences} image {summary.imageReferences === 1 ? "reference" : "references"}</span>}
                 {summary.imageDescriptions > 0 && <span><Info size={13} />{summary.imageDescriptions} {summary.imageDescriptions === 1 ? "image described" : "images described"} in text</span>}
+                {summary.customFonts.length > 0 && <span className={portableFontFormat && !choices.embedFonts ? "muted" : undefined}>
+                  <Type size={13} />
+                  {summary.customFonts.length === 1 ? `Custom family: ${summary.customFonts[0]}` : `${summary.customFonts.length} custom font families selected`}
+                  {portableFontFormat ? (choices.embedFonts && canEmbedFonts ? " · embedded with permission" : " · not embedded") : " · local selection"}
+                </span>}
               </div>
               <p className="books-export-format-note">{selected.note}</p>
             </section>

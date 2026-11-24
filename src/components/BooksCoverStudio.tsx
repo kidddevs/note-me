@@ -105,7 +105,6 @@ import type { Book, Chapter } from "../lib/types";
 import { BOOK_GRAPHIC_CATEGORIES, BOOK_GRAPHICS, graphicDataUri, type BookGraphic } from "../lib/bookAssets";
 import { coverCss, coverMarkup } from "../lib/bookCover";
 import {
-  COVER_FONTS,
   COVER_GRADIENT_PRESETS,
   COVER_IMAGE_PRESETS,
   COVER_PAPER_STOCKS,
@@ -179,7 +178,6 @@ import {
   type CoverShapeLayer,
   type CoverTextAlign,
   type CoverTextEffect,
-  type CoverTextLayer,
   type CoverVerticalAlign,
 } from "../lib/bookCoverDoc";
 import {
@@ -247,6 +245,7 @@ import { CoverImageFocus } from "./CoverImageFocus";
 import { BookImageLibrary, SaveStudioImageButton } from "./BookImageLibrary";
 import { liftCoverBackground, matchCoverImageRatio, renderCoverSelectionCanvas, resetCoverImageCrop, resetCoverImageTone } from "../lib/bookCoverImages";
 import { CoverColorField, CoverColorSwatch, CoverColorProvider, useCoverColors } from "./CoverColorPicker";
+import { CoverFontPicker, InstalledFontInput } from "./FontPicker";
 import { matchingCoverLayerIds, moveCoverLayers, stepCoverLayers, type CoverLayerPlacement } from "../lib/bookCoverLayers";
 import { notify } from "../store/toast";
 
@@ -510,8 +509,7 @@ function LayerThumb({ layer, cover }: { layer: CoverLayer; cover: BookCoverDesig
   if (layer.type === "image") {
     return <span className="cover-layer-thumb"><FileImage size={13} /></span>;
   }
-  const font = COVER_FONTS.find((item) => item.id === layer.fontFamily);
-  return <span className="cover-layer-thumb"><span className="thumb-text" style={{ color: layer.color, fontFamily: font?.css, fontWeight: layer.fontWeight, fontStyle: layer.italic ? "italic" : "normal" }}>{layer.uppercase ? "AA" : "Aa"}</span></span>;
+  return <span className="cover-layer-thumb"><span className="thumb-text" style={{ color: layer.color, fontFamily: coverFontCss(layer.fontFamily, layer.customFont), fontWeight: layer.fontWeight, fontStyle: layer.italic ? "italic" : "normal" }}>{layer.uppercase ? "AA" : "Aa"}</span></span>;
 }
 
 function selectedLayerName(layer: CoverLayer | null) {
@@ -4850,12 +4848,12 @@ function LayerInspector({
           <label className="cover-text-input"><span>Content</span><textarea ref={contentRef} id="cover-text-content" value={layer.text} rows={4} onChange={(event) => onUpdate({ text: event.target.value }, { key: `text:${layer.id}` })} /></label>
           <div className="cover-token-row">{contentTokens.map((token) => <button key={token} type="button" onClick={() => onUpdate({ text: `${layer.text}${layer.text ? " " : ""}${token}` }, { key: `text:${layer.id}` })}>{token.replace(/[{}]/g, "")}</button>)}</div>
           <div className="cover-select-grid">
-            <label className="cover-select-field full"><span>Typeface</span><select value={layer.fontFamily} onChange={(event) => onUpdate({ fontFamily: event.target.value as CoverTextLayer["fontFamily"] }, { key: `font:${layer.id}` })}>{["Display", "Serif", "Sans", "Mono", "Script"].map((group) => <optgroup key={group} label={group}>{COVER_FONTS.filter((font) => font.group === group).map((font) => <option key={font.id} value={font.id}>{font.label}</option>)}</optgroup>)}</select></label>
+            <label className="cover-select-field full"><span>Typeface</span><CoverFontPicker fontFamily={layer.fontFamily} customFont={layer.customFont} onChange={(patch) => onUpdate(patch, { key: `font:${layer.id}` })} /></label>
             <NumberField label="Size" value={layer.fontSize} onChange={(fontSize) => onUpdate({ fontSize: Math.max(4, fontSize) }, { key: `size:${layer.id}` })} step={1} min={4} max={240} suffix="pt" />
             <label className="cover-select-field"><span>Weight</span><select value={layer.fontWeight} onChange={(event) => onUpdate({ fontWeight: Number(event.target.value) }, { key: `weight:${layer.id}` })}>{[300, 400, 500, 600, 700, 800, 900].map((weight) => <option key={weight} value={weight}>{weight}</option>)}</select></label>
           </div>
-          <label className="cover-text-input"><span>Installed font override</span><input value={layer.customFont} maxLength={80} placeholder="e.g. Bodoni 72 Smallcaps" onChange={(event) => onUpdate({ customFont: event.target.value.slice(0, 80) }, { key: `custom-font:${layer.id}` })} /></label>
-          <small className="cover-field-hint">Any typeface installed on this computer. Leave blank to use the family above.</small>
+          <label className="cover-text-input"><span>Installed font override</span><InstalledFontInput value={layer.customFont} maxLength={80} placeholder="e.g. Bodoni 72 Smallcaps" ariaLabel="Installed cover font override" showHint={false} onChange={(customFont) => onUpdate({ customFont }, { key: `custom-font:${layer.id}` })} /></label>
+          <small className="cover-field-hint">Choose from fonts installed on this computer, or leave blank to use the selected family.</small>
           <button type="button" className="cover-wide-button subtle" onClick={fitTextToFrame}><Maximize2 size={13} /> Fit text to frame</button>
           <div className="cover-text-format-row">
             <button type="button" className={layer.italic ? "active" : ""} onClick={() => onUpdate({ italic: !layer.italic }, { key: `italic:${layer.id}` })} title="Italic"><Italic size={13} /></button>

@@ -2,6 +2,7 @@ mod book_snapshots;
 mod book_workflow;
 mod commands;
 mod db;
+mod fonts;
 mod models;
 
 use std::path::Path;
@@ -10,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, TitleBarStyle, WebviewUrl, WebviewWindo
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
 use commands::*;
+use fonts::{list_system_font_assets, list_system_fonts, read_system_font_asset};
 
 fn maintenance(app: &AppHandle) {
     match purge_old_trash(app.clone(), app.state::<db::Db>()) {
@@ -357,6 +359,9 @@ pub fn run() {
             create_chapter_snapshot,
             restore_chapter_snapshot,
             delete_chapter_snapshot,
+            list_system_fonts,
+            list_system_font_assets,
+            read_system_font_asset,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

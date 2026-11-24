@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { bookExportChecks, bookForExport, bookPackageSummary, groupBookExportChecks } = require("./.compiled/src/lib/bookExport.js");
+const { bookExportChecks, bookForExport, bookPackageSummary, customFontRequests, estimateBookPagination, groupBookExportChecks } = require("./.compiled/src/lib/bookExport.js");
 const { layoutForBook } = require("./.compiled/src/lib/bookLayout.js");
 
 function book(overrides = {}) {
@@ -74,6 +74,64 @@ test("package summary reports the reader promise before export", () => {
   assert.equal(summary.contentsEntries, 2);
   assert.equal(summary.images, 1);
   assert.equal(summary.imageCredits, true);
+  assert.ok(summary.estimatedPages >= 2);
+  assert.deepEqual(summary.customFonts, []);
+});
+
+test("pagination estimate follows trim, typography, and section overrides", () => {
+  const longSection = chapter(1, "The Arrival", Array(1800).fill("word").join(" "));
+  const standard = estimateBookPagination(book(), [longSection]);
+  const compact = estimateBookPagination(book({ trim_size: "5x8", margin: 1.25 }), [longSection]);
+  const columns = estimateBookPagination(book({ layout_json: JSON.stringify({ typography: { paragraph: { columns: 2 } } }) }), [longSection]);
+  assert.ok(standard.estimatedPages > 1);
+  assert.ok(compact.estimatedPages >= standard.estimatedPages);
+  assert.ok(columns.estimatedPages > 0);
+  assert.notEqual(columns.textCapacity, standard.textCapacity);
+  assert.equal(standard.sections.find((section) => section.chapterId === 1).chapterId, 1);
+});
+
+test("portable exports warn when a manuscript uses an installed font family", () => {
+  const custom = book({ font_family: "Avenir Next, Helvetica Neue, sans-serif" });
+  const epubChecks = bookExportChecks(custom, [chapter(1, "The Arrival", "A complete opening chapter.")], "epub");
+  const fontCheck = epubChecks.find((check) => check.id === "font-portability");
+  assert.equal(fontCheck.severity, "warning");
+  assert.match(fontCheck.detail, /does not embed font binaries/);
+  assert.equal(bookExportChecks(custom, [chapter(1, "The Arrival", "A complete opening chapter.")], "print").some((check) => check.id === "font-portability"), false);
+});
+
+test("licensed font opt-in clears the portability warning for matched files", () => {
+  const custom = book({ font_family: "Avenir Next, Georgia, serif" });
+  const check = bookExportChecks(custom, [chapter(1, "The Arrival", "A complete opening chapter.")], "epub", {
+    embedFonts: true,
+    embeddedFontFamilies: ["Avenir Next"],
+  }).find((item) => item.id === "font-portability");
+  assert.equal(check, undefined);
+});
+
+test("font portability requests preserve selected weight and italic style", () => {
+  const custom = book({ layout_json: JSON.stringify({ typography: { paragraph: { fontFamily: "Avenir Next", fontWeight: 700, fontStyle: "italic" } } }) });
+  const chapters = [chapter(1, "The Arrival", "A complete opening chapter.", "title_page")];
+  const requests = customFontRequests(custom, layoutForBook(custom), chapters);
+  const request = requests.find((item) => item.family === "Avenir Next");
+  assert.deepEqual(request, { family: "Avenir Next", weight: 700, style: "italic" });
+  assert.equal(bookExportChecks(custom, chapters, "docx", { embedFonts: true, embeddedFontRequests: [request] }).some((item) => item.id === "font-portability"), false);
+});
+
+test("portable summaries inspect section-level font overrides", () => {
+  const section = {
+    ...chapter(1, "The Arrival", "A complete opening chapter."),
+    layout_json: JSON.stringify({ typography: { paragraph: { fontFamily: "Baskerville, Georgia, serif" } } }),
+  };
+  const summary = bookPackageSummary(book(), [section], "html");
+  assert.deepEqual(summary.customFonts, ["Baskerville, Georgia, serif"]);
+  assert.equal(bookExportChecks(book(), [section], "html").some((check) => check.id === "font-portability"), true);
+});
+
+test("preflight surfaces contradictory pagination rules", () => {
+  const custom = book({ layout_json: JSON.stringify({ typography: { paragraph: { breakBefore: true, breakAfter: true } } }) });
+  const check = bookExportChecks(custom, [chapter(1, "The Arrival", "A complete opening chapter.")], "print").find((item) => item.id === "pagination-rules");
+  assert.equal(check.severity, "warning");
+  assert.match(check.detail, /force a break/);
 });
 
 test("preflight groups attention items above finishing suggestions", () => {

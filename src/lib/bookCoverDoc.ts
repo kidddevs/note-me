@@ -2,6 +2,7 @@ import { normalizeCoverHex, parseCoverColor } from "./bookCoverColor";
 import type { Book, Chapter } from "./types";
 import type { BookCoverDesign, BookCoverGradient } from "./bookLayout";
 import { BOOK_GRAPHICS, graphicDataUri } from "./bookAssets";
+import { normalizeFontFamily } from "./fontFamilies";
 
 /* ==========================================================================
    Layered cover document
@@ -454,7 +455,7 @@ export function roundInches(value: number) {
 }
 
 export function coverFontCss(id: CoverFontId, customFont = "") {
-  const custom = customFont.replace(/[<>{};\\"'`]/g, "").trim();
+  const custom = normalizeFontFamily(customFont, 80);
   if (custom) return `'${custom}', Georgia, serif`;
   return COVER_FONTS.find((font) => font.id === id)?.css ?? COVER_FONTS[0].css;
 }
@@ -954,7 +955,7 @@ function normalizeLayer(value: unknown, index: number): CoverLayer | null {
       effect: oneOf(value.effect, ["none", "soft", "hard", "glow", "outline"] as const, "none"),
       effectColor: color(value.effectColor, "#000000"),
       curve: decimal(value.curve, 0, -100, 100),
-      customFont: text(value.customFont, "", 80).replace(/[<>{};\\"'`]/g, "").trim(),
+      customFont: normalizeFontFamily(text(value.customFont, "", 80), 80),
       highlight: normalizeTextHighlight(value.highlight),
     };
   }

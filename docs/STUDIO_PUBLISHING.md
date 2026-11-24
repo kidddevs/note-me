@@ -27,15 +27,32 @@ preflight, and the file builders read the same resolved edition.
 
 `bookPackageSummary` reports section readiness, generated contents, and how the
 format handles placed manuscript artwork. It counts artwork blocks and whether
-credits are present. `bookExportChecks` links missing metadata, empty sections
-and contents gaps to settings, writing, or Outline. An empty manuscript blocks
-export. Other findings guide review.
+credits are present. It also shows an estimated interior page count derived from
+trim, margins, body leading, columns, and section overrides. That number is a
+planning estimate, not a replacement for the browser or system print proof.
+
+`bookExportChecks` links missing metadata, empty sections and contents gaps to
+settings, writing, or Outline. Portable formats warn when the manuscript uses
+an installed/custom family. The default keeps only the family name, so the
+recipient must have the font installed or accept the target application's
+fallback. Native Export Studio can load matching TTF/OTF family faces for EPUB,
+standalone HTML, and Word. It matches the requested weight and normal/italic
+style for every selected family, including variable faces whose `wght`, `ital`,
+or `slnt` ranges cover the request; the shared picker exposes those ranges and
+lets authors preview weight and italic treatment before choosing a family.
+Export Studio lists each requested variant with its exact face or missing match. Embedding is opt-in and requires the
+explicit confirmation **I have permission to redistribute these font files with
+this export**. NoteMe cannot determine a license automatically; TTC collections
+remain local-only and are not treated as embeddable. The same preflight flags
+styles that combine page breaks with a keep-together rule so they can be
+checked in Print / PDF. An empty manuscript still blocks export; other
+findings guide review.
 
 | Format | Output |
 | --- | --- |
-| EPUB 3 | Reflowable chapters, optional front cover, and reader navigation. If generated contents are omitted or empty, navigation opens the title page via **Start reading**. |
-| Styled HTML | One styled document with optional front cover and linked contents. The file builder embeds bundled cover photos. |
-| DOCX | Editable text and styles, compatible embedded images, and captions and credits. Other image sources become text descriptions. |
+| EPUB 3 | Reflowable chapters, optional front cover, reader navigation, and optional licensed TTF/OTF font faces. If generated contents are omitted or empty, navigation opens the title page via **Start reading**. |
+| Styled HTML | One styled document with optional front cover and linked contents. The file builder embeds bundled cover photos and optional licensed font faces as data URIs. |
+| DOCX | Editable text and styles, compatible embedded images, captions and credits, and optional licensed regular/bold/italic font faces through grouped OOXML font parts. Other image sources become text descriptions. |
 | Markdown | Source with book metadata, image references, and portable layout attributes. |
 | Plain text | Section text and artwork descriptions. |
 | Print / PDF | A system print proof with selectable interior text and an optional full cover spread. |

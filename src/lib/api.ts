@@ -16,7 +16,33 @@ import type {
   TaskItem,
 } from "./types";
 
+export interface SystemFontAxis {
+  tag: string;
+  min: number;
+  default: number;
+  max: number;
+}
+
+export interface SystemFontAsset {
+  family: string;
+  path: string;
+  extension: "ttf" | "otf" | "ttc";
+  bytes: number;
+  weight: number;
+  style: "normal" | "italic";
+  axes: SystemFontAxis[];
+}
+
+export interface SystemFontAssetData {
+  path: string;
+  extension: "ttf" | "otf" | "ttc";
+  bytes: number[];
+}
+
 export const api = {
+  listSystemFonts: () => invoke<string[]>("list_system_fonts"),
+  listSystemFontAssets: () => invoke<SystemFontAsset[]>("list_system_font_assets"),
+  readSystemFontAsset: (path: string) => invoke<SystemFontAssetData>("read_system_font_asset", { path }),
   listNotes: () => invoke<Note[]>("list_notes"),
   listArchived: () => invoke<Note[]>("list_archived"),
   listTrashed: () => invoke<Note[]>("list_trashed"),

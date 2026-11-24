@@ -31,10 +31,90 @@ const {
   setChapterFreeLayout,
   EMPTY_CANVAS_PARAGRAPH,
   DEFAULT_RICH_PRESENTATION,
+  fontCss,
+  normalizeFontFamily,
 } = require("./.compiled/src/lib/bookPublishing.js");
 const { DEFAULT_BOOK_LAYOUT, DEFAULT_BOOK_TYPOGRAPHY, parseBookLayout, serializeBookLayout } = require("./.compiled/src/lib/bookLayout.js");
+const { fontAssetMatches } = require("./.compiled/src/lib/fontEmbedding.js");
 
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+test("system font family stacks stay usable in publishing CSS", () => {
+  assert.equal(normalizeFontFamily('  Avenir Next, "Helvetica Neue", sans-serif; '), "Avenir Next, Helvetica Neue, sans-serif");
+  assert.equal(fontCss("Avenir Next, Helvetica Neue, sans-serif"), "Avenir Next, Helvetica Neue, sans-serif");
+  assert.equal(fontCss("<>{};"), "Georgia, 'Times New Roman', serif");
+});
+
+test("licensed font embedding travels through HTML, EPUB, and Word packages", async () => {
+  const embeddedBytes = Uint8Array.from({ length: 40 }, (_, index) => index);
+  const embeddedFonts = [
+    { family: "Avenir Next", format: "ttf", bytes: embeddedBytes, weight: 400, style: "normal" },
+    { family: "Avenir Next", format: "ttf", bytes: embeddedBytes, weight: 700, style: "normal" },
+    { family: "Avenir Next", format: "ttf", bytes: embeddedBytes, weight: 400, style: "italic" },
+  ];
+  const manuscript = book({ font_family: "Avenir Next, Georgia, serif" });
+  const sections = [chapter(1, "The Arrival", "A complete opening chapter.")];
+  const html = bookHtml(manuscript, sections, { embeddedFonts });
+  assert.match(html, /@font-face/);
+  assert.match(html, /data:font\/ttf;base64/);
+  assert.match(html, /font-style:italic;font-weight:400/);
+  assert.match(html, /font-style:normal;font-weight:700/);
+
+  const epub = unzipSync(await bookEpub(manuscript, sections, { embeddedFonts }));
+  assert.ok(epub["OEBPS/fonts/font1.ttf"]);
+  assert.ok(epub["OEBPS/fonts/font2.ttf"]);
+  assert.match(strFromU8(epub["OEBPS/content.opf"]), /font-1/);
+  assert.match(strFromU8(epub["OEBPS/title-page.xhtml"]), /fonts\/font1\.ttf/);
+
+  const docx = unzipSync(await bookDocx(manuscript, sections, { embeddedFonts }));
+  assert.ok(docx["word/fonts/font1.odttf"]);
+  assert.ok(docx["word/fonts/font2.odttf"]);
+  assert.match(strFromU8(docx["word/fontTable.xml"]), /Avenir Next/);
+  assert.match(strFromU8(docx["word/fontTable.xml"]), /embedBold/);
+  assert.match(strFromU8(docx["word/fontTable.xml"]), /embedItalic/);
+  assert.match(strFromU8(docx["word/_rels/fontTable.xml.rels"]), /font1\.odttf/);
+  assert.match(strFromU8(docx["word/_rels/document.xml.rels"]), /fontTable/);
+  assert.match(strFromU8(docx["[Content_Types].xml"]), /obfuscatedFont/);
+});
+
+test("installed font matching prefers exact weight and italic variants", () => {
+  const assets = [
+    { family: "Avenir Next", path: "/fonts/regular.ttf", extension: "ttf", bytes: 10, weight: 400, style: "normal" },
+    { family: "Avenir Next", path: "/fonts/bold.ttf", extension: "ttf", bytes: 11, weight: 700, style: "normal" },
+    { family: "Avenir Next", path: "/fonts/italic.ttf", extension: "ttf", bytes: 12, weight: 400, style: "italic" },
+    { family: "Avenir Next", path: "/fonts/collection.ttc", extension: "ttc", bytes: 13, weight: 700, style: "italic" },
+  ];
+  const matches = fontAssetMatches([
+    { family: "Avenir Next, Georgia, serif", weight: 700, style: "normal" },
+    { family: "Avenir Next", weight: 400, style: "italic" },
+  ], assets);
+  assert.equal(matches.length, 2);
+  assert.equal(matches.every((match) => match.exact), true);
+  assert.deepEqual(matches.map((match) => match.asset.path), ["/fonts/bold.ttf", "/fonts/italic.ttf"]);
+  assert.equal(fontAssetMatches([{ family: "Avenir Next", weight: 700, style: "italic" }], assets)[0].exact, false);
+});
+
+test("variable font axes cover requested weights and italic styles", () => {
+  const assets = [{
+    family: "Variable Sans",
+    path: "/fonts/variable-sans.ttf",
+    extension: "ttf",
+    bytes: 80,
+    weight: 400,
+    style: "normal",
+    axes: [
+      { tag: "wght", min: 100, default: 400, max: 900 },
+      { tag: "ital", min: 0, default: 0, max: 1 },
+    ],
+  }];
+  const matches = fontAssetMatches([
+    { family: "Variable Sans", weight: 700, style: "normal" },
+    { family: "Variable Sans", weight: 600, style: "italic" },
+  ], assets);
+  assert.equal(matches.length, 2);
+  assert.equal(matches.every((match) => match.exact), true);
+  assert.equal(matches.every((match) => match.asset.path === "/fonts/variable-sans.ttf"), true);
+});
 
 function book(overrides = {}) {
   return {
