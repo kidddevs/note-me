@@ -7,6 +7,7 @@ src-tauri/gen/
 
 # Native visual-QA captures are local evidence, not application assets.
 books-studio-*.png
+!docs/screenshots/books-studio-*.png
 
 # Exported agent sessions are working notes, not app source.
 oc-session/

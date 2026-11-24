@@ -14,12 +14,17 @@ import { BookStudioWriteGuard } from "./components/BookStudioWriteGuard";
 import { SettingsModal } from "./components/Modals";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
+import { WelcomeSplash } from "./components/WelcomeSplash";
+import { ReleaseNotesModal } from "./components/ReleaseNotesModal";
 import { useNotes, openNoteInTab } from "./store/notes";
 import { useTabs } from "./store/tabs";
 import { useTheme } from "./store/theme";
 import { useWorkspace } from "./store/workspace";
 import { notify } from "./store/toast";
 import { importFilesAsNotes } from "./lib/actions";
+import { api } from "./lib/api";
+import { bootSurfaceForSettings, RELEASE_NOTES_SEEN_VERSION_KEY, WELCOME_SEEN_VERSION_KEY, type BootSurface } from "./lib/appBoot";
+import { CURRENT_VERSION } from "./lib/releaseNotes";
 
 const BooksStudio = lazy(() => import("./components/BooksStudio").then(({ BooksStudio: Studio }) => ({ default: Studio })));
 
@@ -52,6 +57,7 @@ async function exportAllNotes() {
 
 export default function App() {
   const loaded = useNotes((s) => s.loaded);
+  const themeReady = useTheme((s) => s.ready);
   const workspace = useWorkspace((s) => s.mode);
   const sidebarCollapsed = useTheme((s) => s.sidebarCollapsed);
   const clipboardOpen = useNotes((s) => s.clipboardOpen);
@@ -64,6 +70,8 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updatesRequested, setUpdatesRequested] = useState(0);
+  const [bootSurface, setBootSurface] = useState<BootSurface | "checking">("checking");
+  const [releasePending, setReleasePending] = useState(false);
   const clipboardWatch = useRef<number | null>(null);
   const lastClip = useRef("");
   const pendingFileOpens = useRef<string[]>([]);
@@ -163,6 +171,36 @@ export default function App() {
     useWorkspace.getState().setMode("notes");
     void importFilesAsNotes(paths);
   }, [loaded]);
+
+  useEffect(() => {
+    if (!themeReady || !loaded) return;
+    let active = true;
+    void Promise.all([
+      api.getSetting(WELCOME_SEEN_VERSION_KEY),
+      api.getSetting(RELEASE_NOTES_SEEN_VERSION_KEY),
+    ]).then(([welcomeSeenVersion, releaseNotesSeenVersion]) => {
+      if (!active) return;
+      const decision = bootSurfaceForSettings(welcomeSeenVersion, releaseNotesSeenVersion, CURRENT_VERSION);
+      setReleasePending(decision.releasePending);
+      setBootSurface(decision.surface);
+    }).catch(() => {
+      if (active) setBootSurface("ready");
+    });
+    return () => {
+      active = false;
+    };
+  }, [loaded, themeReady]);
+
+  const closeWelcome = () => {
+    void api.setSetting(WELCOME_SEEN_VERSION_KEY, CURRENT_VERSION).catch(() => {});
+    setBootSurface(releasePending ? "release-notes" : "ready");
+  };
+
+  const closeReleaseNotes = () => {
+    void api.setSetting(RELEASE_NOTES_SEEN_VERSION_KEY, CURRENT_VERSION).catch(() => {});
+    setReleasePending(false);
+    setBootSurface("ready");
+  };
 
   // poll clipboard for changes (cross-platform history capture)
   useEffect(() => {
@@ -290,6 +328,8 @@ export default function App() {
           autoCheckKey={updatesRequested}
         />
       )}
+      {bootSurface === "welcome" && <WelcomeSplash onClose={closeWelcome} />}
+      {bootSurface === "release-notes" && <ReleaseNotesModal onClose={closeReleaseNotes} />}
     </div>
   );
 }

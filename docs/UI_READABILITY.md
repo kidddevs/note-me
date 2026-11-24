@@ -5,6 +5,12 @@
 them readable on the background, surface and modal colors, including translucent
 hover/selected fills. Disabled controls can reduce opacity independently.
 
+The first-run welcome and version-aware release-note surfaces alias the same
+palette through `--boot-*` variables. They honor explicit `data-theme="light"`
+and `data-theme="dark"` values, and also include a system dark-mode fallback so
+the boot experience does not flash a light surface before the saved theme is
+applied. Keep their supporting text and focus rings readable in both modes.
+
 Accent and semantic colors have separate foreground tokens for solid buttons:
 use `--accent-text` and `--danger-text`, rather than hardcoded white. Light and
 dark themes need different foregrounds. Supporting text and semantic labels

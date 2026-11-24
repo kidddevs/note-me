@@ -32,10 +32,24 @@ NoteMe is an open-source desktop app for notes and long-form writing. It pairs a
 </p>
 <p align="center"><em><strong>Notes.</strong> Markdown and rich text, browser-style tabs, categories, tags, tasks, and a live document inspector.</em></p>
 
-<p align="center">
-  <img src="docs/screenshots/books-studio.png" alt="NoteMe Books Studio showing a manuscript canvas, section rail, and design inspector" width="100%" />
-</p>
-<p align="center"><em><strong>Books Studio.</strong> A direct-manipulation manuscript canvas with typography, page layout, and publishing tools.</em></p>
+<p align="center"><em><strong>Books Studio.</strong> Mock-data previews of the manuscript, cover, planning, library, and export surfaces.</em></p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/books-studio-manuscript.png" alt="NoteMe Books Studio manuscript editor with a page canvas and design inspector" /></td>
+    <td width="50%"><img src="docs/screenshots/books-studio-cover.png" alt="NoteMe Books Studio full-wrap cover designer with layers and document inspector" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/books-studio-plan.png" alt="NoteMe Books Studio section plan with manuscript status and deadlines" /></td>
+    <td width="50%"><img src="docs/screenshots/books-studio-library.png" alt="NoteMe Books Studio library showing a mock book card and cover" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/books-studio-export.png" alt="NoteMe Books Studio export studio with EPUB, Word, HTML, and print choices" /></td>
+    <td width="50%"><img src="docs/screenshots/books-studio.png" alt="NoteMe Books Studio cover designer in the light theme" /></td>
+  </tr>
+</table>
+
+<p align="center"><em>All captures use isolated synthetic fixture data; the gallery includes dark and light theme surfaces.</em></p>
 
 ## Why NoteMe
 
@@ -44,6 +58,7 @@ NoteMe is an open-source desktop app for notes and long-form writing. It pairs a
 - **Built for depth.** Markdown, rich text, tasks, categories, tags, attachments, clipboard history, and full-text search in one workspace.
 - **A real writing studio.** Books Studio adds structured manuscripts, custom page geometry, editorial typography, and reader-ready export.
 - **At home on your desktop.** Native menus, window state, global Quick Capture, system themes, and a Tauri 2 shell on macOS, Windows, and Linux.
+- **A clear way in.** First launch introduces the Notes → Books Studio → publishing flow, while version-aware release notes explain what changed without requiring a network connection.
 - **Your data stays portable.** Notes remain usable as plain Markdown instead of being trapped in a proprietary format.
 
 ## Notes
